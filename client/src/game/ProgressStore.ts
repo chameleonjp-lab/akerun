@@ -7,10 +7,17 @@ export type PendingRankingRecord = {
   readonly createdAt: string;
 };
 
+export type ActiveRunRecord = {
+  readonly problemId: string;
+  readonly problemVersion: string;
+  readonly playerName: string;
+};
+
 const PLAYER_NAME_KEY = "akerun-player-name";
 const TRAINING_KEY = "akerun-training-complete";
 const BEST_KEY = "akerun-self-bests";
 const PENDING_KEY = "akerun-pending-rankings";
+const ACTIVE_RUN_KEY = "akerun-active-run";
 const ARCHIVE_KEY = "vault-tumbler-lab-archive";
 
 const storage = () => {
@@ -96,9 +103,41 @@ export class ProgressStore {
     return { improved, best: records[key] ?? result };
   }
 
+  saveActiveRun(problemId: string, problemVersion: string, playerName: string) {
+    const record: ActiveRunRecord = {
+      problemId: String(problemId),
+      problemVersion: String(problemVersion),
+      playerName: normalizePlayerName(playerName),
+    };
+    writeJson(ACTIVE_RUN_KEY, record);
+    return record;
+  }
+
+  getActiveRun(): ActiveRunRecord | null {
+    const record = readJson<Partial<ActiveRunRecord> | null>(ACTIVE_RUN_KEY, null);
+    if (!record?.problemId || !record.problemVersion || !record.playerName) return null;
+    return {
+      problemId: String(record.problemId),
+      problemVersion: String(record.problemVersion),
+      playerName: normalizePlayerName(String(record.playerName)),
+    };
+  }
+
+  clearActiveRun() {
+    try {
+      storage()?.removeItem(ACTIVE_RUN_KEY);
+    } catch {
+      // 保存できない環境でもプレイは継続する。
+    }
+  }
+
+  pendingId(result: RunResult) {
+    return result.problemId + "@" + result.problemVersion + ":" + String(result.score) + ":" + String(result.elapsedTime);
+  }
+
   enqueueRanking(playerName: string, result: RunResult) {
     const existing = this.getPendingRankings();
-    const id = result.problemId + "@" + result.problemVersion + ":" + String(result.score) + ":" + String(result.elapsedTime);
+    const id = this.pendingId(result);
     if (existing.some((item) => item.id === id)) return existing;
     const next = [
       ...existing,
@@ -116,6 +155,10 @@ export class ProgressStore {
   removePending(id: string) {
     const next = this.getPendingRankings().filter((item) => item.id !== id);
     writeJson(PENDING_KEY, next);
+  }
+
+  removePendingForResult(result: RunResult) {
+    this.removePending(this.pendingId(result));
   }
 
   getArchiveIds(): string[] {
