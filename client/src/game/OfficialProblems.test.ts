@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { createOfficialPuzzle, OFFICIAL_PROBLEM_CATALOG, createTrainingPuzzle } from "./GameDefinitions";
+import {
+  createOfficialPuzzle,
+  OFFICIAL_PROBLEM_CATALOG,
+  createTrainingPuzzle,
+} from "./GameDefinitions";
 import { LockMechanism } from "./LockMechanism";
+import { OFFICIAL_PROBLEM_BALANCE } from "./OfficialProblemBalance";
 
 const advance = (lock: LockMechanism, seconds: number) => {
-  for (let frame = 0; frame < Math.ceil(seconds * 90); frame += 1) lock.tick(1 / 90);
+  for (let frame = 0; frame < Math.ceil(seconds * 90); frame += 1)
+    lock.tick(1 / 90);
 };
 
 const solve = (problemId: string) => {
@@ -39,28 +45,59 @@ const solve = (problemId: string) => {
 describe("official puzzle catalog", () => {
   it("contains exactly 20 versioned problems with the planned tier split", () => {
     expect(OFFICIAL_PROBLEM_CATALOG).toHaveLength(20);
-    expect(new Set(OFFICIAL_PROBLEM_CATALOG.map((item) => item.problemId)).size).toBe(20);
-    expect(OFFICIAL_PROBLEM_CATALOG.filter((item) => item.tier === "beginner")).toHaveLength(5);
-    expect(OFFICIAL_PROBLEM_CATALOG.filter((item) => item.tier === "standard")).toHaveLength(10);
-    expect(OFFICIAL_PROBLEM_CATALOG.filter((item) => item.tier === "advanced")).toHaveLength(5);
+    expect(
+      new Set(OFFICIAL_PROBLEM_CATALOG.map(item => item.problemId)).size
+    ).toBe(20);
+    expect(
+      OFFICIAL_PROBLEM_CATALOG.filter(item => item.tier === "beginner")
+    ).toHaveLength(5);
+    expect(
+      OFFICIAL_PROBLEM_CATALOG.filter(item => item.tier === "standard")
+    ).toHaveLength(10);
+    expect(
+      OFFICIAL_PROBLEM_CATALOG.filter(item => item.tier === "advanced")
+    ).toHaveLength(5);
   });
 
   it("keeps each problem's targets and false gates valid", () => {
-    OFFICIAL_PROBLEM_CATALOG.forEach((catalog) => {
+    OFFICIAL_PROBLEM_CATALOG.forEach(catalog => {
       const puzzle = createOfficialPuzzle(catalog.problemId);
       expect(puzzle.problemVersion).toBe("V1");
       expect(puzzle.stages).toHaveLength(catalog.wheelCount);
-      expect(new Set(puzzle.stages.map((stage) => stage.target)).size).toBe(catalog.wheelCount);
+      expect(new Set(puzzle.stages.map(stage => stage.target)).size).toBe(
+        catalog.wheelCount
+      );
       expect(puzzle.falseGates).toHaveLength(catalog.wheelCount * 2);
-      puzzle.falseGates.forEach((gate) => {
-        const target = puzzle.stages.find((stage) => stage.wheel === gate.wheel)?.target;
+      puzzle.falseGates.forEach(gate => {
+        const target = puzzle.stages.find(
+          stage => stage.wheel === gate.wheel
+        )?.target;
         expect(gate.position).not.toBe(target);
       });
     });
   });
 
   it("opens every official problem through the existing mechanism", () => {
-    OFFICIAL_PROBLEM_CATALOG.forEach((catalog) => solve(catalog.problemId));
+    OFFICIAL_PROBLEM_CATALOG.forEach(catalog => solve(catalog.problemId));
+  });
+
+  it("keeps measured dial baselines aligned with the score par values", () => {
+    expect(OFFICIAL_PROBLEM_BALANCE).toHaveLength(20);
+    OFFICIAL_PROBLEM_BALANCE.forEach(balance => {
+      expect(balance.minimumDialSteps).toBe(balance.parDialSteps);
+      expect(balance.falseGateCount).toBe(balance.wheelCount * 2);
+      expect(balance.totalPasses).toBeGreaterThan(balance.wheelCount);
+      expect(balance.parFaults).toBe(
+        OFFICIAL_PROBLEM_CATALOG.find(
+          item => item.problemId === balance.problemId
+        )?.parFaults
+      );
+    });
+
+    const scores = OFFICIAL_PROBLEM_BALANCE.map(
+      balance => balance.baselineScore
+    );
+    expect(Math.max(...scores) - Math.min(...scores)).toBeLessThanOrEqual(200);
   });
 
   it("provides four distinct training contracts", () => {

@@ -33,7 +33,34 @@ describe("RunSession", () => {
     const beginner = createOfficialPuzzle("AKERUN-01-V1");
     const advanced = createOfficialPuzzle("AKERUN-20-V1");
     expect(calculateRunScore(advanced, 40, 0, 400, 0)).toBeGreaterThan(
-      calculateRunScore(beginner, 40, 0, 400, 0),
+      calculateRunScore(beginner, 40, 0, 400, 0)
     );
+  });
+
+  it("uses each problem's par faults as the scoring baseline", () => {
+    const problem = createOfficialPuzzle("AKERUN-10-V1");
+    const standardFaults = calculateRunScore(
+      problem,
+      problem.parTime ?? 0,
+      problem.parFaults ?? 0,
+      problem.parDialSteps ?? 0,
+      0
+    );
+    const cleanRun = calculateRunScore(
+      problem,
+      problem.parTime ?? 0,
+      0,
+      problem.parDialSteps ?? 0,
+      0
+    );
+    const extraFault = calculateRunScore(
+      problem,
+      problem.parTime ?? 0,
+      (problem.parFaults ?? 0) + 1,
+      problem.parDialSteps ?? 0,
+      0
+    );
+    expect(cleanRun - standardFaults).toBe(650);
+    expect(standardFaults - extraFault).toBe(650);
   });
 });
