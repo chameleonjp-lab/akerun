@@ -29,8 +29,14 @@ describe("ProgressStore", () => {
     expect(store.getPlayerName()).toBe("player one");
     expect(store.recordBest(result).improved).toBe(true);
     expect(store.getBest("AKERUN-01-V1", "V1")?.score).toBe(11000);
+    expect(store.saveActiveRun("AKERUN-01-V1", "V1", "player one").problemId).toBe("AKERUN-01-V1");
+    expect(store.getActiveRun()?.playerName).toBe("player one");
     store.enqueueRanking("player one", result);
     expect(store.getPendingRankings()).toHaveLength(1);
+    store.removePendingForResult(result);
+    expect(store.getPendingRankings()).toHaveLength(0);
+    store.clearActiveRun();
+    expect(store.getActiveRun()).toBeNull();
     vi.unstubAllGlobals();
   });
 });
