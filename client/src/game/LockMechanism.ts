@@ -345,6 +345,27 @@ export class LockMechanism {
     return stageForWheel ? signedDistance(this.tumblerValues[wheel], stageForWheel.target) / 50 : 0;
   }
 
+  /** 訓練3用。ダイヤル整列済みの状態から後半機構だけを体験させる。 */
+  preparePostDialTraining() {
+    this.dial = 0;
+    this.stage = this.puzzle.stages.length;
+    this.stagePasses = 0;
+    this.locked.splice(0, this.locked.length, ...this.puzzle.stages.map(() => true));
+    this.tumblerValues.splice(0, this.tumblerValues.length, ...this.puzzle.stages.map((stage) => stage.target));
+    this.phase = "tension-ready";
+    this.desiredTorque = 0;
+    this.appliedTorque = 0;
+    this.desiredFenceTravel = 0;
+    this.fenceTravel = 0;
+    this.desiredBoltTravel = 0;
+    this.boltTravel = 0;
+    this.desiredHandleTurn = 0;
+    this.handleTurn = 0;
+    this.faultCount = 0;
+    this.opened = false;
+    this.lastMessage = "ゲートは整列済みです。テンション、フェンス、ロックボルト、扉ハンドルの順に操作してください。";
+  }
+
   reset() {
     this.dial = 0;
     this.stage = 0;
