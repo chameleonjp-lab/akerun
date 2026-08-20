@@ -1,4 +1,4 @@
-/* Vault Tumbler Lab — 真鍮の機械製図室。暗い製図台、温かな真鍮、整列時のみ現れる青緑の光を保つ。 */
+/* Vault Tumbler Lab — Canvasを機構表示、Reactを入口と結果表示に使う。 */
 @import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500;600&family=Noto+Sans+JP:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 @import "tw-animate-css";
@@ -30,6 +30,15 @@
     font-family: "Noto Sans JP", sans-serif;
   }
 
+  button,
+  input {
+    font: inherit;
+  }
+
+  button {
+    -webkit-tap-highlight-color: transparent;
+  }
+
   canvas {
     display: block;
     cursor: grab;
@@ -40,9 +49,511 @@
   }
 }
 
+.akerun-shell {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #091018;
+}
+
+.akerun-screen,
+.akerun-play-layer,
+.akerun-training-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+}
+
+.akerun-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+  overflow: auto;
+  background: rgba(2, 8, 12, 0.78);
+}
+
+.akerun-title-screen {
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding-top: max(30px, env(safe-area-inset-top));
+  background: linear-gradient(90deg, rgba(2, 8, 12, 0.92), rgba(2, 8, 12, 0.48) 60%, rgba(2, 8, 12, 0.24));
+}
+
+.akerun-title-card,
+.akerun-modal-card,
+.akerun-result-card,
+.akerun-training-card {
+  width: min(720px, 100%);
+  border: 1px solid rgba(202, 169, 99, 0.58);
+  border-radius: 18px;
+  padding: clamp(20px, 4vw, 42px);
+  background: linear-gradient(145deg, rgba(7, 18, 24, 0.97), rgba(9, 14, 18, 0.94));
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.46), inset 0 0 0 1px rgba(77, 224, 192, 0.08);
+  backdrop-filter: blur(14px);
+}
+
+.akerun-title-card {
+  margin: 3vh 0 0 clamp(0px, 4vw, 72px);
+}
+
+.akerun-kicker {
+  margin: 0 0 12px;
+  color: #4de0c0;
+  font: 600 0.72rem "DM Mono", monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.akerun-title-card h1,
+.akerun-modal-card h2,
+.akerun-result-card h2,
+.akerun-training-card h2 {
+  margin: 0;
+  color: #f2e7c5;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.akerun-title-card h1 {
+  max-width: 13em;
+  font-size: clamp(2rem, 6vw, 4.8rem);
+  line-height: 1.05;
+}
+
+.akerun-modal-card h2,
+.akerun-result-card h2,
+.akerun-training-card h2 {
+  font-size: clamp(1.35rem, 3.5vw, 2.2rem);
+}
+
+.akerun-lead,
+.akerun-modal-card p,
+.akerun-result-card p,
+.akerun-training-card p {
+  color: #c7d3cf;
+  line-height: 1.8;
+}
+
+.akerun-lead {
+  max-width: 44rem;
+  margin: 22px 0 28px;
+  font-size: clamp(0.94rem, 2vw, 1.12rem);
+}
+
+.akerun-field {
+  display: grid;
+  gap: 8px;
+  width: min(440px, 100%);
+  color: #d9c28a;
+  font-size: 0.88rem;
+}
+
+.akerun-field input {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid rgba(202, 169, 99, 0.55);
+  border-radius: 10px;
+  padding: 10px 14px;
+  color: #f4e8c3;
+  background: rgba(2, 8, 12, 0.84);
+  outline: none;
+}
+
+.akerun-field input:focus {
+  border-color: #4de0c0;
+  box-shadow: 0 0 0 3px rgba(77, 224, 192, 0.18);
+}
+
+.akerun-error {
+  margin: 8px 0 0 !important;
+  color: #efb18b !important;
+  font-size: 0.86rem;
+}
+
+.akerun-title-actions,
+.akerun-link-row,
+.akerun-settings-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.akerun-link-row {
+  margin-top: 14px;
+}
+
+.akerun-button {
+  min-height: 44px;
+  border: 1px solid rgba(126, 155, 152, 0.55);
+  border-radius: 10px;
+  padding: 9px 15px;
+  color: #dbe4dc;
+  background: rgba(13, 28, 33, 0.92);
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+  touch-action: manipulation;
+}
+
+.akerun-button:hover {
+  border-color: #4de0c0;
+  background: rgba(20, 61, 61, 0.92);
+  transform: translateY(-1px);
+}
+
+.akerun-button:active {
+  transform: translateY(0);
+}
+
+.akerun-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+  transform: none;
+}
+
+.akerun-button-primary {
+  border-color: #4de0c0;
+  color: #06211f;
+  background: #4de0c0;
+}
+
+.akerun-button-primary:hover {
+  color: #06211f;
+  background: #79f3dc;
+}
+
+.akerun-button-danger {
+  border-color: rgba(211, 149, 102, 0.76);
+  color: #f0c09b;
+}
+
+.akerun-footnote,
+.akerun-small {
+  color: #7e9b98 !important;
+  font-size: 0.8rem !important;
+}
+
+.akerun-play-layer {
+  pointer-events: none;
+}
+
+.akerun-hud {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) 0 max(14px, env(safe-area-inset-left));
+  pointer-events: auto;
+}
+
+.akerun-hud h2 {
+  margin: 0;
+  color: #f2e7c5;
+  font-size: clamp(0.92rem, 2.6vw, 1.35rem);
+}
+
+.akerun-hud-actions,
+.akerun-mobile-menu {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.akerun-hud .akerun-button,
+.akerun-mobile-menu .akerun-button {
+  min-height: 38px;
+  padding: 7px 11px;
+  font-size: 0.78rem;
+  background: rgba(5, 14, 19, 0.88);
+  backdrop-filter: blur(8px);
+}
+
+.akerun-live-panel {
+  position: absolute;
+  top: max(82px, calc(env(safe-area-inset-top) + 66px));
+  left: max(14px, env(safe-area-inset-left));
+  width: min(370px, calc(100% - 28px));
+  padding: 12px 14px;
+  border-left: 3px solid #4de0c0;
+  border-radius: 0 10px 10px 0;
+  color: #dbe4dc;
+  background: rgba(4, 13, 18, 0.84);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+}
+
+.akerun-live-panel p {
+  margin: 5px 0 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.akerun-live-panel strong {
+  color: #d9c28a;
+}
+
+.akerun-live-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.akerun-stat {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(126, 155, 152, 0.28);
+  border-radius: 8px;
+  background: rgba(7, 23, 28, 0.72);
+}
+
+.akerun-stat span,
+.akerun-stat strong {
+  display: block;
+}
+
+.akerun-stat span {
+  overflow: hidden;
+  color: #8da4a5;
+  font: 0.65rem "DM Mono", monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.akerun-stat strong {
+  margin-top: 3px;
+  color: #f2e7c5;
+  font: 600 0.95rem "DM Mono", monospace;
+}
+
+.akerun-mobile-menu {
+  position: absolute;
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(14px, env(safe-area-inset-bottom));
+  left: max(14px, env(safe-area-inset-left));
+  justify-content: flex-end;
+}
+
+.akerun-training-layer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: max(106px, calc(env(safe-area-inset-top) + 78px)) max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+  pointer-events: none;
+}
+
+.akerun-training-card {
+  width: min(420px, calc(100% - 8px));
+  padding: 20px;
+  pointer-events: auto;
+}
+
+.akerun-training-active {
+  background: rgba(7, 18, 24, 0.82);
+}
+
+.akerun-step {
+  margin: 14px 0 4px;
+  color: #d9c28a !important;
+  font: 600 0.78rem "DM Mono", monospace;
+}
+
+.akerun-modal-screen {
+  background: rgba(2, 8, 12, 0.88);
+}
+
+.akerun-result-card {
+  max-height: calc(100vh - 30px);
+  overflow: auto;
+}
+
+.akerun-result-subtitle {
+  color: #7e9b98 !important;
+  font: 0.78rem "DM Mono", monospace;
+}
+
+.akerun-result-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 20px;
+}
+
+.akerun-submit-status {
+  min-height: 1.6em;
+  color: #4de0c0 !important;
+  font-size: 0.85rem;
+}
+
+.akerun-ranking-card,
+.akerun-archive-card,
+.akerun-help-card {
+  max-height: calc(100vh - 30px);
+  overflow: auto;
+}
+
+.akerun-ranking-list,
+.akerun-archive-list {
+  display: grid;
+  gap: 8px;
+  margin: 20px 0;
+}
+
+.akerun-ranking-row {
+  display: grid;
+  grid-template-columns: 38px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid rgba(126, 155, 152, 0.34);
+  border-radius: 9px;
+  background: rgba(7, 23, 28, 0.72);
+}
+
+.akerun-ranking-row strong {
+  color: #d9c28a;
+}
+
+.akerun-ranking-row b {
+  color: #4de0c0;
+  font: 600 0.95rem "DM Mono", monospace;
+}
+
+.akerun-archive-row {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid rgba(126, 155, 152, 0.24);
+  border-radius: 9px;
+  color: #7e9b98;
+  background: rgba(4, 12, 16, 0.72);
+}
+
+.akerun-archive-row.is-unlocked {
+  border-color: rgba(202, 169, 99, 0.55);
+  color: #dbe4dc;
+}
+
+.akerun-archive-row strong {
+  color: #d9c28a;
+  font: 600 0.75rem "DM Mono", monospace;
+}
+
+.akerun-archive-row span {
+  color: #f2e7c5;
+  font-weight: 600;
+}
+
+.akerun-archive-row small {
+  line-height: 1.5;
+}
+
+.akerun-help-card ol {
+  margin: 16px 0;
+  padding-left: 1.4em;
+  color: #c7d3cf;
+  line-height: 1.9;
+}
+
+.akerun-high-contrast .akerun-live-panel,
+.akerun-high-contrast .akerun-modal-card,
+.akerun-high-contrast .akerun-title-card,
+.akerun-high-contrast .akerun-training-card {
+  border-color: #e9d7a7;
+  background: rgba(0, 0, 0, 0.96);
+}
+
+.akerun-low-motion *,
+.akerun-low-motion *::before,
+.akerun-low-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0.001ms !important;
+}
+
+@media (max-width: 680px) {
+  .akerun-title-screen {
+    background: rgba(2, 8, 12, 0.88);
+  }
+
+  .akerun-title-card {
+    margin: 0;
+  }
+
+  .akerun-title-actions > .akerun-button,
+  .akerun-link-row > .akerun-button {
+    flex: 1 1 calc(50% - 10px);
+  }
+
+  .akerun-hud {
+    padding-top: max(10px, env(safe-area-inset-top));
+  }
+
+  .akerun-hud-actions .akerun-button {
+    padding-inline: 8px;
+    font-size: 0.7rem;
+  }
+
+  .akerun-live-panel {
+    top: max(68px, calc(env(safe-area-inset-top) + 52px));
+    width: calc(100% - 28px);
+  }
+
+  .akerun-live-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .akerun-stat {
+    padding: 6px;
+  }
+
+  .akerun-stat strong {
+    font-size: 0.78rem;
+  }
+
+  .akerun-mobile-menu {
+    gap: 5px;
+    justify-content: space-between;
+  }
+
+  .akerun-mobile-menu .akerun-button {
+    flex: 1 1 0;
+    padding-inline: 4px;
+    font-size: 0.66rem;
+  }
+
+  .akerun-result-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-height: 720px) and (orientation: landscape) {
+  .akerun-title-card,
+  .akerun-modal-card,
+  .akerun-result-card {
+    padding: 18px 24px;
+  }
+
+  .akerun-title-card h1 {
+    font-size: 2rem;
+  }
+
+  .akerun-lead {
+    margin: 10px 0 14px;
+  }
+
+  .akerun-title-actions,
+  .akerun-link-row {
+    margin-top: 12px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   canvas {
     scroll-behavior: auto;
   }
 }
-
