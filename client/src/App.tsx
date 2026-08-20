@@ -98,8 +98,12 @@ export default function App() {
     if (!snapshot?.opened || (screen !== "play" && screen !== "training")) return;
     const timer = window.setTimeout(() => {
       if (mode === "training") {
-        if (tutorialStep >= 4) store.markTrainingComplete();
-        setTutorialStep((current) => Math.min(4, current + 1));
+        if (tutorialStep >= 4) {
+          store.markTrainingComplete();
+          setTutorialStep(5);
+        } else {
+          setTutorialStep((current) => current + 1);
+        }
         setScreen("tutorial");
       } else {
         setScreen("result");
@@ -296,7 +300,7 @@ export default function App() {
   );
 
   const renderTutorial = () => {
-    const card = tutorialCards[tutorialStep - 1];
+    const card = tutorialCards[Math.min(tutorialStep, 4) - 1];
     const finished = tutorialStep > 4;
     return (
       <div className="akerun-training-layer">
