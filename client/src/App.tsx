@@ -3,6 +3,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import GameCanvas from "./components/GameCanvas";
 import type { GameHandle } from "./game/scene";
 import type { GameSnapshot } from "./game/VaultWorld";
+import { AUDIO_SAMPLE_DEFINITIONS, type AudioSampleId } from "./game/AudioFeedback";
 import {
   chooseOfficialProblem,
   createOfficialPuzzle,
@@ -13,7 +14,7 @@ import {
 import { ProgressStore, normalizePlayerName } from "./game/ProgressStore";
 import { RankingClient, type RankingRow } from "./game/RankingClient";
 
-type Screen = "title" | "tutorial" | "training" | "play" | "pause" | "result" | "ranking" | "archive" | "settings" | "help";
+type Screen = "title" | "tutorial" | "training" | "play" | "pause" | "result" | "ranking" | "archive" | "settings" | "sound-lab" | "help";
 type RunMode = "official" | "training" | "demo" | "retired";
 
 const formatTime = (seconds: number) => {
@@ -247,6 +248,10 @@ export default function App() {
     setSettings((current) => ({ ...current, [key]: !current[key] }));
   };
 
+  const previewAudio = (sampleId: AudioSampleId) => {
+    handle?.performAction("audio-preview:" + sampleId);
+  };
+
   const shareResult = async () => {
     if (!snapshot) return;
     const text = "Vault Tumbler Lab " + snapshot.problemId
@@ -351,6 +356,7 @@ export default function App() {
           <Button onClick={openRanking}>ランキング</Button>
           <Button onClick={() => setScreen("archive")}>収蔵品</Button>
           <Button onClick={() => setScreen("settings")}>設定</Button>
+          <Button onClick={() => { setReturnScreen("title"); setScreen("sound-lab"); }}>音の試験室</Button>
           <Button onClick={() => setScreen("help")}>遊び方</Button>
         </div>
         <p className="akerun-footnote">{store.trainingComplete ? "訓練完了済み。いつでも通常ゲームを開始できます。" : "初回は4段階の短い訓練から始めると理解しやすくなります。"}</p>
@@ -547,10 +553,38 @@ export default function App() {
           <Button onClick={() => toggleSetting("contrast", "contrast")}>高コントラスト：{settings.contrast ? "ON" : "OFF"}</Button>
           <Button onClick={() => toggleSetting("motion", "motion")}>低モーション：{settings.motion ? "ON" : "OFF"}</Button>
           <Button onClick={() => toggleSetting("precision", "precision")}>精密入力：{settings.precision ? "ON" : "OFF"}</Button>
-          <Button onClick={() => handle?.performAction("sound")}>音のON/OFF</Button>
-          <Button onClick={() => handle?.performAction("haptics")}>振動のON/OFF</Button>
+          <Button onClick={() => handle?.performAction("sound")}>音：{snapshot?.soundMuted ? "OFF" : "ON"}</Button>
+          <Button onClick={() => handle?.performAction("haptics")}>振動：{snapshot?.hapticsSupported === false ? "N/A" : snapshot?.hapticsEnabled ? "ON" : "OFF"}</Button>
+          <Button onClick={() => openOverlay("sound-lab")}>音の試験室を開く</Button>
         </div>
         <Button tone="primary" onClick={closeOverlay}>戻る</Button>
+      </div>
+    </div>
+  );
+
+  const renderSoundLab = () => (
+    <div className="akerun-screen akerun-modal-screen">
+      <div className="akerun-modal-card akerun-sound-lab-card">
+        <p className="akerun-kicker">SOUND LAB / 音の試験室</p>
+        <h2>音を聞き比べる。</h2>
+        <p>音だけで正解を決めないための確認室です。音を聞いたあと、画面の反応と抵抗も同じ意味を返すか確認してください。</p>
+        <div className="akerun-audio-lab-list">
+          {AUDIO_SAMPLE_DEFINITIONS.map((sample) => (
+            <div className="akerun-audio-lab-row" key={sample.id}>
+              <div>
+                <strong>{sample.title}</strong>
+                <small>{sample.description}</small>
+                <small>画面：{sample.visualMeaning}</small>
+              </div>
+              <Button onClick={() => previewAudio(sample.id)} disabled={!handle}>聞く</Button>
+            </div>
+          ))}
+        </div>
+        <p className="akerun-small">音：{snapshot?.soundMuted ? "OFF" : "ON"}。音を使えない場合も、画面の反応と短い文章だけで遊べます。</p>
+        <div className="akerun-title-actions">
+          <Button onClick={() => handle?.performAction("sound")}>音を{snapshot?.soundMuted ? "ON" : "OFF"}</Button>
+          <Button tone="primary" onClick={closeOverlay}>戻る</Button>
+        </div>
       </div>
     </div>
   );
@@ -582,6 +616,7 @@ export default function App() {
     if (screen === "ranking") return renderRanking();
     if (screen === "archive") return renderArchive();
     if (screen === "settings") return renderSettings();
+    if (screen === "sound-lab") return renderSoundLab();
     return renderHelp();
   };
 
