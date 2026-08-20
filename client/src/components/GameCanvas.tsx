@@ -1,15 +1,24 @@
 /**
- * Vault Tumbler Lab — 真鍮の機械製図室。
- * React は額縁、Babylon の全画面キャンバスがダイヤルとカットアウェイを描く。
+ * Vault Tumbler Lab — Babylonキャンバスを保持し、画面遷移はReactへ返す。
  */
 import { useEffect, useRef, useState } from "react";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { createGameScene, type GameHandle } from "@/game/scene";
+import type { GameSnapshot } from "@/game/VaultWorld";
 
-export default function GameCanvas() {
+type GameCanvasProps = {
+  readonly onReady?: (handle: GameHandle | null) => void;
+  readonly onSnapshot?: (snapshot: GameSnapshot) => void;
+  readonly onVisibilityPause?: () => void;
+};
+
+export default function GameCanvas({ onReady, onSnapshot, onVisibilityPause }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const startedRef = useRef(false);
-  const [liveStatus, setLiveStatus] = useState("接触針で最初のホイールを観察してください。");
+  const callbacksRef = useRef({ onReady, onSnapshot, onVisibilityPause });
+  const [liveStatus, setLiveStatus] = useState("タイトルから問題を開始してください。");
+
+  callbacksRef.current = { onReady, onSnapshot, onVisibilityPause };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -25,25 +34,39 @@ export default function GameCanvas() {
     let handle: GameHandle | null = null;
     let disposed = false;
 
-    createGameScene(engine, canvas, setLiveStatus)
+    createGameScene(
+      engine,
+      canvas,
+      setLiveStatus,
+      (snapshot) => callbacksRef.current.onSnapshot?.(snapshot),
+    )
       .then((nextHandle: GameHandle) => {
         if (disposed) {
           nextHandle.dispose();
           return;
         }
         handle = nextHandle;
+        callbacksRef.current.onReady?.(nextHandle);
         engine.runRenderLoop(() => nextHandle.scene.render());
       })
       .catch((error: unknown) => {
-        console.error("Vault Tumbler Lab の初期化に失敗しました。", error);
+        console.error("Vault Tumbler Labの初期化に失敗しました。", error);
       });
 
     const onResize = () => engine.resize();
+    const onVisibilityChange = () => {
+      if (!document.hidden || !handle) return;
+      handle.setPaused(true);
+      callbacksRef.current.onVisibilityPause?.();
+    };
     window.addEventListener("resize", onResize);
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
       disposed = true;
       window.removeEventListener("resize", onResize);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      callbacksRef.current.onReady?.(null);
       handle?.dispose();
       engine.dispose();
       startedRef.current = false;
@@ -57,7 +80,7 @@ export default function GameCanvas() {
         tabIndex={0}
         role="application"
         aria-label="Vault Tumbler Lab: ダイヤル式金庫の内部機構を観察する開錠ゲーム"
-        aria-description="6輪ホイールパックを扱う開錠ゲームです。矢印キーまたはAとDでダイヤルを回します。低い鈍い音はドライブカムの空転、短い高音はゲート縁、明瞭な二重音はフライ接続を示しますが、いずれも単独では正解を保証しません。対応するモバイル端末では同じ手掛かりが短い振動でも届き、KまたはHAPTICで切り替えられます。4で画面を遮蔽して音だけを手掛かりにするブラインドモードへ切り替えます。ブラインドモードではVで視覚補助、Sで音の切替を行えます。Fで現在の物理部品へ焦点を移し、Shiftと左右矢印でテンション、上下矢印でフェンスを調整し、Spaceで保持、Escapeで力を抜きます。Rでリセット、Gでガイド、1から3で他の難易度、Nで新しい契約、Tで日替わり契約、Bで自己ベスト、Lで鑑定帳、Iで分解観察、角括弧で観察対象を切り替え、Hで高コントラスト、Mで低モーション、Pで精密操作を切り替えます。"
+        aria-description="公式20問から一問が固定されます。ダイヤルを回し、音と画面の反応を観察し、テンション、フェンス、ロックボルト、扉ハンドルの順に開錠します。音・振動・高コントラスト・低モーションは補助であり、使わなくてもプレイできます。"
         style={{ backgroundColor: "#0B1118", backgroundImage: "url('/manus-storage/vault-tumbler-reference_35720048.png')", backgroundPosition: "center", backgroundSize: "cover" }}
         className="fixed inset-0 h-full w-full touch-none outline-none"
       />

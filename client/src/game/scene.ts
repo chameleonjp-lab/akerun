@@ -1,6 +1,5 @@
 /**
- * Vault Tumbler Lab — 真鍮の機械製図室。
- * Babylon の正射影シーンへ、全画面の機構製図キャンバスを貼り付ける。
+ * Vault Tumbler Lab — Babylonの描画と、Reactの画面状態をつなぐ薄い境界。
  */
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { Scene } from "@babylonjs/core/scene";
@@ -11,14 +10,32 @@ import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
-import { VaultWorld } from "./VaultWorld";
+import { VaultWorld, type GameSnapshot } from "./VaultWorld";
+import type { PuzzleDefinition } from "./GameDefinitions";
+
+export type PuzzleStartOptions = {
+  readonly training?: boolean;
+  readonly postDial?: boolean;
+};
 
 export type GameHandle = {
   scene: Scene;
+  startPuzzle: (puzzle: PuzzleDefinition, options?: PuzzleStartOptions) => void;
+  startDemo: () => void;
+  setPaused: (paused: boolean) => void;
+  retire: () => void;
+  reset: () => void;
+  performAction: (action: string) => void;
+  getSnapshot: () => GameSnapshot;
   dispose: () => void;
 };
 
-export async function createGameScene(engine: Engine, canvas: HTMLCanvasElement, onStatusChange?: (status: string) => void): Promise<GameHandle> {
+export async function createGameScene(
+  engine: Engine,
+  canvas: HTMLCanvasElement,
+  onStatusChange?: (status: string) => void,
+  onSnapshotChange?: (snapshot: GameSnapshot) => void,
+): Promise<GameHandle> {
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0.025, 0.04, 0.055, 1);
 
@@ -37,7 +54,7 @@ export async function createGameScene(engine: Engine, canvas: HTMLCanvasElement,
   material.backFaceCulling = false;
   screen.material = material;
 
-  const world = new VaultWorld(texture, canvas, onStatusChange);
+  const world = new VaultWorld(texture, canvas, onStatusChange, onSnapshotChange);
   let lastWorldErrorAt = 0;
   scene.onBeforeRenderObservable.add(() => {
     const aspect = engine.getRenderWidth() / Math.max(1, engine.getRenderHeight());
@@ -60,6 +77,13 @@ export async function createGameScene(engine: Engine, canvas: HTMLCanvasElement,
 
   return {
     scene,
+    startPuzzle: (puzzle, options) => world.startPuzzle(puzzle, options),
+    startDemo: () => world.startDemo(),
+    setPaused: (paused) => world.setPaused(paused),
+    retire: () => world.retire(),
+    reset: () => world.performAction("reset"),
+    performAction: (action) => world.performAction(action),
+    getSnapshot: () => world.getSnapshot(),
     dispose: () => {
       world.dispose();
       scene.dispose();
