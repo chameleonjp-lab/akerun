@@ -2,7 +2,13 @@
  * Vault Tumbler Lab — 端末内だけで保持する報酬鑑定帳。
  * 個人情報は保存せず、解放済み収蔵品の識別子・回数・初回日時のみを記録する。
  */
-import type { RewardDefinition } from "./GameDefinitions";
+import {
+  isRewardUnlockedByRun,
+  REWARD_DEFINITIONS,
+  type PuzzleDefinition,
+  type RewardDefinition,
+  type RewardRunMetrics,
+} from "./GameDefinitions";
 
 export type ArchiveRecord = {
   readonly rewardId: string;
@@ -29,6 +35,16 @@ export class ArchiveLedger {
     return record;
   }
 
+  unlockForRun(puzzle: PuzzleDefinition, result: RewardRunMetrics) {
+    const newlyUnlocked: RewardDefinition[] = [];
+    REWARD_DEFINITIONS.forEach((reward) => {
+      if (!isRewardUnlockedByRun(reward, puzzle, result)) return;
+      if (!this.records.has(reward.id)) newlyUnlocked.push(reward);
+      this.unlock(reward);
+    });
+    return newlyUnlocked;
+  }
+
   get(rewardId: string) {
     return this.records.get(rewardId) ?? null;
   }
@@ -38,6 +54,7 @@ export class ArchiveLedger {
   }
 
   private restore() {
+    if (typeof window === "undefined") return;
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
@@ -54,6 +71,7 @@ export class ArchiveLedger {
   }
 
   private persist() {
+    if (typeof window === "undefined") return;
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(this.records.values())));
     } catch {
