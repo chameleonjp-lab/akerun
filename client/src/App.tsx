@@ -143,6 +143,11 @@ export default function App() {
   };
 
   const startOfficial = (nextProblem?: PuzzleDefinition) => {
+    if (!store.trainingComplete) {
+      setTutorialStep(1);
+      setScreen("tutorial");
+      return;
+    }
     const savedName = validateName();
     if (!savedName || !handle) return;
     const chosen = nextProblem ?? chooseOfficialProblem();
@@ -366,7 +371,9 @@ export default function App() {
       </div>
       <nav className="akerun-mobile-menu" aria-label="プレイ中メニュー">
         <Button onClick={() => handle?.performAction("notes")}>観察メモ</Button>
+        <Button onClick={() => handle?.performAction("note-capture")}>候補に追加</Button>
         <Button onClick={() => handle?.performAction("inspect")}>分解観察</Button>
+        <Button onClick={() => handle?.performAction("reset")}>リセット</Button>
         <Button onClick={() => openOverlay("help")}>ヘルプ</Button>
         <Button tone="danger" onClick={retire}>リタイア</Button>
       </nav>
@@ -511,20 +518,3 @@ export default function App() {
     if (screen === "tutorial") return renderTutorial();
     if (screen === "training") return renderTraining();
     if (screen === "play") return renderPlayHud();
-    if (screen === "pause") return renderPause();
-    if (screen === "result") return renderResult();
-    if (screen === "ranking") return renderRanking();
-    if (screen === "archive") return renderArchive();
-    if (screen === "settings") return renderSettings();
-    return renderHelp();
-  };
-
-  return (
-    <ErrorBoundary>
-      <div className={shellClass}>
-        <GameCanvas onReady={onReady} onSnapshot={onSnapshot} onVisibilityPause={onVisibilityPause} />
-        {renderOverlay()}
-      </div>
-    </ErrorBoundary>
-  );
-}
