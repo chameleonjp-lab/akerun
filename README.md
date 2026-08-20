@@ -31,7 +31,7 @@
 
 - 経過時間
 - 総ダイヤル移動量と基準との差
-- 失敗数
+- 問題ごとの基準失敗数との差
 - 偽ゲート接触数
 - 問題の難度補正
 
@@ -70,14 +70,16 @@ React側にはタイトル、名前入力、訓練、HUD、一時停止、結果
 - client/src/game/RankingClient.ts: 共通ランキングRPC接続
 - client/src/game/ArchiveLedger.ts: 収蔵品の端末内保存
 - client/src/game/ObservationLedger.ts: 観察メモの端末内保存
+- client/src/game/OfficialProblemBalance.ts: 既存機構で測定する20問のバランス基準
+- docs/official-problem-balance.md: 20問の問題バランス表
 
 ## 開発コマンド
 
-~~~bash
+```bash
 pnpm check
 pnpm test:rules
 pnpm build
-~~~
+```
 
 GitHub Actionsでも型検査、ルールテスト、本番ビルドを実行します。
 
