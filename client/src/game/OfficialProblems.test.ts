@@ -25,6 +25,9 @@ const solve = (problemId: string) => {
     expect(lock.stage).toBe(index + 1);
     expect(lock.locked[stage.wheel]).toBe(true);
   }
+  if (lock.phase === "settling") {
+    advance(lock, puzzle.vault.personality.settlingDelaySeconds + 0.04);
+  }
   expect(lock.phase).toBe("tension-ready");
   const tensionBand = puzzle.difficulty.tensionBand;
   lock.setTension((tensionBand[0] + tensionBand[1]) / 2);

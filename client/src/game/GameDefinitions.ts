@@ -41,6 +41,18 @@ export type RewardDefinition = {
   readonly observation: string;
 };
 
+export type VaultPersonalityId = "clear-contact" | "comparison" | "timing";
+
+export type VaultPersonality = {
+  readonly id: VaultPersonalityId;
+  readonly label: string;
+  readonly description: string;
+  readonly contactContrast: number;
+  readonly falseGateSimilarity: number;
+  readonly settlingDelaySeconds: number;
+  readonly speedSensitivity: number;
+};
+
 export type VaultDefinition = {
   readonly id: string;
   readonly title: string;
@@ -49,6 +61,7 @@ export type VaultDefinition = {
   readonly wheelCount: number;
   readonly preload: PackPreloadProfile;
   readonly boltLayout: DoorBoltLayout;
+  readonly personality: VaultPersonality;
 };
 
 export type PackPreloadProfile = {
@@ -112,6 +125,15 @@ export const VAULT_DEFINITIONS: readonly VaultDefinition[] = [
     wheelCount: 6,
     preload: { label: "CALIBRATED BRASS", baseResistance: 0.42, flyStickiness: 0.38, edgeHardness: 0.45 },
     boltLayout: { label: "TRIPLE VERTICAL", boltRatios: [0.18, 0.5, 0.82], carrierSide: "right", handleResistance: 0.42 },
+    personality: {
+      id: "clear-contact",
+      label: "CLEAR CONTACT",
+      description: "正規ゲート、ゲート縁、偽ゲートの反応差が大きく、最初の観察に向く金庫。",
+      contactContrast: 0.92,
+      falseGateSimilarity: 0.18,
+      settlingDelaySeconds: 0,
+      speedSensitivity: 0.18,
+    },
   },
   {
     id: "reliquary-nocturne",
@@ -121,6 +143,15 @@ export const VAULT_DEFINITIONS: readonly VaultDefinition[] = [
     wheelCount: 6,
     preload: { label: "DAMPED IRON", baseResistance: 0.72, flyStickiness: 0.64, edgeHardness: 0.76 },
     boltLayout: { label: "QUAD CROSSBAR", boltRatios: [0.12, 0.36, 0.64, 0.88], carrierSide: "left", handleResistance: 0.72 },
+    personality: {
+      id: "comparison",
+      label: "COMPARISON CONTACT",
+      description: "偽ゲートが正規ゲートに近い反応を返すため、候補を比べて判断する金庫。",
+      contactContrast: 0.58,
+      falseGateSimilarity: 0.82,
+      settlingDelaySeconds: 0,
+      speedSensitivity: 0.36,
+    },
   },
   {
     id: "chronometer-pelagic",
@@ -130,6 +161,15 @@ export const VAULT_DEFINITIONS: readonly VaultDefinition[] = [
     wheelCount: 6,
     preload: { label: "MARINE CHRONOMETER", baseResistance: 0.34, flyStickiness: 0.27, edgeHardness: 0.82 },
     boltLayout: { label: "OFFSET MARINE", boltRatios: [0.24, 0.43, 0.59, 0.76], carrierSide: "right", handleResistance: 0.3 },
+    personality: {
+      id: "timing",
+      label: "TIMING RESPONSE",
+      description: "回転速度と停止後のわずかな反応を観察して判断する精密金庫。",
+      contactContrast: 0.7,
+      falseGateSimilarity: 0.34,
+      settlingDelaySeconds: 0.16,
+      speedSensitivity: 0.82,
+    },
   },
 ];
 

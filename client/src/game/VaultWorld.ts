@@ -489,7 +489,9 @@ export class VaultWorld {
       || (input === "bolt" && (phase === "fence-seated" || phase === "bolt-test"))
       || (input === "handle" && (phase === "boltwork-ready" || phase === "handle-test"));
     if (!allowed) {
-      this.mechanism.lastMessage = "いま前に出ている部品だけが、機構へ安全に届きます。";
+      this.mechanism.lastMessage = phase === "settling"
+        ? "停止後の反応を確認してから、テンションを掛けてください。"
+        : "いま前に出ている部品だけが、機構へ安全に届きます。";
       return true;
     }
     this.activePhysicalInput = input;
@@ -539,6 +541,11 @@ export class VaultWorld {
 
   private focusPhysicalActuator() {
     const phase = this.mechanism.phase;
+    if (phase === "settling") {
+      this.keyboardFocus = "dial";
+      this.mechanism.lastMessage = "停止後の反応を確認してから、テンションへ進みます。";
+      return;
+    }
     if (phase === "tension-ready" || phase === "tension-test" || phase === "jammed") this.keyboardFocus = "tension";
     else if (phase === "fence-ready") this.keyboardFocus = "fence";
     else if (phase === "fence-seated" || phase === "bolt-test") this.keyboardFocus = "bolt";
@@ -730,22 +737,25 @@ export class VaultWorld {
     const previousActiveStage = this.mechanism.activeStage;
     const previousFaults = this.mechanism.faultCount;
     this.runStarted = true;
+    this.mechanism.setRotationSpeed(this.smoothedRotationSpeed);
     this.mechanism.rotate(appliedSteps);
     this.runSession?.recordDial(Math.abs(appliedSteps));
     if (this.mechanism.dial !== previousDial) {
       const preload = this.mechanism.puzzle.vault.preload;
-      this.audio.dialTick(appliedSteps > 0 ? "cw" : "ccw", this.smoothedRotationSpeed, preload.baseResistance);
+      const personality = this.mechanism.puzzle.vault.personality;
+      const audioSpeed = clamp(this.smoothedRotationSpeed * (0.72 + personality.speedSensitivity * 0.28), 0, 1);
+      this.audio.dialTick(appliedSteps > 0 ? "cw" : "ccw", audioSpeed, preload.baseResistance);
       const cueStage = this.mechanism.activeStage ?? previousActiveStage;
       const falseGate = this.mechanism.falseGateAtDial;
       if (falseGate) this.runSession?.recordFalseGate();
       if (falseGate) {
-        this.audio.falseGate(falseGate.depth, preload.edgeHardness);
+        this.audio.falseGate(this.mechanism.contactDepth, preload.edgeHardness);
         this.haptics.pulse("false-gate");
         this.setBlindSignal("EDGE");
       } else if (cueStage && this.mechanism.stage === previousStage) {
         const directDistance = Math.abs(this.mechanism.dial - cueStage.target);
         if (Math.min(directDistance, 100 - directDistance) <= 1 && this.mechanism.currentPass === previousPass) {
-          this.audio.gateEdge(preload.edgeHardness);
+          this.audio.gateEdge(preload.edgeHardness * (0.7 + personality.contactContrast * 0.3));
           this.haptics.pulse("edge");
           this.setBlindSignal("EDGE");
         } else {
@@ -808,6 +818,9 @@ export class VaultWorld {
         this.haptics.pulse("tension");
         this.setBlindSignal("TENSION");
       }
+      if (phase === "settling") {
+        this.onStatusChange?.(this.mechanism.lastMessage);
+      }
       if (phase === "fence-seated") {
         this.audio.fenceSeat();
         this.haptics.pulse("seat");
@@ -824,7 +837,7 @@ export class VaultWorld {
         this.setBlindSignal("JAM");
       }
       if (previous === "tension-test" && phase === "tension-ready") this.audio.tensionStop();
-      if (["tension-ready", "fence-ready", "fence-seated", "bolt-test", "boltwork-ready", "handle-test", "jammed", "open"].includes(phase)) this.onStatusChange?.(this.mechanism.lastMessage);
+      if (["settling", "tension-ready", "fence-ready", "fence-seated", "bolt-test", "boltwork-ready", "handle-test", "jammed", "open"].includes(phase)) this.onStatusChange?.(this.mechanism.lastMessage);
     }
   }
 
@@ -978,7 +991,7 @@ export class VaultWorld {
       ctx.fillText("TRAINING CONTRACT / FALSE GATE PRACTICUM", x + markSize + unit * 1.45, y + markSize * 1.43);
     }
 
-    const status = this.mechanism.opened ? "OPEN" : this.mechanism.phase === "handle-test" ? "HANDLE TEST" : this.mechanism.phase === "boltwork-ready" ? "BOLTWORK READY" : this.mechanism.phase === "bolt-test" ? "BOLT TEST" : this.mechanism.phase === "fence-seated" ? "FENCE SEATED" : this.mechanism.phase === "fence-ready" ? "FENCE READY" : this.mechanism.phase.startsWith("tension") ? "TENSION" : this.mechanism.phase === "jammed" ? "JAMMED" : "LOCKED";
+    const status = this.mechanism.opened ? "OPEN" : this.mechanism.phase === "handle-test" ? "HANDLE TEST" : this.mechanism.phase === "boltwork-ready" ? "BOLTWORK READY" : this.mechanism.phase === "bolt-test" ? "BOLT TEST" : this.mechanism.phase === "fence-seated" ? "FENCE SEATED" : this.mechanism.phase === "fence-ready" ? "FENCE READY" : this.mechanism.phase === "settling" ? "SETTLING" : this.mechanism.phase.startsWith("tension") ? "TENSION" : this.mechanism.phase === "jammed" ? "JAMMED" : "LOCKED";
     const color = this.mechanism.opened || this.mechanism.isReady || this.mechanism.gatesAligned ? "#4de0c0" : this.mechanism.phase === "jammed" ? "#d39566" : "#bd9b53";
     ctx.textAlign = "right";
     ctx.fillStyle = color;
@@ -1994,6 +2007,7 @@ export class VaultWorld {
     if (this.mechanism.opened) return `DISCOVER / ${this.mechanism.puzzle.reward.title}`;
     if (this.isBlindMode) return this.audio.isMuted || this.blindAssist ? "USE V FOR VISUAL SIGNALS" : "LISTEN FOR IDLE, EDGE, AND PICKUP";
     if (this.mechanism.phase === "dial") return this.mechanism.stage === 0 ? "OBSERVE THE FIRST WHEEL" : "FOLLOW THE ACTIVE GATE";
+    if (this.mechanism.phase === "settling") return "STOP AND OBSERVE THE RESPONSE";
     if (this.mechanism.phase === "tension-ready" || this.mechanism.phase === "tension-test") return "HOLD THE RESISTANCE BAND";
     if (this.mechanism.phase === "fence-ready") return "SEAT THE FENCE SLOWLY";
     if (this.mechanism.phase === "fence-seated" || this.mechanism.phase === "bolt-test") return "TEST THE BOLT TRAVEL";

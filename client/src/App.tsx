@@ -24,6 +24,7 @@ const formatTime = (seconds: number) => {
 const phaseLabel = (phase: string) => {
   const labels: Record<string, string> = {
     dial: "ダイヤル観察",
+    settling: "停止後の反応を観察",
     "tension-ready": "テンション待機",
     "tension-test": "抵抗を保持",
     "fence-ready": "フェンス確認",
