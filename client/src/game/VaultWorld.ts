@@ -3,13 +3,13 @@
  * 実機風の鋼板・切削真鍮・ロック機構アセットを用い、重い金庫扉の開錠演出まで同一キャンバスへ描画する。
  */
 import type { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
-import { createFalseGateTrainingPuzzle, createPuzzleFromSeed, createReferencePuzzle, DIFFICULTY_PROFILES, REWARD_DEFINITIONS, type DifficultyId, type RewardDefinition, type TurnDirection } from "./GameDefinitions";
+import { createFalseGateTrainingPuzzle, createPuzzleFromSeed, createReferencePuzzle, DIFFICULTY_PROFILES, REWARD_DEFINITIONS, type DifficultyId, type PuzzleDefinition, type RewardDefinition, type TurnDirection } from "./GameDefinitions";
 import { LockMechanism } from "./LockMechanism";
 import { AudioFeedback } from "./AudioFeedback";
 import { HapticFeedback } from "./HapticFeedback";
 import { ArchiveLedger } from "./ArchiveLedger";
-import { DailyScorebook } from "./DailyScorebook";
 import { ObservationLedger, type ObservationCategory } from "./ObservationLedger";
+import { RunSession, type RunResult } from "./RunSession";
 
 const ASSETS = {
   reference: "/manus-storage/vault-tumbler-reference_35720048.png",
@@ -26,6 +26,30 @@ const ASSETS = {
 } as const;
 
 type Rect = { x: number; y: number; width: number; height: number };
+
+export type GameSnapshot = {
+  readonly status: "idle" | "active" | "paused" | "opened" | "retired";
+  readonly problemId: string;
+  readonly problemVersion: string;
+  readonly vaultTitle: string;
+  readonly rewardTitle: string;
+  readonly phase: string;
+  readonly message: string;
+  readonly elapsedTime: number;
+  readonly faultCount: number;
+  readonly totalDialSteps: number;
+  readonly excessDialSteps: number;
+  readonly falseGateContacts: number;
+  readonly observationAccuracy: number;
+  readonly score: number;
+  readonly opened: boolean;
+  readonly wheelCount: number;
+  readonly activeWheel: number | null;
+  readonly stage: number;
+  readonly stageCount: number;
+  readonly difficulty: string;
+  readonly runResult: RunResult | null;
+};
 type ScreenPoint = { x: number; y: number };
 type ScreenLayout = {
   width: number;
@@ -82,6 +106,11 @@ export class VaultWorld {
   private puzzleSeed = 7201855;
   private runElapsed = 0;
   private runStarted = false;
+  private sessionActive = false;
+  private sessionPaused = false;
+  private retired = false;
+  private runSession: RunSession | null = null;
+  private lastSnapshotAt = 0;
   private resultSummary: { elapsed: number; faults: number; seed: number; reward: string } | null = null;
   private highContrast = false;
   private reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
@@ -96,10 +125,6 @@ export class VaultWorld {
   private notesOpen = false;
   private inspectionOpen = false;
   private inspectionStep = 0;
-  private readonly scorebook = new DailyScorebook();
-  private scorebookOpen = false;
-  private isDailyContract = false;
-  private lastDailyBest: { elapsed: number; faults: number; improved: boolean } | null = null;
   private trainingContract = false;
 
   constructor(
@@ -116,22 +141,20 @@ export class VaultWorld {
     this.archiveOpen = params.has("archive");
     this.notesOpen = params.has("notes");
     this.inspectionOpen = params.has("inspect");
-    this.scorebookOpen = params.has("score");
-    this.isDailyContract = params.has("daily");
     this.trainingContract = params.get("training") === "false-gate";
     const requestedSeed = Number(params.get("seed"));
-    if (this.isDailyContract) {
-      const now = new Date();
-      this.puzzleSeed = now.getUTCFullYear() * 10000 + (now.getUTCMonth() + 1) * 100 + now.getUTCDate();
-    } else if (Number.isFinite(requestedSeed) && requestedSeed > 0) {
-      this.puzzleSeed = Math.floor(requestedSeed);
-    }
+    if (Number.isFinite(requestedSeed) && requestedSeed > 0) this.puzzleSeed = Math.floor(requestedSeed);
     this.mechanism = this.trainingContract
       ? new LockMechanism(createFalseGateTrainingPuzzle())
-      : (params.has("seed") || this.isDailyContract)
+      : params.has("seed")
         ? new LockMechanism(createPuzzleFromSeed(this.puzzleSeed, this.difficulty))
         : new LockMechanism(createReferencePuzzle(this.difficulty));
     if (this.trainingContract) this.mechanism.lastMessage = "訓練契約：浅い偽ゲートと深い正規ゲートの、音・反発・接触深さを比べてください。";
+    if (this.demoMode || params.has("seed") || this.trainingContract) {
+      this.sessionActive = true;
+      this.runStarted = true;
+      this.runSession = new RunSession(this.mechanism.puzzle);
+    }
     this.haptics.setReducedMotion(this.reducedMotion);
     this.restoreTelemetry();
     Object.entries(ASSETS).forEach(([key, url]) => this.loadImage(key, url));
@@ -140,16 +163,121 @@ export class VaultWorld {
   }
 
   update(delta: number) {
+    if (this.sessionPaused) {
+      this.draw();
+      this.emitSnapshot();
+      return;
+    }
     const gameDelta = this.demoMode ? delta * this.demoSpeed : delta;
     const wasOpened = this.mechanism.opened;
     this.mechanism.tick(gameDelta);
     if (this.demoMode) this.advanceDemo(gameDelta);
     if (!wasOpened && this.mechanism.opened) this.completeUnlock();
     this.syncPhysicalFeedback();
-    if ((this.runStarted || this.demoMode) && !this.mechanism.opened) this.runElapsed += gameDelta;
+    if (this.sessionActive && !this.mechanism.opened) {
+      this.runElapsed += gameDelta;
+      this.runSession?.advance(gameDelta);
+    }
     const targetOpening = this.mechanism.opened ? 1 : 0;
-    this.openingProgress = this.reducedMotion ? targetOpening : this.openingProgress + (targetOpening - this.openingProgress) * Math.min(1, delta * 1.3);
+    this.openingProgress = this.reducedMotion
+      ? targetOpening
+      : this.openingProgress + (targetOpening - this.openingProgress) * Math.min(1, delta * 1.3);
     this.draw();
+    this.emitSnapshot();
+  }
+
+  startPuzzle(puzzle: PuzzleDefinition, options?: { training?: boolean; postDial?: boolean }) {
+    this.demoMode = false;
+    this.mechanism = new LockMechanism(puzzle);
+    this.trainingContract = Boolean(options?.training);
+    this.sessionActive = true;
+    this.sessionPaused = false;
+    this.retired = false;
+    this.runStarted = true;
+    this.runElapsed = 0;
+    this.runSession = new RunSession(puzzle);
+    this.resultSummary = null;
+    this.openingProgress = 0;
+    this.lastPhysicalPhase = this.mechanism.phase;
+    this.tutorialVisible = true;
+    this.archiveOpen = false;
+    this.notesOpen = false;
+    this.inspectionOpen = false;
+    this.blindAssist = false;
+    this.blindSignal = null;
+    if (options?.postDial) this.mechanism.preparePostDialTraining();
+    this.mechanism.lastMessage = options?.postDial
+      ? "ゲートは整列済みです。テンションから順番に操作してください。"
+      : "問題が固定されました。接触の反応を観察して開錠してください。";
+    this.emitSnapshot();
+  }
+
+  startDemo() {
+    this.handleAction("demo");
+  }
+
+  setPaused(paused: boolean) {
+    if (!this.sessionActive || this.mechanism.opened) return;
+    this.sessionPaused = paused;
+    if (paused) {
+      this.releasePhysicalInput();
+      this.mechanism.lastMessage = "一時停止中です。再開すると同じ問題の続きから進めます。";
+    } else {
+      this.mechanism.lastMessage = "プレイを再開しました。前の反応を手掛かりに続けてください。";
+    }
+    this.emitSnapshot();
+  }
+
+  retire() {
+    if (!this.sessionActive || this.mechanism.opened) return;
+    this.releasePhysicalInput();
+    this.sessionActive = false;
+    this.sessionPaused = false;
+    this.runStarted = false;
+    this.retired = true;
+    this.mechanism.lastMessage = "このプレイはリタイアしました。ランキングへは送信しません。";
+    this.emitSnapshot();
+  }
+
+  performAction(action: string) {
+    this.handleAction(action);
+    this.emitSnapshot();
+  }
+
+  getSnapshot(): GameSnapshot {
+    const metrics = this.runSession?.snapshot;
+    const result = this.runSession?.finalResult ?? null;
+    return {
+      status: this.retired ? "retired" : this.mechanism.opened ? "opened" : this.sessionPaused ? "paused" : this.sessionActive ? "active" : "idle",
+      problemId: this.mechanism.puzzle.problemId ?? this.mechanism.puzzle.id,
+      problemVersion: this.mechanism.puzzle.problemVersion ?? "DEV",
+      vaultTitle: this.mechanism.puzzle.vault.title,
+      rewardTitle: this.mechanism.puzzle.reward.title,
+      phase: this.mechanism.phase,
+      message: this.mechanism.lastMessage,
+      elapsedTime: metrics?.elapsedTime ?? this.runElapsed,
+      faultCount: metrics?.faultCount ?? this.mechanism.faultCount,
+      totalDialSteps: metrics?.totalDialSteps ?? 0,
+      excessDialSteps: metrics?.excessDialSteps ?? 0,
+      falseGateContacts: metrics?.falseGateContacts ?? 0,
+      observationAccuracy: metrics?.observationAccuracy ?? 100,
+      score: metrics?.score ?? 0,
+      opened: this.mechanism.opened,
+      wheelCount: this.mechanism.puzzle.vault.wheelCount,
+      activeWheel: this.mechanism.activeStage?.wheel ?? null,
+      stage: this.mechanism.stage,
+      stageCount: this.mechanism.puzzle.stages.length,
+      difficulty: this.mechanism.puzzle.problemTier ?? this.mechanism.puzzle.difficulty.label,
+      runResult: result,
+    };
+  }
+
+  private emitSnapshot() {
+    if (!this.onSnapshotChange) return;
+    const now = performance.now();
+    if (now - this.lastSnapshotAt < 80 && !this.mechanism.opened) return;
+    this.lastSnapshotAt = now;
+    this.onSnapshotChange(this.getSnapshot());
   }
 
   dispose() {
@@ -479,6 +607,9 @@ export class VaultWorld {
     }
     if (action === "demo") {
       this.mechanism.reset();
+      this.sessionActive = false;
+      this.sessionPaused = false;
+      this.runSession = new RunSession(this.mechanism.puzzle);
       this.demoMode = true;
       this.demoElapsed = 0;
       this.runElapsed = 0;
@@ -492,7 +623,6 @@ export class VaultWorld {
     if (action === "guide") this.tutorialVisible = !this.tutorialVisible;
     if (action === "contract") this.startNewContract();
     if (action === "training") this.startFalseGateTraining();
-    if (action === "daily") this.startDailyContract();
     if (action === "contrast") this.highContrast = !this.highContrast;
     if (action === "motion") {
       this.reducedMotion = !this.reducedMotion;
@@ -505,7 +635,6 @@ export class VaultWorld {
     if (action === "inspect") this.inspectionOpen = !this.inspectionOpen;
     if (action === "inspect-prev") this.inspectionStep = (this.inspectionStep + INSPECTION_STEPS.length - 1) % INSPECTION_STEPS.length;
     if (action === "inspect-next") this.inspectionStep = (this.inspectionStep + 1) % INSPECTION_STEPS.length;
-    if (action === "scorebook") this.scorebookOpen = !this.scorebookOpen;
   }
 
   private setDifficulty(difficulty: DifficultyId) {
@@ -518,9 +647,7 @@ export class VaultWorld {
     this.runElapsed = 0;
     this.runStarted = false;
     this.resultSummary = null;
-    this.isDailyContract = false;
     this.trainingContract = false;
-    this.lastDailyBest = null;
     this.blindAssist = false;
     this.blindSignal = null;
     this.mechanism.lastMessage = `${DIFFICULTY_PROFILES[difficulty].label}に切替。新しい保管契約を解析してください。`;
@@ -535,43 +662,21 @@ export class VaultWorld {
     this.runStarted = false;
     this.resultSummary = null;
     this.tutorialVisible = true;
-    this.isDailyContract = false;
     this.trainingContract = false;
-    this.lastDailyBest = null;
     this.telemetry.contracts += 1;
     this.persistTelemetry();
     this.mechanism.lastMessage = `新しい保管契約 #${this.puzzleSeed.toString(36).toUpperCase()}。まず第1ホイールを観察してください。`;
   }
 
-  private startDailyContract() {
-    this.demoMode = false;
-    const now = new Date();
-    this.puzzleSeed = now.getUTCFullYear() * 10000 + (now.getUTCMonth() + 1) * 100 + now.getUTCDate();
-    this.mechanism = new LockMechanism(createPuzzleFromSeed(this.puzzleSeed, this.difficulty));
-    this.openingProgress = 0;
-    this.runElapsed = 0;
-    this.runStarted = false;
-    this.resultSummary = null;
-    this.tutorialVisible = true;
-    this.isDailyContract = true;
-    this.trainingContract = false;
-    this.lastDailyBest = null;
-    this.telemetry.contracts += 1;
-    this.persistTelemetry();
-    this.mechanism.lastMessage = `日替わり契約 #${this.puzzleSeed}。本日の収蔵品を観察して開錠してください。`;
-  }
-
   private startFalseGateTraining() {
     this.demoMode = false;
     this.trainingContract = true;
-    this.isDailyContract = false;
     this.mechanism = new LockMechanism(createFalseGateTrainingPuzzle());
     this.openingProgress = 0;
     this.runElapsed = 0;
     this.runStarted = false;
     this.resultSummary = null;
     this.tutorialVisible = true;
-    this.lastDailyBest = null;
     this.mechanism.lastMessage = "訓練契約：橙の浅い切欠きはフェンスを座らせません。深い接触と短い音の減衰を比べてください。";
   }
 
@@ -643,11 +748,13 @@ export class VaultWorld {
     const previousFaults = this.mechanism.faultCount;
     this.runStarted = true;
     this.mechanism.rotate(appliedSteps);
+    this.runSession?.recordDial(Math.abs(appliedSteps));
     if (this.mechanism.dial !== previousDial) {
       const preload = this.mechanism.puzzle.vault.preload;
       this.audio.dialTick(appliedSteps > 0 ? "cw" : "ccw", this.smoothedRotationSpeed, preload.baseResistance);
       const cueStage = this.mechanism.activeStage ?? previousActiveStage;
       const falseGate = this.mechanism.falseGateAtDial;
+      if (falseGate) this.runSession?.recordFalseGate();
       if (falseGate) {
         this.audio.falseGate(falseGate.depth, preload.edgeHardness);
         this.haptics.pulse("false-gate");
@@ -684,20 +791,28 @@ export class VaultWorld {
   private completeUnlock() {
     this.audio.unlockRelease();
     this.haptics.pulse("unlock");
+    const result = this.runSession?.finish({
+      elapsedTime: this.runElapsed,
+      faultCount: this.mechanism.faultCount,
+    }) ?? null;
     this.resultSummary = {
       elapsed: this.runElapsed,
       faults: this.mechanism.faultCount,
       seed: this.mechanism.puzzle.seed,
       reward: this.mechanism.puzzle.reward.title,
     };
-    this.telemetry.completions += 1;
-    this.telemetry.lastElapsed = this.runElapsed;
-    this.persistTelemetry();
-    this.archive.unlock(this.mechanism.puzzle.reward);
-    if (this.isDailyContract) {
-      const result = this.scorebook.record(this.mechanism.puzzle.seed, this.runElapsed, this.mechanism.faultCount);
-      this.lastDailyBest = { elapsed: result.best.elapsed, faults: result.best.faults, improved: result.improved };
+    const recordable = this.sessionActive && !this.demoMode && !this.trainingContract;
+    if (recordable) {
+      this.telemetry.completions += 1;
+      this.telemetry.lastElapsed = this.runElapsed;
+      this.persistTelemetry();
+      this.archive.unlock(this.mechanism.puzzle.reward);
     }
+    this.sessionActive = false;
+    this.runStarted = false;
+    this.sessionPaused = false;
+    this.retired = false;
+    if (result) this.onStatusChange?.("開錠しました。結果を確認してください。");
   }
 
   private syncPhysicalFeedback() {
@@ -769,10 +884,6 @@ export class VaultWorld {
       if (this.archiveOpen) {
         this.hitboxes.clear();
         this.drawArchiveOverlay(layout);
-      }
-      if (this.scorebookOpen && !this.archiveOpen) {
-        this.hitboxes.clear();
-        this.drawScorebookOverlay(layout);
       }
       if (this.notesOpen) {
         this.hitboxes.clear();
@@ -876,7 +987,7 @@ export class VaultWorld {
 
     ctx.fillStyle = "#7c9397";
     ctx.font = `500 ${unit * 0.54}px "DM Mono", monospace`;
-    ctx.fillText("1 OBSERVE / 2 STANDARD / 3 EXPERT / 4 BLIND / Q TRAIN / J NOTE / O NOTES / V ASSIST / S SOUND / K HAPTIC / N NEW / T DAILY / B BEST / L ARCHIVE / I INSPECT / H CONTRAST / M MOTION / P PRECISE", x + markSize + unit * 1.45, y + markSize * 1.13);
+    ctx.fillText("1 OBSERVE / 2 STANDARD / 3 EXPERT / 4 BLIND / Q TRAIN / J NOTE / O NOTES / V ASSIST / S SOUND / K HAPTIC / N NEW / L ARCHIVE / I INSPECT / H CONTRAST / M MOTION / P PRECISE", x + markSize + unit * 1.45, y + markSize * 1.13);
 
     if (this.trainingContract) {
       ctx.fillStyle = "#d39566";
@@ -1742,61 +1853,6 @@ export class VaultWorld {
     ctx.restore();
   }
 
-  private drawScorebookOverlay(layout: ScreenLayout) {
-    const ctx = this.context;
-    const unit = Math.max(10, Math.min(layout.width, layout.height) / 85);
-    const panel: Rect = {
-      x: layout.width * (layout.compact ? 0.08 : 0.2),
-      y: layout.height * (layout.compact ? 0.16 : 0.18),
-      width: layout.width * (layout.compact ? 0.84 : 0.6),
-      height: layout.height * (layout.compact ? 0.66 : 0.6),
-    };
-    ctx.save();
-    ctx.fillStyle = "rgba(1, 5, 7, 0.84)";
-    ctx.fillRect(0, 0, layout.width, layout.height);
-    this.drawFrame(panel, "rgba(7, 17, 21, 0.98)", "rgba(77, 224, 192, 0.72)");
-    ctx.fillStyle = "#e8dfc4";
-    ctx.font = `700 ${unit * 1.35}px "DM Mono", monospace`;
-    ctx.fillText("DAILY CONTRACT / 自己ベスト", panel.x + unit * 1.4, panel.y + unit * 2.1);
-    ctx.fillStyle = "#7c9397";
-    ctx.font = `500 ${unit * 0.7}px "Noto Sans JP", sans-serif`;
-    ctx.fillText("同じ日替わりseedに対する最短時間、同タイム時は最少失敗数を記録します。", panel.x + unit * 1.4, panel.y + unit * 3.2);
-    this.drawControlButton("scorebook", { x: panel.x + panel.width - unit * 9.4, y: panel.y + unit * 1.0, width: unit * 7.9, height: unit * 2.15 }, "CLOSE / B", "#c9a963");
-
-    const todaySeed = new Date();
-    const seed = todaySeed.getUTCFullYear() * 10000 + (todaySeed.getUTCMonth() + 1) * 100 + todaySeed.getUTCDate();
-    const today = this.scorebook.get(seed);
-    const rows = today ? [today, ...this.scorebook.recent.filter((item) => item.seed !== seed)] : this.scorebook.recent;
-    const rowTop = panel.y + unit * 5.0;
-    const rowHeight = Math.max(unit * 3.4, (panel.height - unit * 6.4) / Math.max(1, rows.length));
-    if (!rows.length) {
-      ctx.fillStyle = "#a9b8b5";
-      ctx.font = `600 ${unit * 0.84}px "Noto Sans JP", sans-serif`;
-      ctx.fillText("まだ記録がありません。TキーまたはDAILYで本日の金庫へ挑戦してください。", panel.x + unit * 1.4, rowTop + unit * 1.8);
-    }
-    rows.forEach((record, index) => {
-      const y = rowTop + index * rowHeight;
-      const isToday = record.seed === seed;
-      this.roundRect(panel.x + unit * 1.1, y, panel.width - unit * 2.2, rowHeight - unit * 0.5, unit * 0.3);
-      ctx.fillStyle = isToday ? "rgba(20, 72, 67, 0.7)" : "rgba(15, 26, 29, 0.86)";
-      ctx.fill();
-      ctx.strokeStyle = isToday ? "#4de0c0" : "rgba(202, 169, 99, 0.38)";
-      ctx.stroke();
-      ctx.fillStyle = isToday ? "#74f2da" : "#e8dfc4";
-      ctx.font = `700 ${unit * 0.8}px "DM Mono", monospace`;
-      ctx.fillText(`${isToday ? "TODAY" : "ARCHIVE"} / ${record.seed}`, panel.x + unit * 1.9, y + unit * 1.3);
-      ctx.fillStyle = "#c7d3cf";
-      ctx.font = `600 ${unit * 0.72}px "DM Mono", monospace`;
-      ctx.fillText(`BEST ${this.formatElapsed(record.elapsed)}  /  FAULT ${record.faults}`, panel.x + unit * 1.9, y + unit * 2.45);
-    });
-    if (this.lastDailyBest) {
-      ctx.fillStyle = this.lastDailyBest.improved ? "#4de0c0" : "#c9a963";
-      ctx.font = `600 ${unit * 0.65}px "Noto Sans JP", sans-serif`;
-      ctx.fillText(this.lastDailyBest.improved ? "本日の自己ベストを更新しました。" : "本日の記録を保存しました。", panel.x + unit * 1.4, panel.y + panel.height - unit * 1.2);
-    }
-    ctx.restore();
-  }
-
   private drawObservationOverlay(layout: ScreenLayout) {
     const ctx = this.context;
     const unit = Math.max(10, Math.min(layout.width, layout.height) / 85);
@@ -2016,6 +2072,7 @@ export class VaultWorld {
   private registerFaultTelemetry(previousFaults: number) {
     this.audio.safetyFault();
     this.telemetry.faults += this.mechanism.faultCount - previousFaults;
+    this.runSession?.recordFault(this.mechanism.faultCount - previousFaults);
     this.persistTelemetry();
   }
 
