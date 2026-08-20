@@ -336,6 +336,7 @@ export default function App() {
         {pendingCount ? (
           <div className="akerun-pending-box">
             <p>未送信のランキング記録が {pendingCount} 件あります。</p>
+            <p className="akerun-submit-status">{submitStatus}</p>
             <Button onClick={() => void retryPending()}>記録を再送する</Button>
           </div>
         ) : null}
