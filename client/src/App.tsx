@@ -5,6 +5,7 @@ import type { GameHandle } from "./game/scene";
 import type { GameSnapshot } from "./game/VaultWorld";
 import {
   chooseOfficialProblem,
+  createOfficialPuzzle,
   createTrainingPuzzle,
   REWARD_DEFINITIONS,
   type PuzzleDefinition,
@@ -106,6 +107,7 @@ export default function App() {
         }
         setScreen("tutorial");
       } else {
+        store.clearActiveRun();
         setScreen("result");
       }
     }, 900);
@@ -123,6 +125,7 @@ export default function App() {
       .then(() => {
         setSubmitStatus("ランキングへ送信しました。");
         store.recordBest(result);
+        store.removePendingForResult(result);
       })
       .catch(() => {
         store.enqueueRanking(playerName, result);
@@ -148,9 +151,20 @@ export default function App() {
       setScreen("tutorial");
       return;
     }
-    const savedName = validateName();
+    const activeRun = nextProblem ? null : store.getActiveRun();
+    const savedName = activeRun?.playerName ? store.savePlayerName(activeRun.playerName) : validateName();
     if (!savedName || !handle) return;
-    const chosen = nextProblem ?? chooseOfficialProblem();
+    let resumedProblem: PuzzleDefinition | null = null;
+    if (activeRun) {
+      try {
+        const candidate = createOfficialPuzzle(activeRun.problemId);
+        if (candidate.problemVersion === activeRun.problemVersion) resumedProblem = candidate;
+      } catch {
+        store.clearActiveRun();
+      }
+    }
+    const chosen = nextProblem ?? resumedProblem ?? chooseOfficialProblem();
+    store.saveActiveRun(chosen.problemId ?? chosen.id, chosen.problemVersion ?? "V1", savedName);
     setProblem(chosen);
     setMode("official");
     setSubmitStatus("未送信");
@@ -203,6 +217,7 @@ export default function App() {
 
   const retire = () => {
     handle?.retire();
+    store.clearActiveRun();
     if (handle) setSnapshot(handle.getSnapshot());
     setMode("retired");
     setScreen("result");
@@ -258,7 +273,30 @@ export default function App() {
     void loadRanking();
   };
 
+  const retryPending = async () => {
+    const pending = store.getPendingRankings();
+    if (!pending.length) {
+      setSubmitStatus("再送する記録はありません。");
+      return;
+    }
+    setSubmitStatus("未送信記録を送信中…");
+    let sent = 0;
+    for (const item of pending) {
+      try {
+        await rankingClient.submit(item.playerName, item.result);
+        store.removePending(item.id);
+        store.recordBest(item.result);
+        sent += 1;
+      } catch {
+        // 残った記録は次回の再送対象として維持する。
+      }
+    }
+    setSubmitStatus(sent === pending.length ? "未送信記録をすべて送信しました。" : `${sent}/${pending.length}件を送信しました。`);
+  };
+
   const archiveIds = store.getArchiveIds();
+  const pendingCount = store.getPendingRankings().length;
+  const activeRun = store.getActiveRun();
   const best = snapshot?.runResult
     ? store.getBest(snapshot.runResult.problemId, snapshot.runResult.problemVersion)
     : null;
@@ -288,11 +326,18 @@ export default function App() {
           />
         </label>
         {nameError ? <p className="akerun-error">{nameError}</p> : null}
+        {activeRun ? <p className="akerun-small">進行中の {activeRun.problemId} を保持しています。ゲーム開始で同じ問題を再開します。</p> : null}
         <div className="akerun-title-actions">
           <Button tone="primary" onClick={() => startOfficial()} disabled={!handle}>ゲーム開始</Button>
           <Button onClick={() => { setTutorialStep(1); setScreen("tutorial"); }}>初めて遊ぶ</Button>
           <Button onClick={startDemo} disabled={!handle}>お手本を見る</Button>
         </div>
+        {pendingCount ? (
+          <div className="akerun-pending-box">
+            <p>未送信のランキング記録が {pendingCount} 件あります。</p>
+            <Button onClick={() => void retryPending()}>記録を再送する</Button>
+          </div>
+        ) : null}
         <div className="akerun-link-row">
           <Button onClick={openRanking}>ランキング</Button>
           <Button onClick={() => setScreen("archive")}>収蔵品</Button>
@@ -513,8 +558,3 @@ export default function App() {
     </div>
   );
 
-  const renderOverlay = () => {
-    if (screen === "title") return renderTitle();
-    if (screen === "tutorial") return renderTutorial();
-    if (screen === "training") return renderTraining();
-    if (screen === "play") return renderPlayHud();
