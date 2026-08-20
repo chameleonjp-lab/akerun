@@ -6,6 +6,15 @@
 export type TurnDirection = "cw" | "ccw";
 export type DifficultyId = "observe" | "standard" | "expert" | "blind";
 export type ProblemTier = "beginner" | "standard" | "advanced";
+export type RewardRarity = "standard" | "rare" | "special";
+
+export type RewardUnlockCondition =
+  | { readonly type: "vault"; readonly vaultId: string }
+  | { readonly type: "problem"; readonly problemId: string }
+  | { readonly type: "faults-at-most"; readonly count: number }
+  | { readonly type: "excess-dial-at-most"; readonly steps: number }
+  | { readonly type: "accuracy-at-least"; readonly percent: number }
+  | { readonly type: "score-at-least"; readonly score: number };
 
 export type TumblerStage = {
   readonly target: number;
@@ -35,6 +44,9 @@ export type RewardDefinition = {
   readonly id: string;
   readonly title: string;
   readonly description: string;
+  readonly rarity: RewardRarity;
+  readonly conditionLabel: string;
+  readonly unlockConditions: readonly RewardUnlockCondition[];
   readonly catalogNumber: string;
   readonly material: string;
   readonly provenance: string;
@@ -236,37 +248,160 @@ export const DIFFICULTY_PROFILES: Readonly<Record<DifficultyId, DifficultyProfil
   },
 };
 
-export const DEFAULT_REWARD: RewardDefinition = {
-  id: "aurora-cache",
-  title: "AURORA CACHE",
-  description: "金貨、宝石、刻印入りの懐中時計が収められた保管トレイ。",
-  catalogNumber: "VTL-AU-1903",
-  material: "金、黄銅、赤紫のガーネット、黒漆",
-  provenance: "北方の時計工房から、1911年に修復室へ移管された私設収蔵品。",
-  observation: "懐中時計の裏蓋には、6枚のホイールと同じ間隔で浅い刻印が残る。",
-};
+const standardReward = (
+  id: string,
+  title: string,
+  description: string,
+  catalogNumber: string,
+  material: string,
+  provenance: string,
+  observation: string,
+  conditionLabel: string,
+  unlockConditions: readonly RewardUnlockCondition[],
+): RewardDefinition => ({
+  id,
+  title,
+  description,
+  rarity: "standard",
+  conditionLabel,
+  unlockConditions,
+  catalogNumber,
+  material,
+  provenance,
+  observation,
+});
+
+const rareReward = (
+  id: string,
+  title: string,
+  description: string,
+  catalogNumber: string,
+  material: string,
+  provenance: string,
+  observation: string,
+  conditionLabel: string,
+  unlockConditions: readonly RewardUnlockCondition[],
+): RewardDefinition => ({
+  id,
+  title,
+  description,
+  rarity: "rare",
+  conditionLabel,
+  unlockConditions,
+  catalogNumber,
+  material,
+  provenance,
+  observation,
+});
+
+const specialReward = (
+  id: string,
+  title: string,
+  description: string,
+  catalogNumber: string,
+  material: string,
+  provenance: string,
+  observation: string,
+  conditionLabel: string,
+  unlockConditions: readonly RewardUnlockCondition[],
+): RewardDefinition => ({
+  id,
+  title,
+  description,
+  rarity: "special",
+  conditionLabel,
+  unlockConditions,
+  catalogNumber,
+  material,
+  provenance,
+  observation,
+});
+
+export const DEFAULT_REWARD: RewardDefinition = standardReward(
+  "aurora-cache",
+  "AURORA CACHE",
+  "金貨、宝石、刻印入りの懐中時計が収められた保管トレイ。",
+  "VTL-AU-1903",
+  "金、黄銅、赤紫のガーネット、黒漆",
+  "北方の時計工房から、1911年に修復室へ移管された私設収蔵品。",
+  "懐中時計の裏蓋には、6枚のホイールと同じ間隔で浅い刻印が残る。",
+  "Auroraを開錠する",
+  [{ type: "vault", vaultId: "museum-aurora" }],
+);
 
 export const REWARD_DEFINITIONS: readonly RewardDefinition[] = [
   DEFAULT_REWARD,
-  {
-    id: "nocturne-reliquary",
-    title: "NOCTURNE RELIQUARY",
-    description: "青緑の宝石、古い航海儀器、蝋封された文書を収めた黒鉄の函。",
-    catalogNumber: "VTL-NR-1876",
-    material: "黒染め鋼、真鍮、緑柱石、蜜蝋",
-    provenance: "夜間航海用の測量具として港湾観測所に保管され、廃止後に封印された。",
-    observation: "緑柱石の裏にある真鍮円盤は、ゲートの窓幅を測る簡易ゲージとして機能する。",
-  },
-  {
-    id: "pelagic-chronometer",
-    title: "PELAGIC CHRONOMETER",
-    description: "サファイアの航海時計、銀鍵、封緘文書を備えた海洋保管物。",
-    catalogNumber: "VTL-PC-1928",
-    material: "銀、青鋼、サファイアガラス、羊皮紙",
-    provenance: "深海測量船の船長室から回収された航海時計一式。記録簿は未解読のまま保管されている。",
-    observation: "銀鍵の歯形はボルトの退避量を示す。時計の秒針とラッチ窓の周期にも一致が見られる。",
-  },
+  standardReward(
+    "nocturne-reliquary",
+    "NOCTURNE RELIQUARY",
+    "青緑の宝石、古い航海儀器、蝋封された文書を収めた黒鉄の函。",
+    "VTL-NR-1876",
+    "黒染め鋼、真鍮、緑柱石、蜜蝋",
+    "夜間航海用の測量具として港湾観測所に保管され、廃止後に封印された。",
+    "緑柱石の裏にある真鍮円盤は、ゲートの窓幅を測る簡易ゲージとして機能する。",
+    "Nocturneを開錠する",
+    [{ type: "vault", vaultId: "reliquary-nocturne" }],
+  ),
+  standardReward(
+    "pelagic-chronometer",
+    "PELAGIC CHRONOMETER",
+    "サファイアの航海時計、銀鍵、封緘文書を備えた海洋保管物。",
+    "VTL-PC-1928",
+    "銀、青鋼、サファイアガラス、羊皮紙",
+    "深海測量船の船長室から回収された航海時計一式。記録簿は未解読のまま保管されている。",
+    "銀鍵の歯形はボルトの退避量を示す。時計の秒針とラッチ窓の周期にも一致が見られる。",
+    "Pelagicを開錠する",
+    [{ type: "vault", vaultId: "chronometer-pelagic" }],
+  ),
+  standardReward("aurora-needle", "AURORA NEEDLE", "修復室の測定針と、微細な目盛りを刻んだ真鍮ケース。", "VTL-AU-1904", "焼入れ鋼、真鍮、琥珀", "北方時計工房の修復台から発見された測定具。", "針先の傷はゲート縁を探った回数を記録している。", "AKERUN-01-V1を開錠する", [{ type: "problem", problemId: "AKERUN-01-V1" }]),
+  standardReward("nocturne-brass-seal", "NOCTURNE BRASS SEAL", "夜間観測所の封印具と、候補位置を示す黒い円盤。", "VTL-NR-1877", "真鍮、黒鉄、蜜蝋", "夜間航海用の記録箱に取り付けられていた封印具。", "円盤の二重線は、似た偽ゲートを比較した跡である。", "AKERUN-02-V1を開錠する", [{ type: "problem", problemId: "AKERUN-02-V1" }]),
+  standardReward("pelagic-tide-chart", "PELAGIC TIDE CHART", "深海測量の潮流図と、停止後の反応を記した薄い航海板。", "VTL-PC-1929", "青鋼、羊皮紙、銀粉", "深海測量船の航海長が残した補助記録。", "停止後の数秒を待つための短い目盛りが、縁に刻まれている。", "AKERUN-03-V1を開錠する", [{ type: "problem", problemId: "AKERUN-03-V1" }]),
+  standardReward("aurora-ivory-dial", "AURORA IVORY DIAL", "白い目盛り板と、明るい反応を示す補助ダイヤル。", "VTL-AU-1905", "象牙色樹脂、黄銅、青銅", "修復訓練用の金庫から取り外された観察用ダイヤル。", "目盛りの間隔は、接触差を見分けるために広く設計されている。", "AKERUN-04-V1を開錠する", [{ type: "problem", problemId: "AKERUN-04-V1" }]),
+  standardReward("nocturne-port-record", "NOCTURNE PORT RECORD", "港湾観測所の黒い記録板と、比較済みの接触候補表。", "VTL-NR-1878", "黒染め鋼、紙、緑青", "閉鎖された港湾観測所の保管記録。", "似た反応を並べ、単独の音だけで決めない規則が残されている。", "AKERUN-05-V1を開錠する", [{ type: "problem", problemId: "AKERUN-05-V1" }]),
+  standardReward("pelagic-salt-compass", "PELAGIC SALT COMPASS", "塩の結晶が付着した小型コンパスと、海図用の銀針。", "VTL-PC-1930", "銀、青銅、ガラス、塩結晶", "海洋保管庫の航海用具として回収された。", "針の遅れは、回転速度を落として観察する必要を示す。", "AKERUN-06-V1を開錠する", [{ type: "problem", problemId: "AKERUN-06-V1" }]),
+  standardReward("aurora-restorer-gloves", "AURORA RESTORER GLOVES", "接触痕を残さない修復用手袋と、小さな保管札。", "VTL-AU-1906", "革、絹、黄銅札", "博物館修復室の作業台に保管されていた。", "手袋の指先には、無駄な回転を減らすための目盛りが縫い込まれている。", "AKERUN-07-V1を開錠する", [{ type: "problem", problemId: "AKERUN-07-V1" }]),
+  standardReward("nocturne-black-ink", "NOCTURNE BLACK INK", "候補比較の記録に使われた黒インクと、二重の記録帳。", "VTL-NR-1879", "煤、鉄塩、ガラス", "夜間航海記録の付属品として封印されていた。", "二つの似た接触を別々に記録するため、乾きの遅い配合になっている。", "AKERUN-08-V1を開錠する", [{ type: "problem", problemId: "AKERUN-08-V1" }]),
+  standardReward("pelagic-diver-log", "PELAGIC DIVER LOG", "潜水士の観察記録と、停止後の反応を測る防水時計。", "VTL-PC-1931", "防水紙、銀、青鋼", "深海測量船の潜水記録に挟まれていた。", "止めた後に見るべき小さな変化が、時刻と一緒に記録されている。", "AKERUN-09-V1を開錠する", [{ type: "problem", problemId: "AKERUN-09-V1" }]),
+  standardReward("aurora-gear-sketch", "AURORA GEAR SKETCH", "ホイールとフライの関係を描いた修復士の設計図。", "VTL-AU-1907", "紙、鉛筆、黄銅留め具", "博物館の機構資料室から移管された設計図。", "通過回数を先に決めてから操作する手順が、余白に書かれている。", "AKERUN-10-V1を開錠する", [{ type: "problem", problemId: "AKERUN-10-V1" }]),
+  standardReward("nocturne-lantern-key", "NOCTURNE LANTERN KEY", "暗い保管室の鍵と、反応を書き留めた折り畳み札。", "VTL-NR-1880", "黒鉄、真鍮、油紙", "夜間観測所の照明器具と一緒に保管されていた。", "暗くても抵抗の変化を別の手掛かりで確かめる注意書きがある。", "AKERUN-11-V1を開錠する", [{ type: "problem", problemId: "AKERUN-11-V1" }]),
+  standardReward("pelagic-sapphire-thread", "PELAGIC SAPPHIRE THREAD", "サファイア片を通した細い銀糸と、海図の束。", "VTL-PC-1932", "銀、サファイア、羊皮紙", "航海時計の修理用部材として収蔵された。", "反応の強弱を急いで決めず、止めた位置を再確認するための印がある。", "AKERUN-12-V1を開錠する", [{ type: "problem", problemId: "AKERUN-12-V1" }]),
+  standardReward("aurora-clockmaker-mark", "AURORA CLOCKMAKER MARK", "時計職人の刻印板と、整列順を示す小さな札。", "VTL-AU-1908", "黄銅、銀、黒漆", "北方の時計工房から寄贈された職人道具。", "輪の順番と方向を混同しないよう、裏面に左右の印がある。", "AKERUN-13-V1を開錠する", [{ type: "problem", problemId: "AKERUN-13-V1" }]),
+  standardReward("nocturne-cipher-case", "NOCTURNE CIPHER CASE", "比較結果を隠して保管する黒い暗号ケース。", "VTL-NR-1881", "黒鉄、緑柱石、革", "港湾観測所の記録保全箱として使われていた。", "正規ゲートらしさを一つの反応に頼らず、複数の証拠で確かめる。", "AKERUN-14-V1を開錠する", [{ type: "problem", problemId: "AKERUN-14-V1" }]),
+  standardReward("pelagic-depth-needle", "PELAGIC DEPTH NEEDLE", "深度を測る青鋼の針と、海底地形の断片図。", "VTL-PC-1933", "青鋼、銀、羊皮紙", "深海測量器の調整部品として回収された。", "停止後の反応を待つ間に、針が示すわずかな揺れを読む。", "AKERUN-15-V1を開錠する", [{ type: "problem", problemId: "AKERUN-15-V1" }]),
+  rareReward("rare-aurora-clean", "AURORA CLEAN ROOM SEAL", "無傷の修復室封印と、失敗のない開錠記録。", "VTL-AU-R01", "白金、黄銅、赤紫石", "修復室の最終検査で一度だけ使われた封印。", "一度も噛み込ませずに開けた記録が、封印の裏に残る。", "Auroraを失敗0で開錠する", [{ type: "vault", vaultId: "museum-aurora" }, { type: "faults-at-most", count: 0 }]),
+  rareReward("rare-nocturne-clean", "NOCTURNE CLEAN ROOM SEAL", "比較判断を誤らずに開けた夜間保管室の封印。", "VTL-NR-R01", "黒銀、緑柱石、蜜蝋", "夜間観測所の責任者が保管していた最終封印。", "似た候補を比べたうえで失敗0を達成した印がある。", "Nocturneを失敗0で開錠する", [{ type: "vault", vaultId: "reliquary-nocturne" }, { type: "faults-at-most", count: 0 }]),
+  rareReward("rare-pelagic-clean", "PELAGIC CLEAN ROOM SEAL", "停止後の反応を乱さずに開けた海洋保管庫の封印。", "VTL-PC-R01", "銀、青鋼、サファイア", "深海測量船の船長室に保管されていた最終封印。", "止めて待つ判断を守り、失敗0で開けた記録が刻まれている。", "Pelagicを失敗0で開錠する", [{ type: "vault", vaultId: "chronometer-pelagic" }, { type: "faults-at-most", count: 0 }]),
+  rareReward("rare-aurora-par-dial", "AURORA CALIBRATION CARD", "基準回転数以内で開けたことを示す較正カード。", "VTL-AU-R02", "黄銅、紙、ガーネット粉", "博物館の較正棚で保管されていた検査カード。", "余分な回転を減らした結果だけが、カードの欄へ記録される。", "Auroraを基準回転数以内で開錠する", [{ type: "vault", vaultId: "museum-aurora" }, { type: "excess-dial-at-most", steps: 0 }]),
+  rareReward("rare-nocturne-par-dial", "NOCTURNE CALIBRATION CARD", "比較を続けながら基準回転数に収めた較正カード。", "VTL-NR-R02", "黒鉄、紙、緑青", "港湾観測所の試験台で使われていた検査カード。", "候補を増やしすぎず、必要な回転だけで決めた記録がある。", "Nocturneを基準回転数以内で開錠する", [{ type: "vault", vaultId: "reliquary-nocturne" }, { type: "excess-dial-at-most", steps: 0 }]),
+  rareReward("rare-pelagic-par-dial", "PELAGIC CALIBRATION CARD", "停止後の観察を含めて基準回転数に収めた較正カード。", "VTL-PC-R02", "銀、青鋼、羊皮紙", "深海測量器の調整台で使われていた検査カード。", "急回転で見逃さず、必要な移動だけで開けた記録がある。", "Pelagicを基準回転数以内で開錠する", [{ type: "vault", vaultId: "chronometer-pelagic" }, { type: "excess-dial-at-most", steps: 0 }]),
+  rareReward("rare-observer-lens", "OBSERVER LENS", "接触反応を正確に読み取った観察者のレンズ。", "VTL-OBS-R01", "光学ガラス、真鍮、黒革", "機構観察室の備品から選別された記録品。", "偽ゲート接触と失敗を抑えた観察精度が、レンズの縁に刻まれる。", "観察精度92%以上で開錠する", [{ type: "accuracy-at-least", percent: 92 }]),
+  rareReward("rare-precision-rule", "PRECISION RULE", "余分な回転と誤接触を抑えた精密測定尺。", "VTL-OBS-R02", "鋼、黄銅、黒漆", "金庫研究室の検査器具として残された。", "短い移動と高い観察精度を同時に満たしたときだけ記録が現れる。", "余分な回転40以下かつ観察精度88%以上で開錠する", [{ type: "excess-dial-at-most", steps: 40 }, { type: "accuracy-at-least", percent: 88 }]),
+  rareReward("rare-score-ledger", "HIGH SCORE LEDGER", "基準を越えた結果だけを書き留める高得点台帳。", "VTL-OBS-R03", "革、銀箔、青インク", "実験場の成績保管棚から発見された記録帳。", "時間、回転、失敗をすべて整えた結果にだけ、次の欄が開く。", "スコア10000以上で開錠する", [{ type: "score-at-least", score: 10000 }]),
+  specialReward("special-aurora-master", "AURORA MASTER KEY", "修復室の最終保管庫へ通じる、光を返す特別な鍵。", "VTL-AU-S01", "白金、黄銅、ガーネット", "AURORAの最終検査に合格した者へ一度だけ渡された。", "高度な問題を失敗なく、正確に読み切った記録が鍵の柄に残る。", "AKERUN-16-V1を失敗0・観察精度92%以上で開錠する", [{ type: "problem", problemId: "AKERUN-16-V1" }, { type: "faults-at-most", count: 0 }, { type: "accuracy-at-least", percent: 92 }]),
+  specialReward("special-nocturne-master", "NOCTURNE MASTER SEAL", "夜間観測所の最奥を封じていた、黒い特別封印。", "VTL-NR-S01", "黒銀、緑柱石、蜜蝋", "最終航海記録を守るために作られた特別保管品。", "似た偽ゲートを比較しながら高い成績を残した記録が封印面に刻まれる。", "AKERUN-20-V1を失敗1以下・スコア10000以上で開錠する", [{ type: "problem", problemId: "AKERUN-20-V1" }, { type: "faults-at-most", count: 1 }, { type: "score-at-least", score: 10000 }]),
+  specialReward("special-pelagic-master", "PELAGIC MASTER CHRONOMETER", "停止後の反応を完全に読み切った、特別な航海時計。", "VTL-PC-S01", "銀、青鋼、サファイア", "深海測量船の最終航海で使われた特別保管品。", "余分な回転を抑え、ほぼ誤りなく停止後の反応を読んだ記録が秒針に残る。", "AKERUN-18-V1を余分な回転0・観察精度96%以上で開錠する", [{ type: "problem", problemId: "AKERUN-18-V1" }, { type: "excess-dial-at-most", steps: 0 }, { type: "accuracy-at-least", percent: 96 }]),
 ];
+
+export type RewardRunMetrics = {
+  readonly problemId: string;
+  readonly faultCount: number;
+  readonly excessDialSteps: number;
+  readonly observationAccuracy: number;
+  readonly score: number;
+};
+
+export const isRewardUnlockedByRun = (
+  reward: RewardDefinition,
+  puzzle: PuzzleDefinition,
+  result: RewardRunMetrics,
+) => reward.unlockConditions.every((condition) => {
+  if (condition.type === "vault") return puzzle.vault.id === condition.vaultId;
+  if (condition.type === "problem") return result.problemId === condition.problemId;
+  if (condition.type === "faults-at-most") return result.faultCount <= condition.count;
+  if (condition.type === "excess-dial-at-most") return result.excessDialSteps <= condition.steps;
+  if (condition.type === "accuracy-at-least") return result.observationAccuracy >= condition.percent;
+  return result.score >= condition.score;
+});
 
 const normalize = (value: number) => ((value % 100) + 100) % 100;
 
