@@ -1,10 +1,11 @@
 /**
- * Vault Tumbler Lab — 真鍮の機械製図室。
- * 物理的な推理を優先し、描画と切り離して金庫・難易度・解除許容帯を定義する。
+ * Vault Tumbler Lab — 金庫問題、金庫型、難易度をデータとして管理する。
+ * 通常プレイは公式問題を使い、seed生成は開発・検査用として残す。
  */
 
 export type TurnDirection = "cw" | "ccw";
 export type DifficultyId = "observe" | "standard" | "expert" | "blind";
+export type ProblemTier = "beginner" | "standard" | "advanced";
 
 export type TumblerStage = {
   readonly target: number;
@@ -57,7 +58,6 @@ export type PackPreloadProfile = {
   readonly edgeHardness: number;
 };
 
-/** 扉内のキャリーバーとロッキングボルトを、金庫ごとに異なる安全な観察対象として定義する。 */
 export type DoorBoltLayout = {
   readonly label: string;
   readonly boltRatios: readonly number[];
@@ -73,13 +73,34 @@ export type PuzzleDefinition = {
   readonly stages: readonly TumblerStage[];
   readonly falseGates: readonly FalseGateDefinition[];
   readonly reward: RewardDefinition;
+  readonly problemId?: string;
+  readonly problemVersion?: string;
+  readonly parTime?: number;
+  readonly parDialSteps?: number;
+  readonly parFaults?: number;
+  readonly difficultyWeight?: number;
+  readonly problemTier?: ProblemTier;
 };
 
 export type FalseGateDefinition = {
   readonly wheel: number;
   readonly position: number;
-  /** 正規ゲートを1とした浅い切欠きの深さ。 */
   readonly depth: number;
+};
+
+export type OfficialProblemDefinition = {
+  readonly problemId: string;
+  readonly problemVersion: string;
+  readonly seed: number;
+  readonly tier: ProblemTier;
+  readonly vaultId: string;
+  readonly wheelCount: number;
+  readonly startDirection: TurnDirection;
+  readonly targets: readonly number[];
+  readonly parTime: number;
+  readonly parDialSteps: number;
+  readonly parFaults: number;
+  readonly difficultyWeight: number;
 };
 
 export const VAULT_DEFINITIONS: readonly VaultDefinition[] = [
@@ -116,7 +137,7 @@ export const DIFFICULTY_PROFILES: Readonly<Record<DifficultyId, DifficultyProfil
   observe: {
     id: "observe",
     label: "OBSERVE",
-    description: "機構の因果を学ぶ観察モード。抵抗帯とゲートの位置をすべて表示する。",
+    description: "機構の因果を学ぶ観察モード。抵抗帯とゲートの位置を表示する。",
     tensionBand: [0.52, 0.82],
     tensionHoldSeconds: 0.12,
     fenceBand: [0.57, 0.78],
@@ -161,7 +182,7 @@ export const DIFFICULTY_PROFILES: Readonly<Record<DifficultyId, DifficultyProfil
   blind: {
     id: "blind",
     label: "BLIND",
-    description: "機構と数値を暗転・遮蔽し、空転、縁、フライ、座りの音だけで推理する高難度モード。",
+    description: "機構と数値を暗転・遮蔽し、音だけで推理する高難度モード。",
     tensionBand: [0.67, 0.71],
     tensionHoldSeconds: 0.28,
     fenceBand: [0.66, 0.7],
@@ -220,26 +241,30 @@ const mulberry32 = (seed: number) => {
   };
 };
 
-const toInstruction = (direction: TurnDirection, target: number, passes: number) => `${direction === "cw" ? "右" : "左"}へ ${String(target).padStart(2, "0")} を ${passes}回目に止める`;
+const toInstruction = (direction: TurnDirection, target: number, passes: number) =>
+  (direction === "cw" ? "右" : "左") + "へ " + String(target).padStart(2, "0") + " を " + passes + "回目に止める";
 
-const createMechanicalStages = (targets: readonly number[], firstDirection: TurnDirection): readonly TumblerStage[] => {
-  return targets.map((target, index) => {
-    const direction: TurnDirection = index % 2 === 0 ? firstDirection : firstDirection === "ccw" ? "cw" : "ccw";
+export const createMechanicalStages = (
+  targets: readonly number[],
+  firstDirection: TurnDirection,
+): readonly TumblerStage[] =>
+  targets.map((target, index) => {
+    const direction: TurnDirection = index % 2 === 0
+      ? firstDirection
+      : firstDirection === "ccw" ? "cw" : "ccw";
     const passes = targets.length - index + 1;
     const wheel = targets.length - index - 1;
     return { target, direction, wheel, passes, instruction: toInstruction(direction, target, passes) };
   });
-};
 
-/** 正規ゲートの近くに、深さの異なる二つの偽ゲートを決定論的に配置する。 */
-const createFalseGates = (targets: readonly number[]): readonly FalseGateDefinition[] => {
+export const createFalseGates = (targets: readonly number[]): readonly FalseGateDefinition[] => {
   const offsets = [[7, -9], [-8, 10], [9, -7]] as const;
   return targets.flatMap((target, index) => {
-    const [first, second] = offsets[index % offsets.length];
+    const pair = offsets[index % offsets.length];
     const wheel = targets.length - index - 1;
     return [
-      { wheel, position: normalize(target + first), depth: 0.28 },
-      { wheel, position: normalize(target + second), depth: 0.42 },
+      { wheel, position: normalize(target + pair[0]), depth: 0.28 },
+      { wheel, position: normalize(target + pair[1]), depth: 0.42 },
     ];
   });
 };
@@ -250,12 +275,11 @@ const isDistantFrom = (target: number, selected: readonly number[]) =>
     return Math.min(distance, 100 - distance) >= 12;
   });
 
-/** 既存の基準金庫。自動デモとルール回帰の基準として残す。 */
 export const createReferencePuzzle = (difficulty: DifficultyId = "standard"): PuzzleDefinition => {
   const profile = DIFFICULTY_PROFILES[difficulty];
   const stages = createMechanicalStages([72, 18, 55, 37, 84, 6], "ccw");
   return {
-    id: `museum-aurora-reference-${profile.id}`,
+    id: "museum-aurora-reference-" + profile.id,
     seed: 7201855,
     vault: VAULT_DEFINITIONS[0],
     difficulty: profile,
@@ -265,10 +289,6 @@ export const createReferencePuzzle = (difficulty: DifficultyId = "standard"): Pu
   };
 };
 
-/**
- * 浅い切欠きと正規ゲートの接触差を比較する、二輪の短期観察契約。
- * 現実の保安機構へ作用する手順は含めず、ゲーム内ホイールパックの反証練習に限定する。
- */
 export const createFalseGateTrainingPuzzle = (): PuzzleDefinition => {
   const stages = createMechanicalStages([28, 64], "ccw");
   return {
@@ -290,18 +310,136 @@ export const createFalseGateTrainingPuzzle = (): PuzzleDefinition => {
       { wheel: 0, position: 55, depth: 0.44 },
     ],
     reward: DEFAULT_REWARD,
+    problemId: "TRAINING-02",
+    problemVersion: "V1",
+    parTime: 30,
+    parDialSteps: 120,
+    parFaults: 0,
+    difficultyWeight: 0,
+    problemTier: "beginner",
   };
 };
 
-/** 同じseedから必ず同じ、かつ相互に十分離れた組合せを生成する。 */
+const officialDifficulty = (tier: ProblemTier): DifficultyProfile => {
+  if (tier === "beginner") {
+    return {
+      ...DIFFICULTY_PROFILES.standard,
+      tensionBand: [0.59, 0.79],
+      fenceBand: [0.6, 0.76],
+      tensionHoldSeconds: 0.18,
+      fenceHoldSeconds: 0.28,
+      maxFaults: 7,
+    };
+  }
+  if (tier === "advanced") {
+    return {
+      ...DIFFICULTY_PROFILES.standard,
+      tensionBand: [0.65, 0.73],
+      fenceBand: [0.645, 0.715],
+      tensionHoldSeconds: 0.24,
+      fenceHoldSeconds: 0.28,
+      maxFaults: 4,
+    };
+  }
+  return DIFFICULTY_PROFILES.standard;
+};
+
+export const OFFICIAL_PROBLEM_CATALOG: readonly OfficialProblemDefinition[] = [
+  { problemId: "AKERUN-01-V1", problemVersion: "V1", seed: 40101, tier: "beginner", vaultId: "museum-aurora", wheelCount: 4, startDirection: "ccw", targets: [18, 61, 35, 82], parTime: 31, parDialSteps: 330, parFaults: 0, difficultyWeight: 0.96 },
+  { problemId: "AKERUN-02-V1", problemVersion: "V1", seed: 40102, tier: "beginner", vaultId: "reliquary-nocturne", wheelCount: 4, startDirection: "cw", targets: [72, 24, 57, 9], parTime: 34, parDialSteps: 340, parFaults: 0, difficultyWeight: 0.98 },
+  { problemId: "AKERUN-03-V1", problemVersion: "V1", seed: 40103, tier: "beginner", vaultId: "chronometer-pelagic", wheelCount: 5, startDirection: "ccw", targets: [43, 8, 69, 27, 84], parTime: 40, parDialSteps: 455, parFaults: 0, difficultyWeight: 1.0 },
+  { problemId: "AKERUN-04-V1", problemVersion: "V1", seed: 40104, tier: "beginner", vaultId: "museum-aurora", wheelCount: 5, startDirection: "cw", targets: [12, 66, 31, 88, 49], parTime: 42, parDialSteps: 470, parFaults: 0, difficultyWeight: 1.01 },
+  { problemId: "AKERUN-05-V1", problemVersion: "V1", seed: 40105, tier: "beginner", vaultId: "reliquary-nocturne", wheelCount: 6, startDirection: "ccw", targets: [81, 39, 5, 63, 24, 92], parTime: 49, parDialSteps: 540, parFaults: 0, difficultyWeight: 1.03 },
+  { problemId: "AKERUN-06-V1", problemVersion: "V1", seed: 40106, tier: "standard", vaultId: "chronometer-pelagic", wheelCount: 4, startDirection: "cw", targets: [26, 74, 11, 58], parTime: 36, parDialSteps: 370, parFaults: 1, difficultyWeight: 1.01 },
+  { problemId: "AKERUN-07-V1", problemVersion: "V1", seed: 40107, tier: "standard", vaultId: "museum-aurora", wheelCount: 5, startDirection: "ccw", targets: [64, 17, 86, 42, 7], parTime: 43, parDialSteps: 480, parFaults: 1, difficultyWeight: 1.02 },
+  { problemId: "AKERUN-08-V1", problemVersion: "V1", seed: 40108, tier: "standard", vaultId: "reliquary-nocturne", wheelCount: 6, startDirection: "cw", targets: [9, 51, 78, 22, 67, 34], parTime: 51, parDialSteps: 555, parFaults: 1, difficultyWeight: 1.04 },
+  { problemId: "AKERUN-09-V1", problemVersion: "V1", seed: 40109, tier: "standard", vaultId: "chronometer-pelagic", wheelCount: 5, startDirection: "ccw", targets: [38, 95, 16, 57, 73], parTime: 46, parDialSteps: 500, parFaults: 1, difficultyWeight: 1.05 },
+  { problemId: "AKERUN-10-V1", problemVersion: "V1", seed: 40110, tier: "standard", vaultId: "museum-aurora", wheelCount: 6, startDirection: "cw", targets: [47, 14, 82, 29, 61, 6], parTime: 53, parDialSteps: 575, parFaults: 1, difficultyWeight: 1.06 },
+  { problemId: "AKERUN-11-V1", problemVersion: "V1", seed: 40111, tier: "standard", vaultId: "reliquary-nocturne", wheelCount: 4, startDirection: "ccw", targets: [57, 3, 79, 34], parTime: 38, parDialSteps: 390, parFaults: 1, difficultyWeight: 1.03 },
+  { problemId: "AKERUN-12-V1", problemVersion: "V1", seed: 40112, tier: "standard", vaultId: "chronometer-pelagic", wheelCount: 6, startDirection: "cw", targets: [23, 69, 44, 8, 91, 52], parTime: 54, parDialSteps: 590, parFaults: 1, difficultyWeight: 1.07 },
+  { problemId: "AKERUN-13-V1", problemVersion: "V1", seed: 40113, tier: "standard", vaultId: "museum-aurora", wheelCount: 5, startDirection: "ccw", targets: [86, 32, 12, 64, 48], parTime: 47, parDialSteps: 505, parFaults: 1, difficultyWeight: 1.06 },
+  { problemId: "AKERUN-14-V1", problemVersion: "V1", seed: 40114, tier: "standard", vaultId: "reliquary-nocturne", wheelCount: 6, startDirection: "cw", targets: [35, 88, 19, 62, 4, 76], parTime: 55, parDialSteps: 605, parFaults: 1, difficultyWeight: 1.08 },
+  { problemId: "AKERUN-15-V1", problemVersion: "V1", seed: 40115, tier: "standard", vaultId: "chronometer-pelagic", wheelCount: 5, startDirection: "ccw", targets: [7, 54, 83, 26, 68], parTime: 48, parDialSteps: 515, parFaults: 1, difficultyWeight: 1.05 },
+  { problemId: "AKERUN-16-V1", problemVersion: "V1", seed: 40116, tier: "advanced", vaultId: "museum-aurora", wheelCount: 6, startDirection: "cw", targets: [59, 13, 71, 36, 94, 22], parTime: 58, parDialSteps: 635, parFaults: 2, difficultyWeight: 1.09 },
+  { problemId: "AKERUN-17-V1", problemVersion: "V1", seed: 40117, tier: "advanced", vaultId: "reliquary-nocturne", wheelCount: 5, startDirection: "ccw", targets: [44, 2, 73, 18, 91], parTime: 51, parDialSteps: 545, parFaults: 2, difficultyWeight: 1.1 },
+  { problemId: "AKERUN-18-V1", problemVersion: "V1", seed: 40118, tier: "advanced", vaultId: "chronometer-pelagic", wheelCount: 6, startDirection: "cw", targets: [15, 67, 39, 82, 28, 54], parTime: 60, parDialSteps: 660, parFaults: 2, difficultyWeight: 1.11 },
+  { problemId: "AKERUN-19-V1", problemVersion: "V1", seed: 40119, tier: "advanced", vaultId: "museum-aurora", wheelCount: 5, startDirection: "ccw", targets: [75, 21, 49, 93, 11], parTime: 53, parDialSteps: 570, parFaults: 2, difficultyWeight: 1.12 },
+  { problemId: "AKERUN-20-V1", problemVersion: "V1", seed: 40120, tier: "advanced", vaultId: "reliquary-nocturne", wheelCount: 6, startDirection: "cw", targets: [6, 58, 31, 86, 17, 72], parTime: 62, parDialSteps: 680, parFaults: 2, difficultyWeight: 1.14 },
+];
+
+const cloneVault = (vault: VaultDefinition, wheelCount: number, tier: ProblemTier): VaultDefinition => ({
+  ...vault,
+  wheelCount,
+  preload: {
+    ...vault.preload,
+    baseResistance: normalize(vault.preload.baseResistance * 100 + (tier === "advanced" ? 4 : tier === "beginner" ? -3 : 0)) / 100,
+  },
+});
+
+export const createOfficialPuzzle = (problemId: string): PuzzleDefinition => {
+  const problem = OFFICIAL_PROBLEM_CATALOG.find((item) => item.problemId === problemId);
+  if (!problem) throw new Error("Unknown official problem: " + problemId);
+  const vault = VAULT_DEFINITIONS.find((item) => item.id === problem.vaultId) ?? VAULT_DEFINITIONS[0];
+  const stages = createMechanicalStages(problem.targets, problem.startDirection);
+  return {
+    id: problem.problemId,
+    seed: problem.seed,
+    vault: cloneVault(vault, problem.wheelCount, problem.tier),
+    difficulty: officialDifficulty(problem.tier),
+    stages,
+    falseGates: createFalseGates(problem.targets),
+    reward: REWARD_DEFINITIONS[VAULT_DEFINITIONS.findIndex((item) => item.id === problem.vaultId)] ?? DEFAULT_REWARD,
+    problemId: problem.problemId,
+    problemVersion: problem.problemVersion,
+    parTime: problem.parTime,
+    parDialSteps: problem.parDialSteps,
+    parFaults: problem.parFaults,
+    difficultyWeight: problem.difficultyWeight,
+    problemTier: problem.tier,
+  };
+};
+
+export const chooseOfficialProblem = (excludeProblemId?: string): PuzzleDefinition => {
+  const available = OFFICIAL_PROBLEM_CATALOG.filter((item) => item.problemId !== excludeProblemId);
+  const index = Math.floor(Math.random() * available.length);
+  return createOfficialPuzzle(available[index]?.problemId ?? OFFICIAL_PROBLEM_CATALOG[0].problemId);
+};
+
+export const createTrainingPuzzle = (step: 1 | 2 | 3 | 4): PuzzleDefinition => {
+  if (step === 2) return createFalseGateTrainingPuzzle();
+  const wheelCount = step === 1 ? 1 : 3;
+  const targets = step === 1 ? [32] : step === 3 ? [18, 63, 41] : [26, 72, 9];
+  const firstDirection: TurnDirection = step === 1 ? "cw" : "ccw";
+  const stages = createMechanicalStages(targets, firstDirection);
+  return {
+    id: "training-" + String(step),
+    seed: 7100 + step,
+    vault: {
+      ...VAULT_DEFINITIONS[0],
+      title: step === 1 ? "DIAL TRAINING" : step === 3 ? "BACK HALF TRAINING" : "FULL UNLOCK TRAINING",
+      description: "公式ゲームへ進む前の短い操作訓練。",
+      wheelCount,
+    },
+    difficulty: step === 1 || step === 3 ? DIFFICULTY_PROFILES.observe : DIFFICULTY_PROFILES.standard,
+    stages,
+    falseGates: createFalseGates(targets),
+    reward: DEFAULT_REWARD,
+    problemId: "TRAINING-0" + step,
+    problemVersion: "V1",
+    parTime: step === 1 ? 12 : 35,
+    parDialSteps: step === 1 ? 90 : 260,
+    parFaults: 0,
+    difficultyWeight: 0,
+    problemTier: "beginner",
+  };
+};
+
 export const createPuzzleFromSeed = (seed: number, difficulty: DifficultyId = "standard"): PuzzleDefinition => {
   const random = mulberry32(seed);
   const profile = DIFFICULTY_PROFILES[difficulty];
   const variantIndex = Math.abs(seed >>> 0) % VAULT_DEFINITIONS.length;
   const vault = VAULT_DEFINITIONS[variantIndex];
   const selected: number[] = [];
-  const stages: TumblerStage[] = [];
-
   for (let wheel = 0; wheel < vault.wheelCount; wheel += 1) {
     let target = Math.floor(random() * 100);
     let guard = 0;
@@ -310,19 +448,16 @@ export const createPuzzleFromSeed = (seed: number, difficulty: DifficultyId = "s
       guard += 1;
     }
     selected.push(target);
-    stages.push({ target, direction: "cw", wheel, passes: 1, instruction: "" });
   }
-
   const firstDirection: TurnDirection = variantIndex === 1 ? "cw" : "ccw";
-  const mechanicalStages = createMechanicalStages(stages.map((stage) => stage.target), firstDirection);
-
+  const stages = createMechanicalStages(selected, firstDirection);
   return {
-    id: `museum-aurora-${difficulty}-${seed >>> 0}`,
+    id: "museum-aurora-" + difficulty + "-" + (seed >>> 0),
     seed: seed >>> 0,
     vault,
     difficulty: profile,
-    stages: mechanicalStages,
-    falseGates: createFalseGates(mechanicalStages.map((stage) => stage.target)),
+    stages,
+    falseGates: createFalseGates(selected),
     reward: REWARD_DEFINITIONS[variantIndex],
   };
 };
