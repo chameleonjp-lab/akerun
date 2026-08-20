@@ -1,0 +1,48 @@
+/* Vault Tumbler Lab — 真鍮の機械製図室。暗い製図台、温かな真鍮、整列時のみ現れる青緑の光を保つ。 */
+@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500;600&family=Noto+Sans+JP:wght@400;500;600;700&display=swap");
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: "Noto Sans JP", sans-serif;
+  --font-mono: "DM Mono", monospace;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    width: 100%;
+    min-height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: #091018;
+  }
+
+  body {
+    color: #e8dfc4;
+    font-family: "Noto Sans JP", sans-serif;
+  }
+
+  canvas {
+    display: block;
+    cursor: grab;
+  }
+
+  canvas:active {
+    cursor: grabbing;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  canvas {
+    scroll-behavior: auto;
+  }
+}
+
