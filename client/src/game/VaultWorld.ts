@@ -428,12 +428,10 @@ export class VaultWorld {
       if (event.key.toLowerCase() === "g") this.handleAction("guide");
       if (event.key.toLowerCase() === "n") this.handleAction("contract");
       if (event.key.toLowerCase() === "q") this.handleAction("training");
-      if (event.key.toLowerCase() === "t") this.handleAction("daily");
       if (event.key.toLowerCase() === "l") this.handleAction("archive");
       if (event.key.toLowerCase() === "o") this.handleAction("notes");
       if (event.key.toLowerCase() === "j") this.handleAction("note-capture");
       if (event.key.toLowerCase() === "i") this.handleAction("inspect");
-      if (event.key.toLowerCase() === "b") this.handleAction("scorebook");
       if (event.key === "[") this.handleAction("inspect-prev");
       if (event.key === "]") this.handleAction("inspect-next");
       if (event.key.toLowerCase() === "h") this.handleAction("contrast");
@@ -622,7 +620,6 @@ export class VaultWorld {
     if (action === "haptics") this.haptics.toggle();
     if (action === "blind-assist" && this.isBlindMode) this.blindAssist = !this.blindAssist;
     if (action === "guide") this.tutorialVisible = !this.tutorialVisible;
-    if (action === "contract") this.startNewContract();
     if (action === "training") this.startFalseGateTraining();
     if (action === "contrast") this.highContrast = !this.highContrast;
     if (action === "motion") {
@@ -652,21 +649,6 @@ export class VaultWorld {
     this.blindAssist = false;
     this.blindSignal = null;
     this.mechanism.lastMessage = `${DIFFICULTY_PROFILES[difficulty].label}に切替。新しい保管契約を解析してください。`;
-  }
-
-  private startNewContract() {
-    this.demoMode = false;
-    this.puzzleSeed = (this.puzzleSeed * 22695477 + 1) >>> 0;
-    this.mechanism = new LockMechanism(createPuzzleFromSeed(this.puzzleSeed, this.difficulty));
-    this.openingProgress = 0;
-    this.runElapsed = 0;
-    this.runStarted = false;
-    this.resultSummary = null;
-    this.tutorialVisible = true;
-    this.trainingContract = false;
-    this.telemetry.contracts += 1;
-    this.persistTelemetry();
-    this.mechanism.lastMessage = `新しい保管契約 #${this.puzzleSeed.toString(36).toUpperCase()}。まず第1ホイールを観察してください。`;
   }
 
   private startFalseGateTraining() {
@@ -988,7 +970,7 @@ export class VaultWorld {
 
     ctx.fillStyle = "#7c9397";
     ctx.font = `500 ${unit * 0.54}px "DM Mono", monospace`;
-    ctx.fillText("1 OBSERVE / 2 STANDARD / 3 EXPERT / 4 BLIND / Q TRAIN / J NOTE / O NOTES / V ASSIST / S SOUND / K HAPTIC / N NEW / L ARCHIVE / I INSPECT / H CONTRAST / M MOTION / P PRECISE", x + markSize + unit * 1.45, y + markSize * 1.13);
+    ctx.fillText("TOUCH DIAL / OBSERVE SOUND + RESISTANCE / Q TRAIN / J NOTE / O NOTES / V ASSIST / S SOUND / K HAPTIC / L ARCHIVE / I INSPECT / H CONTRAST / M MOTION / P PRECISE", x + markSize + unit * 1.45, y + markSize * 1.13);
 
     if (this.trainingContract) {
       ctx.fillStyle = "#d39566";
@@ -1613,12 +1595,11 @@ export class VaultWorld {
     const railWidth = layout.compact ? (layout.width - pad * 2) / 5 : bench.width / 6;
     const railHeight = unit * 2.0;
     this.drawControlButton("reset", { x: railX, y: railY, width: railWidth - unit * 0.35, height: railHeight }, "RESET / R");
-    this.drawControlButton("demo", { x: railX + railWidth, y: railY, width: railWidth - unit * 0.35, height: railHeight }, "DEMO");
+    this.drawControlButton("demo", { x: railX + railWidth, y: railY, width: railWidth - unit * 0.35, height: railHeight }, "EXAMPLE / DEMO");
     this.drawControlButton("sound", { x: railX + railWidth * 2, y: railY, width: railWidth - unit * 0.35, height: railHeight }, this.audio.isMuted ? "SOUND / OFF" : "SOUND / ON");
     const hapticButtonLabel = !this.haptics.isSupported ? "HAPTIC / N/A" : this.reducedMotion ? "HAPTIC / PAUSE" : this.haptics.isEnabled ? "HAPTIC / ON" : "HAPTIC / OFF";
     this.drawControlButton("haptics", { x: railX + railWidth * 3, y: railY, width: railWidth - unit * 0.35, height: railHeight }, hapticButtonLabel, this.haptics.isActive ? "#4de0c0" : "#758d8f");
     this.drawControlButton("guide", { x: railX + railWidth * 4, y: railY, width: railWidth - unit * 0.35, height: railHeight }, this.tutorialVisible ? "GUIDE / ON" : "GUIDE / OFF");
-    if (!layout.compact) this.drawControlButton("contract", { x: railX + railWidth * 5, y: railY, width: railWidth - unit * 0.35, height: railHeight }, "NEW / N", "#c9a963");
     if (!layout.compact) this.drawControlButton("note-capture", { x: railX + railWidth * 5, y: railY + railHeight + unit * 0.38, width: railWidth - unit * 0.35, height: railHeight }, "NOTE / J", "#4de0c0");
   }
 
