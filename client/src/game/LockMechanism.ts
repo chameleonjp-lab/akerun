@@ -5,7 +5,7 @@
 import { createReferencePuzzle, type PuzzleDefinition, type TumblerStage, type TurnDirection } from "./GameDefinitions";
 
 export type { TumblerStage, TurnDirection } from "./GameDefinitions";
-export type ProtocolPhase = "dial" | "tension-ready" | "tension-test" | "fence-ready" | "fence-seated" | "bolt-test" | "boltwork-ready" | "handle-test" | "jammed" | "open" | "lockout";
+export type ProtocolPhase = "dial" | "settling" | "tension-ready" | "tension-test" | "fence-ready" | "fence-seated" | "bolt-test" | "boltwork-ready" | "handle-test" | "jammed" | "open" | "lockout";
 export type ResistanceState = "idle" | "hard-stop" | "candidate" | "jammed" | "seated";
 export type ContactProfile = "clear" | "edge" | "false-gate" | "true-gate";
 
@@ -46,6 +46,8 @@ export class LockMechanism {
   private boltHold = 0;
   private handleHold = 0;
   private overloadHold = 0;
+  private settlingElapsed = 0;
+  private rotationSpeed = 0;
 
   constructor(puzzle: PuzzleDefinition = createReferencePuzzle()) {
     this.puzzle = puzzle;
@@ -99,17 +101,31 @@ export class LockMechanism {
 
   /** 現在の接触がフェンスへ与える相対的な深さ。観察用の数値であり、正解そのものではない。 */
   get contactDepth(): number {
-    if (this.contactProfile === "true-gate") return 1;
-    if (this.contactProfile === "false-gate") return this.falseGateAtDial?.depth ?? 0;
-    if (this.contactProfile === "edge") return 0.58;
+    const personality = this.puzzle.vault.personality;
+    const speedResponse = personality.id === "timing"
+      ? this.rotationSpeed * personality.speedSensitivity * 0.12
+      : 0;
+    if (this.contactProfile === "true-gate") return clamp(1 - speedResponse, 0, 1);
+    if (this.contactProfile === "false-gate") {
+      return clamp((this.falseGateAtDial?.depth ?? 0) + personality.falseGateSimilarity * 0.16 - speedResponse * 0.55, 0, 1);
+    }
+    if (this.contactProfile === "edge") return clamp(0.45 + personality.contactContrast * 0.2 - speedResponse * 0.4, 0, 1);
     return 0;
   }
 
   /** 金庫固有のホイールパック予圧と、現在の接触から得られる抵抗読み。 */
   get packResistance(): number {
     const { baseResistance, edgeHardness } = this.puzzle.vault.preload;
-    const contactLift = this.contactProfile === "true-gate" ? 0.18 : this.contactProfile === "false-gate" ? 0.1 : this.contactProfile === "edge" ? 0.06 : 0;
-    return clamp(baseResistance * 0.55 + edgeHardness * contactLift, 0, 1);
+    const personality = this.puzzle.vault.personality;
+    const contactLift = this.contactProfile === "true-gate"
+      ? 0.08 + personality.contactContrast * 0.13
+      : this.contactProfile === "false-gate"
+        ? 0.05 + personality.falseGateSimilarity * 0.08
+        : this.contactProfile === "edge"
+          ? 0.035 + personality.contactContrast * 0.055
+          : 0;
+    const speedDrag = personality.speedSensitivity * this.rotationSpeed * 0.035;
+    return clamp(baseResistance * 0.55 + edgeHardness * contactLift + speedDrag, 0, 1);
   }
 
   get fenceDropped(): boolean {
@@ -160,7 +176,7 @@ export class LockMechanism {
   get resistanceState(): ResistanceState {
     if (this.phase === "jammed" || this.phase === "lockout") return "jammed";
     if (this.phase === "fence-seated" || this.phase === "bolt-test" || this.phase === "boltwork-ready" || this.phase === "handle-test" || this.phase === "open") return "seated";
-    if (this.phase === "tension-ready" || this.phase === "tension-test" || this.phase === "fence-ready") return "candidate";
+    if (this.phase === "settling" || this.phase === "tension-ready" || this.phase === "tension-test" || this.phase === "fence-ready") return "candidate";
     return "idle";
   }
 
@@ -171,6 +187,7 @@ export class LockMechanism {
       if (this.puzzle.difficulty.showExactInstruction) return `輪 ${stage.wheel + 1}：${stage.instruction}`;
       return `輪 ${stage.wheel + 1}へフライを拾わせる。${stage.direction === "cw" ? "右" : "左"}回りの接触痕を探る`;
     }
+    if (this.phase === "settling") return "ダイヤルを止め、停止後のわずかな反応を観察する";
     if (this.phase === "tension-ready") return "テンション・ハンドルで静かに負荷を掛ける";
     if (this.phase === "tension-test") return "抵抗針が沈む帯域で力を保つ";
     if (this.phase === "fence-ready") return "フェンスをゆっくり押し、座りを確かめる";
@@ -186,6 +203,8 @@ export class LockMechanism {
   tick(delta: number) {
     if (!Number.isFinite(delta) || delta <= 0 || this.opened || this.phase === "lockout") return;
     const seconds = Math.min(0.25, delta);
+    this.rotationSpeed = Math.max(0, this.rotationSpeed - seconds * 2.4);
+    if (this.phase === "settling") this.advanceSettling(seconds);
     if (this.phase === "tension-test") this.advanceTension(seconds);
     if (this.phase === "fence-ready") this.advanceFence(seconds);
     if (this.phase === "bolt-test") this.advanceBolt(seconds);
@@ -240,8 +259,15 @@ export class LockMechanism {
       this.stage += 1;
       this.stagePasses = 0;
       if (this.stage >= this.puzzle.stages.length) {
-        this.phase = "tension-ready";
-        this.lastMessage = "全ホイールのゲートが静止。フェンスが落ちるか、テンションで検証してください。";
+        this.settlingElapsed = 0;
+        const settlingDelay = this.puzzle.vault.personality.settlingDelaySeconds;
+        if (settlingDelay > 0) {
+          this.phase = "settling";
+          this.lastMessage = "全ホイールが止まりました。停止後の反応が落ち着くまで観察してください。";
+        } else {
+          this.phase = "tension-ready";
+          this.lastMessage = "全ホイールのゲートが静止。フェンスが落ちるか、テンションで検証してください。";
+        }
         return;
       }
       const next = this.activeStage;
@@ -256,6 +282,10 @@ export class LockMechanism {
     if (this.opened || this.phase === "lockout") return;
     if (this.phase === "jammed") {
       if (torque <= 0.02) this.releaseJam();
+      return;
+    }
+    if (this.phase === "settling") {
+      if (torque > 0.02) this.lastMessage = "停止後の反応を確認してから、テンションを掛けてください。";
       return;
     }
     if (this.phase !== "tension-ready" && this.phase !== "tension-test") {
@@ -362,6 +392,8 @@ export class LockMechanism {
     this.desiredHandleTurn = 0;
     this.handleTurn = 0;
     this.faultCount = 0;
+    this.settlingElapsed = 0;
+    this.rotationSpeed = 0;
     this.opened = false;
     this.lastMessage = "ゲートは整列済みです。テンション、フェンス、ロックボルト、扉ハンドルの順に操作してください。";
   }
@@ -388,6 +420,8 @@ export class LockMechanism {
     this.boltHold = 0;
     this.handleHold = 0;
     this.overloadHold = 0;
+    this.settlingElapsed = 0;
+    this.rotationSpeed = 0;
     this.faultCount = 0;
     this.opened = false;
     this.lastMessage = "初期化しました。ドライブカムと最初のフライを観察してください。";
@@ -419,6 +453,19 @@ export class LockMechanism {
       this.overloadHold = 0;
       this.lastMessage = "抵抗が一瞬抜けました。フェンス・レバーをゆっくり押して座りを確かめてください。";
     }
+  }
+
+  private advanceSettling(delta: number) {
+    const delay = this.puzzle.vault.personality.settlingDelaySeconds;
+    this.settlingElapsed += delta;
+    if (this.settlingElapsed < delay) return;
+    this.settlingElapsed = delay;
+    this.phase = "tension-ready";
+    this.lastMessage = "停止後の反応が落ち着きました。テンションを静かに掛けて抵抗を確かめてください。";
+  }
+
+  setRotationSpeed(value: number) {
+    this.rotationSpeed = clamp(value);
   }
 
   private advanceFence(delta: number) {
