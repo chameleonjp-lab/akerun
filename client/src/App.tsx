@@ -107,7 +107,7 @@ export default function App() {
         }
         setScreen("tutorial");
       } else {
-        store.clearActiveRun();
+        if (mode === "official") store.clearActiveRun();
         setScreen("result");
       }
     }, 900);
