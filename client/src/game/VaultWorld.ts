@@ -48,6 +48,7 @@ export type GameSnapshot = {
   readonly stage: number;
   readonly stageCount: number;
   readonly difficulty: string;
+  readonly newlyUnlockedRewards: readonly string[];
   readonly runResult: RunResult | null;
 };
 type ScreenPoint = { x: number; y: number };
@@ -104,6 +105,7 @@ export class VaultWorld {
   private tutorialVisible = true;
   private difficulty: DifficultyId = "standard";
   private puzzleSeed = 7201855;
+  private developmentSeed = false;
   private runElapsed = 0;
   private runStarted = false;
   private sessionActive = false;
@@ -120,6 +122,7 @@ export class VaultWorld {
   private blindSignalUntil = 0;
   private telemetry = { contracts: 0, completions: 0, resets: 0, faults: 0, lastElapsed: 0 };
   private readonly archive = new ArchiveLedger();
+  private newlyUnlockedRewards: readonly RewardDefinition[] = [];
   private archiveOpen = false;
   private readonly observations = new ObservationLedger();
   private notesOpen = false;
@@ -144,7 +147,10 @@ export class VaultWorld {
     this.inspectionOpen = params.has("inspect");
     this.trainingContract = params.get("training") === "false-gate";
     const requestedSeed = Number(params.get("seed"));
-    if (Number.isFinite(requestedSeed) && requestedSeed > 0) this.puzzleSeed = Math.floor(requestedSeed);
+    if (Number.isFinite(requestedSeed) && requestedSeed > 0) {
+      this.puzzleSeed = Math.floor(requestedSeed);
+      this.developmentSeed = true;
+    }
     this.mechanism = this.trainingContract
       ? new LockMechanism(createFalseGateTrainingPuzzle())
       : params.has("seed")
@@ -197,6 +203,8 @@ export class VaultWorld {
     this.runStarted = true;
     this.runElapsed = 0;
     this.runSession = new RunSession(puzzle);
+    this.developmentSeed = false;
+    this.newlyUnlockedRewards = [];
     this.resultSummary = null;
     this.openingProgress = 0;
     this.lastPhysicalPhase = this.mechanism.phase;
@@ -269,6 +277,7 @@ export class VaultWorld {
       stage: this.mechanism.stage,
       stageCount: this.mechanism.puzzle.stages.length,
       difficulty: this.mechanism.puzzle.problemTier ?? this.mechanism.puzzle.difficulty.label,
+      newlyUnlockedRewards: this.newlyUnlockedRewards.map((reward) => reward.title),
       runResult: result,
     };
   }
@@ -601,6 +610,7 @@ export class VaultWorld {
     if (action === "reset") {
       this.demoMode = false;
       this.mechanism.reset();
+      this.newlyUnlockedRewards = [];
       this.releasePhysicalInput();
       this.keyboardFocus = "dial";
       this.openingProgress = 0;
@@ -613,6 +623,7 @@ export class VaultWorld {
     }
     if (action === "demo") {
       this.mechanism.reset();
+      this.newlyUnlockedRewards = [];
       this.sessionActive = false;
       this.sessionPaused = false;
       this.runSession = new RunSession(this.mechanism.puzzle);
@@ -647,6 +658,7 @@ export class VaultWorld {
     this.difficulty = difficulty;
     this.puzzleSeed = (this.puzzleSeed * 1664525 + 1013904223) >>> 0;
     this.mechanism = new LockMechanism(createPuzzleFromSeed(this.puzzleSeed, difficulty));
+    this.newlyUnlockedRewards = [];
     this.openingProgress = 0;
     this.tutorialVisible = true;
     this.runElapsed = 0;
@@ -662,6 +674,7 @@ export class VaultWorld {
     this.demoMode = false;
     this.trainingContract = true;
     this.mechanism = new LockMechanism(createFalseGateTrainingPuzzle());
+    this.newlyUnlockedRewards = [];
     this.openingProgress = 0;
     this.runElapsed = 0;
     this.runStarted = false;
@@ -794,18 +807,25 @@ export class VaultWorld {
       seed: this.mechanism.puzzle.seed,
       reward: this.mechanism.puzzle.reward.title,
     };
-    const recordable = this.sessionActive && !this.demoMode && !this.trainingContract;
+    const recordable = this.sessionActive && !this.demoMode && !this.trainingContract && !this.developmentSeed;
+    this.newlyUnlockedRewards = recordable && result
+      ? this.archive.unlockForRun(this.mechanism.puzzle, result)
+      : [];
     if (recordable) {
       this.telemetry.completions += 1;
       this.telemetry.lastElapsed = this.runElapsed;
       this.persistTelemetry();
-      this.archive.unlock(this.mechanism.puzzle.reward);
     }
     this.sessionActive = false;
     this.runStarted = false;
     this.sessionPaused = false;
     this.retired = false;
-    if (result) this.onStatusChange?.("開錠しました。結果を確認してください。");
+    if (result) {
+      const archiveMessage = this.newlyUnlockedRewards.length
+        ? ` 収蔵品を${this.newlyUnlockedRewards.length}件解放しました。`
+        : "";
+      this.onStatusChange?.("開錠しました。結果を確認してください。" + archiveMessage);
+    }
   }
 
   private syncPhysicalFeedback() {
@@ -1939,6 +1959,39 @@ export class VaultWorld {
 
     const itemTop = panel.y + unit * 5.1;
     const availableHeight = panel.height - unit * 6.25;
+    if (REWARD_DEFINITIONS.length > 12) {
+      const columns = layout.compact ? 2 : 3;
+      const rows = Math.ceil(REWARD_DEFINITIONS.length / columns);
+      const gap = unit * 0.5;
+      const gridWidth = panel.width - unit * 1.9;
+      const cellWidth = (gridWidth - gap * (columns - 1)) / columns;
+      const rowHeight = availableHeight / rows;
+      REWARD_DEFINITIONS.forEach((reward, index) => {
+        const record = this.archive.get(reward.id);
+        const column = index % columns;
+        const row = Math.floor(index / columns);
+        const x = panel.x + unit * 0.95 + column * (cellWidth + gap);
+        const y = itemTop + row * rowHeight;
+        const unlocked = Boolean(record);
+        this.roundRect(x, y, cellWidth, rowHeight - gap, unit * 0.24);
+        ctx.fillStyle = unlocked ? "rgba(24, 39, 43, 0.94)" : "rgba(14, 23, 28, 0.98)";
+        ctx.fill();
+        ctx.strokeStyle = unlocked ? "rgba(202, 169, 99, 0.48)" : "rgba(124, 147, 151, 0.2)";
+        ctx.lineWidth = Math.max(1, unit * 0.08);
+        ctx.stroke();
+        ctx.fillStyle = unlocked ? "#f1e4bd" : "#8a9492";
+        ctx.font = `700 ${unit * (layout.compact ? 0.52 : 0.62)}px "DM Mono", monospace`;
+        ctx.fillText(`${String(index + 1).padStart(2, "0")} / ${reward.rarity.toUpperCase()}`, x + unit * 0.55, y + unit * 0.95);
+        ctx.fillStyle = unlocked ? "#c2d1cd" : "#7c8987";
+        ctx.font = `600 ${unit * (layout.compact ? 0.58 : 0.7)}px "Noto Sans JP", sans-serif`;
+        ctx.fillText(unlocked ? reward.title : "未解放の収蔵品", x + unit * 0.55, y + unit * 1.8);
+        ctx.fillStyle = "#7c9397";
+        ctx.font = `500 ${unit * (layout.compact ? 0.42 : 0.5)}px "Noto Sans JP", sans-serif`;
+        ctx.fillText(unlocked ? `× ${record?.unlockCount ?? 0}` : reward.conditionLabel, x + unit * 0.55, y + rowHeight - unit * 0.8);
+      });
+      ctx.restore();
+      return;
+    }
     const itemHeight = availableHeight / REWARD_DEFINITIONS.length;
     REWARD_DEFINITIONS.forEach((reward, index) => {
       const y = itemTop + itemHeight * index;
