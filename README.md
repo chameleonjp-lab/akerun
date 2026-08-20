@@ -46,6 +46,12 @@ Pelagicの停止待ちは一時停止ではありません。プレイ時間は�
 
 訓練、お手本、開発用seed、リタイアでは解放しません。収蔵品は能力を強化せず、鑑定帳の記録と再挑戦の目標として使います。
 
+## 音の試験室
+
+設定またはタイトル画面から、空転、ゲート縁、偽ゲート、フライ接続、深い接触、フェンス、ボルトの音を聞き比べられます。各音には、画面で確認できる反応も短く表示します。
+
+音をOFFにしても、画面の変化、抵抗、短い文章で同じ情報を返します。振動は音とは別にON/OFFでき、振動に対応しない端末でも開錠できます。
+
 ## スコア
 
 時間だけでなく、次を使ってスコアを計算します。
@@ -81,9 +87,10 @@ React側にはタイトル、名前入力、訓練、HUD、一時停止、結果
 
 ## ファイル構成
 
-- client/src/App.tsx: タイトル、訓練、プレイHUD、一時停止、結果、ランキング、収蔵品、設定、ヘルプ
+- client/src/App.tsx: タイトル、訓練、プレイHUD、一時停止、結果、ランキング、収蔵品、設定、音の試験室、ヘルプ
 - client/src/components/GameCanvas.tsx: Babylonキャンバスのライフサイクル
 - client/src/game/VaultWorld.ts: 金庫の描画、入力、音・振動、既存機構との同期
+- client/src/game/AudioFeedback.ts: 音の試験室のカタログと合成音
 - client/src/game/LockMechanism.ts: 金庫ルールの状態機械
 - client/src/game/GameDefinitions.ts: 金庫定義、公式20問、訓練問題、開発seed
 - client/src/game/RunSession.ts: プレイ記録とスコア計算
