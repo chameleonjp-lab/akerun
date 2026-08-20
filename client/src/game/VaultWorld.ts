@@ -131,6 +131,7 @@ export class VaultWorld {
     private readonly texture: DynamicTexture,
     private readonly canvas: HTMLCanvasElement,
     private readonly onStatusChange?: (status: string) => void,
+    private readonly onSnapshotChange?: (snapshot: GameSnapshot) => void,
   ) {
     const context = texture.getContext() as unknown as CanvasRenderingContext2D | null;
     if (!context) throw new Error("DynamicTexture の描画コンテキストを作成できませんでした。");
