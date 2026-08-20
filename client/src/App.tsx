@@ -558,3 +558,25 @@ export default function App() {
     </div>
   );
 
+  const renderOverlay = () => {
+    if (screen === "title") return renderTitle();
+    if (screen === "tutorial") return renderTutorial();
+    if (screen === "training") return renderTraining();
+    if (screen === "play") return renderPlayHud();
+    if (screen === "pause") return renderPause();
+    if (screen === "result") return renderResult();
+    if (screen === "ranking") return renderRanking();
+    if (screen === "archive") return renderArchive();
+    if (screen === "settings") return renderSettings();
+    return renderHelp();
+  };
+
+  return (
+    <ErrorBoundary>
+      <div className={shellClass}>
+        <GameCanvas onReady={onReady} onSnapshot={onSnapshot} onVisibilityPause={onVisibilityPause} />
+        {renderOverlay()}
+      </div>
+    </ErrorBoundary>
+  );
+}
