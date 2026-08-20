@@ -39,6 +39,12 @@ const phaseLabel = (phase: string) => {
   return labels[phase] ?? phase;
 };
 
+const rarityLabel: Record<string, string> = {
+  standard: "通常品",
+  rare: "希少品",
+  special: "特別品",
+};
+
 const tutorialCards = [
   { title: "訓練1：ダイヤル", text: "ダイヤルを右または左へ回し、指定位置で止めます。まずは一輪だけを動かします。" },
   { title: "訓練2：接触判別", text: "空転、ゲート縁、偽ゲート、正規ゲートの違いを、音・反発・画面の変化から比べます。" },
@@ -452,6 +458,10 @@ export default function App() {
           <p className="akerun-kicker">{isRetired ? "RETIRED / リタイア" : mode === "demo" ? "EXAMPLE RESULT / お手本" : "UNLOCK COMPLETE / 開錠完了"}</p>
           <h2>{isRetired ? "今回は記録しません。" : snapshot?.rewardTitle ?? "開錠しました。"}</h2>
           <p className="akerun-result-subtitle">{snapshot?.problemId} / {snapshot?.problemVersion} / {snapshot?.vaultTitle}</p>
+          {mode === "official" && !isRetired ? <p className="akerun-small">獲得収蔵品：{snapshot?.rewardTitle ?? "—"}</p> : null}
+          {mode === "official" && !isRetired && snapshot?.newlyUnlockedRewards.length ? (
+            <p className="akerun-submit-status">今回解放：{snapshot.newlyUnlockedRewards.join(" / ")}</p>
+          ) : null}
           <div className="akerun-result-grid">
             <Stat label="総合スコア" value={isRetired ? 0 : result?.score ?? snapshot?.score ?? 0} />
             <Stat label="開錠時間" value={formatTime(result?.elapsedTime ?? snapshot?.elapsedTime ?? 0)} />
@@ -514,9 +524,10 @@ export default function App() {
             const unlocked = archiveIds.includes(reward.id);
             return (
               <div className={"akerun-archive-row " + (unlocked ? "is-unlocked" : "")} key={reward.id}>
-                <strong>{unlocked ? reward.catalogNumber : "RESTRICTED COLLECTION"}</strong>
+                <strong>{rarityLabel[reward.rarity] ?? "収蔵品"} / {unlocked ? reward.catalogNumber : "RESTRICTED COLLECTION"}</strong>
                 <span>{unlocked ? reward.title : "未解放の収蔵品"}</span>
-                <small>{unlocked ? reward.description : "対応する金庫を開けると解放されます。"}</small>
+                <small>{unlocked ? reward.description : "解放条件：" + reward.conditionLabel}</small>
+                {unlocked ? <small>解放条件：{reward.conditionLabel}</small> : null}
               </div>
             );
           })}
