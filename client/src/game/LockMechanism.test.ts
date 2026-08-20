@@ -18,6 +18,9 @@ const alignGates = (lock: LockMechanism, puzzle: PuzzleDefinition) => {
     expect(lock.stage).toBe(index + 1);
     expect(lock.locked[stage.wheel]).toBe(true);
   }
+  if (lock.phase === "settling") {
+    advance(lock, puzzle.vault.personality.settlingDelaySeconds + 0.04);
+  }
   expect(lock.phase).toBe("tension-ready");
 };
 
@@ -153,6 +156,59 @@ describe("LockMechanism", () => {
     expect(pelagic.puzzle.vault.boltLayout.label).toBe("OFFSET MARINE");
     expect(nocturne.requiredHandleTurn).toBeGreaterThan(aurora.requiredHandleTurn);
     expect(pelagic.requiredHandleTurn).toBeLessThan(aurora.requiredHandleTurn);
+  });
+
+  it("金庫ごとに観察すべき接触反応が異なる", () => {
+    const aurora = new LockMechanism(createPuzzleFromSeed(90210, "observe"));
+    const nocturne = new LockMechanism(createPuzzleFromSeed(90211, "observe"));
+    const pelagic = new LockMechanism(createPuzzleFromSeed(90212, "observe"));
+    const edgeDepth = (lock: LockMechanism) => {
+      const target = lock.puzzle.stages[0].target;
+      lock.dial = (target + 99) % 100;
+      return lock.contactDepth;
+    };
+    const falseDepth = (lock: LockMechanism) => {
+      const falseGate = lock.puzzle.falseGates.find((gate) => gate.wheel === lock.puzzle.stages[0].wheel);
+      if (!falseGate) throw new Error("false gate missing");
+      lock.dial = falseGate.position;
+      return lock.contactDepth;
+    };
+
+    expect(aurora.puzzle.vault.personality.id).toBe("clear-contact");
+    expect(nocturne.puzzle.vault.personality.id).toBe("comparison");
+    expect(pelagic.puzzle.vault.personality.id).toBe("timing");
+    expect(edgeDepth(aurora)).toBeGreaterThan(edgeDepth(nocturne));
+    expect(falseDepth(nocturne)).toBeGreaterThan(falseDepth(aurora));
+    expect(pelagic.puzzle.vault.personality.settlingDelaySeconds).toBeGreaterThan(0);
+  });
+
+  it("Pelagicは停止後の反応が落ち着くまでテンションへ進めない", () => {
+    const puzzle = createPuzzleFromSeed(90212, "observe");
+    const lock = new LockMechanism(puzzle);
+    for (let index = 0; index < puzzle.stages.length; index += 1) {
+      const stage = puzzle.stages[index];
+      let guard = 0;
+      while (lock.stage === index && guard < 900) {
+        lock.rotate(stage.direction === "cw" ? 1 : -1);
+        guard += 1;
+      }
+    }
+    expect(lock.phase).toBe("settling");
+    lock.setTension(0.68);
+    expect(lock.lastMessage).toContain("停止後の反応");
+    advance(lock, puzzle.vault.personality.settlingDelaySeconds - 0.02);
+    expect(lock.phase).toBe("settling");
+    advance(lock, 0.04);
+    expect(lock.phase).toBe("tension-ready");
+  });
+
+  it("Pelagicの接触深度は回転速度が高いと一時的に浅くなる", () => {
+    const lock = new LockMechanism(createPuzzleFromSeed(90212, "observe"));
+    const target = lock.puzzle.stages[0].target;
+    lock.dial = (target + 99) % 100;
+    const slowDepth = lock.contactDepth;
+    lock.setRotationSpeed(1);
+    expect(lock.contactDepth).toBeLessThan(slowDepth);
   });
 
   it("過剰なテンションは回復可能な噛み込みとなり、専門モードでは規定回数でロックアウトする", () => {
