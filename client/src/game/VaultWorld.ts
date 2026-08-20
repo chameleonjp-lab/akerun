@@ -5,7 +5,7 @@
 import type { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { createFalseGateTrainingPuzzle, createPuzzleFromSeed, createReferencePuzzle, DIFFICULTY_PROFILES, REWARD_DEFINITIONS, type DifficultyId, type PuzzleDefinition, type RewardDefinition, type TurnDirection } from "./GameDefinitions";
 import { LockMechanism } from "./LockMechanism";
-import { AudioFeedback } from "./AudioFeedback";
+import { AUDIO_SAMPLE_DEFINITIONS, AudioFeedback, type AudioSampleId } from "./AudioFeedback";
 import { HapticFeedback } from "./HapticFeedback";
 import { ArchiveLedger } from "./ArchiveLedger";
 import { ObservationLedger, type ObservationCategory } from "./ObservationLedger";
@@ -48,6 +48,9 @@ export type GameSnapshot = {
   readonly stage: number;
   readonly stageCount: number;
   readonly difficulty: string;
+  readonly soundMuted: boolean;
+  readonly hapticsEnabled: boolean;
+  readonly hapticsSupported: boolean;
   readonly newlyUnlockedRewards: readonly string[];
   readonly runResult: RunResult | null;
 };
@@ -277,6 +280,9 @@ export class VaultWorld {
       stage: this.mechanism.stage,
       stageCount: this.mechanism.puzzle.stages.length,
       difficulty: this.mechanism.puzzle.problemTier ?? this.mechanism.puzzle.difficulty.label,
+      soundMuted: this.audio.isMuted,
+      hapticsEnabled: this.haptics.isEnabled,
+      hapticsSupported: this.haptics.isSupported,
       newlyUnlockedRewards: this.newlyUnlockedRewards.map((reward) => reward.title),
       runResult: result,
     };
@@ -636,6 +642,14 @@ export class VaultWorld {
     }
     if (action === "sound") this.audio.toggleMute();
     if (action === "haptics") this.haptics.toggle();
+    if (action.startsWith("audio-preview:")) {
+      const sampleId = action.slice("audio-preview:".length) as AudioSampleId;
+      const sample = AUDIO_SAMPLE_DEFINITIONS.find((item) => item.id === sampleId);
+      if (sample) {
+        this.audio.preview(sample.id);
+        this.onStatusChange?.(`音の試験室：${sample.title}。${sample.visualMeaning}`);
+      }
+    }
     if (action === "blind-assist" && this.isBlindMode) this.blindAssist = !this.blindAssist;
     if (action === "guide") this.tutorialVisible = !this.tutorialVisible;
     if (action === "training") this.startFalseGateTraining();

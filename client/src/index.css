@@ -404,6 +404,7 @@
 
 .akerun-ranking-card,
 .akerun-archive-card,
+.akerun-sound-lab-card,
 .akerun-help-card {
   max-height: calc(100vh - 30px);
   overflow: auto;
@@ -465,6 +466,37 @@
   line-height: 1.5;
 }
 
+.akerun-audio-lab-list {
+  display: grid;
+  gap: 10px;
+  margin: 20px 0;
+}
+
+.akerun-audio-lab-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid rgba(126, 155, 152, 0.32);
+  border-radius: 9px;
+  background: rgba(4, 12, 16, 0.72);
+}
+
+.akerun-audio-lab-row > div {
+  display: grid;
+  gap: 3px;
+}
+
+.akerun-audio-lab-row strong {
+  color: #f2e7c5;
+}
+
+.akerun-audio-lab-row small {
+  color: #aebfba;
+  line-height: 1.5;
+}
+
 .akerun-help-card ol {
   margin: 16px 0;
   padding-left: 1.4em;
@@ -475,7 +507,8 @@
 .akerun-high-contrast .akerun-live-panel,
 .akerun-high-contrast .akerun-modal-card,
 .akerun-high-contrast .akerun-title-card,
-.akerun-high-contrast .akerun-training-card {
+.akerun-high-contrast .akerun-training-card,
+.akerun-high-contrast .akerun-audio-lab-row {
   border-color: #e9d7a7;
   background: rgba(0, 0, 0, 0.96);
 }

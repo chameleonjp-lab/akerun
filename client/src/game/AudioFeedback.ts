@@ -2,6 +2,25 @@
  * Vault Tumbler Lab — 真鍮の機械製図室。
  * 外部音源を使わず、ダイヤル、抵抗、フェンス、ボルトを短い合成金属音へ変換する。
  */
+export type AudioSampleId = "idle" | "edge" | "false-gate" | "pickup" | "deep-contact" | "fence" | "bolt";
+
+export type AudioSampleDefinition = {
+  readonly id: AudioSampleId;
+  readonly title: string;
+  readonly description: string;
+  readonly visualMeaning: string;
+};
+
+export const AUDIO_SAMPLE_DEFINITIONS: readonly AudioSampleDefinition[] = [
+  { id: "idle", title: "空転", description: "フライが輪を拾わず、ドライブカムだけが回る音。", visualMeaning: "画面では大きな整列変化が起きません。" },
+  { id: "edge", title: "ゲート縁", description: "ゲートの端に触れた軽い金属音。正解確定ではありません。", visualMeaning: "接触深度は浅く、候補を記録できます。" },
+  { id: "false-gate", title: "偽ゲート", description: "一瞬だけ入りかける、短く鈍い反発音。", visualMeaning: "フェンスは最後まで下降せず、別の候補と比べます。" },
+  { id: "pickup", title: "フライ接続", description: "フライが次の輪を拾う擦過音。", visualMeaning: "通過回数や操作中の輪が変わります。" },
+  { id: "deep-contact", title: "深い接触", description: "正規ゲートに近づいたときの、低く長い接触音。", visualMeaning: "抵抗と接触深度を画面でも確認します。" },
+  { id: "fence", title: "フェンス", description: "フェンスが座り、機構の後半へ進める音。", visualMeaning: "テンションからフェンス操作へ移ります。" },
+  { id: "bolt", title: "ボルト", description: "ロックボルトと扉側ボルトが動く重いリンク音。", visualMeaning: "扉ハンドルへ進める状態を示します。" },
+];
+
 export class AudioFeedback {
   private context: AudioContext | null = null;
   private master: GainNode | null = null;
@@ -72,6 +91,13 @@ export class AudioFeedback {
     const edge = Math.min(1, Math.max(0, hardness));
     this.strike(840 + edge * 180, 0.027, 0.044 + edge * 0.018, "sine");
     this.strike(386 - edge * 48, 0.048 + edge * 0.018, 0.04, "triangle", 0.006);
+  }
+
+  /** 正規ゲートへ深く接触したときの、短く低い金属共鳴。 */
+  deepContact() {
+    if (!this.ready()) return;
+    this.strike(612, 0.12, 0.14, "triangle");
+    this.strike(306, 0.18, 0.095, "sine", 0.018);
   }
 
   /** 偽ゲートの浅い接触。縁音より短く、座り切らない鈍い反発を返す。 */
@@ -167,6 +193,21 @@ export class AudioFeedback {
     this.strike(118, 0.18, 0.23, "square");
     this.strike(71, 0.28, 0.18, "triangle", 0.035);
     this.strike(510, 0.06, 0.08, "sine", 0.045);
+  }
+
+  preview(sampleId: AudioSampleId) {
+    if (!this.context) return;
+    if (this.context.state === "suspended") {
+      void this.context.resume().then(() => this.preview(sampleId)).catch(() => undefined);
+      return;
+    }
+    if (sampleId === "idle") this.camIdle();
+    if (sampleId === "edge") this.gateEdge(0.55);
+    if (sampleId === "false-gate") this.falseGate(0.42, 0.62);
+    if (sampleId === "pickup") this.flyPickup(0.7, 0.5);
+    if (sampleId === "deep-contact") this.deepContact();
+    if (sampleId === "fence") this.fenceSeat();
+    if (sampleId === "bolt") this.boltworkRelease();
   }
 
   dispose() {
