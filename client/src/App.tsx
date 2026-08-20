@@ -154,6 +154,7 @@ export default function App() {
     const activeRun = nextProblem ? null : store.getActiveRun();
     const savedName = activeRun?.playerName ? store.savePlayerName(activeRun.playerName) : validateName();
     if (!savedName || !handle) return;
+    setPlayerName(savedName);
     let resumedProblem: PuzzleDefinition | null = null;
     if (activeRun) {
       try {
