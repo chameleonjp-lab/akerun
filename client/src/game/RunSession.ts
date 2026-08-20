@@ -24,24 +24,29 @@ export type RunSessionSnapshot = {
   readonly finished: boolean;
 };
 
-const nonNegative = (value: number) => Math.max(0, Number.isFinite(value) ? value : 0);
+const nonNegative = (value: number) =>
+  Math.max(0, Number.isFinite(value) ? value : 0);
 
 export const calculateRunScore = (
   problem: PuzzleDefinition,
   elapsedTime: number,
   faultCount: number,
   totalDialSteps: number,
-  falseGateContacts: number,
+  falseGateContacts: number
 ): number => {
   const parTime = problem.parTime ?? 60;
   const parDialSteps = problem.parDialSteps ?? 600;
+  const parFaults = Math.max(0, problem.parFaults ?? 0);
   const weight = problem.difficultyWeight ?? 1;
   const timePart = Math.round((parTime - elapsedTime) * 120);
   const dialPart = Math.round((parDialSteps - totalDialSteps) * 6);
   const difficultyPart = Math.round(weight * 1000);
-  const faultPart = Math.round(nonNegative(faultCount) * 650);
+  const faultPart = Math.round((nonNegative(faultCount) - parFaults) * 650);
   const falseGatePart = Math.round(nonNegative(falseGateContacts) * 35);
-  return Math.max(0, 8000 + difficultyPart + timePart + dialPart - faultPart - falseGatePart);
+  return Math.max(
+    0,
+    8000 + difficultyPart + timePart + dialPart - faultPart - falseGatePart
+  );
 };
 
 export class RunSession {
@@ -77,13 +82,21 @@ export class RunSession {
     this.faultCount += Math.max(0, Math.round(count));
   }
 
-  finish(overrides?: Partial<Pick<RunResult, "elapsedTime" | "faultCount">>): RunResult {
+  finish(
+    overrides?: Partial<Pick<RunResult, "elapsedTime" | "faultCount">>
+  ): RunResult {
     if (this.result) return this.result;
     const elapsedTime = nonNegative(overrides?.elapsedTime ?? this.elapsedTime);
-    const faultCount = Math.max(0, Math.round(overrides?.faultCount ?? this.faultCount));
+    const faultCount = Math.max(
+      0,
+      Math.round(overrides?.faultCount ?? this.faultCount)
+    );
     const parDialSteps = this.problem.parDialSteps ?? 600;
     const excessDialSteps = Math.max(0, this.totalDialSteps - parDialSteps);
-    const observationAccuracy = Math.max(0, Math.min(100, 100 - this.falseGateContacts * 4 - faultCount * 8));
+    const observationAccuracy = Math.max(
+      0,
+      Math.min(100, 100 - this.falseGateContacts * 4 - faultCount * 8)
+    );
     this.result = {
       elapsedTime,
       faultCount,
@@ -91,7 +104,13 @@ export class RunSession {
       excessDialSteps,
       falseGateContacts: this.falseGateContacts,
       observationAccuracy,
-      score: calculateRunScore(this.problem, elapsedTime, faultCount, this.totalDialSteps, this.falseGateContacts),
+      score: calculateRunScore(
+        this.problem,
+        elapsedTime,
+        faultCount,
+        this.totalDialSteps,
+        this.falseGateContacts
+      ),
       problemId: this.problem.problemId ?? this.problem.id,
       problemVersion: this.problem.problemVersion ?? "DEV",
       difficulty: this.problem.problemTier ?? this.problem.difficulty.id,
@@ -101,14 +120,27 @@ export class RunSession {
   }
 
   get snapshot(): RunSessionSnapshot {
-    const score = this.result?.score ?? calculateRunScore(this.problem, this.elapsedTime, this.faultCount, this.totalDialSteps, this.falseGateContacts);
+    const score =
+      this.result?.score ??
+      calculateRunScore(
+        this.problem,
+        this.elapsedTime,
+        this.faultCount,
+        this.totalDialSteps,
+        this.falseGateContacts
+      );
     return {
       elapsedTime: this.result?.elapsedTime ?? this.elapsedTime,
       faultCount: this.result?.faultCount ?? this.faultCount,
       totalDialSteps: this.totalDialSteps,
-      excessDialSteps: Math.max(0, this.totalDialSteps - (this.problem.parDialSteps ?? 600)),
+      excessDialSteps: Math.max(
+        0,
+        this.totalDialSteps - (this.problem.parDialSteps ?? 600)
+      ),
       falseGateContacts: this.falseGateContacts,
-      observationAccuracy: this.result?.observationAccuracy ?? Math.max(0, 100 - this.falseGateContacts * 4 - this.faultCount * 8),
+      observationAccuracy:
+        this.result?.observationAccuracy ??
+        Math.max(0, 100 - this.falseGateContacts * 4 - this.faultCount * 8),
       score,
       finished: this.finished,
     };
