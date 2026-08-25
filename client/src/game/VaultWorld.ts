@@ -675,8 +675,9 @@ export class VaultWorld {
       const audioSpeed = clamp(this.smoothedRotationSpeed * (0.72 + personality.speedSensitivity * 0.28), 0, 1);
       this.audio.dialTick(appliedSteps > 0 ? "cw" : "ccw", audioSpeed, preload.baseResistance);
       const cueStage = this.mechanism.activeStage ?? previousActiveStage;
+      const rotationFalseGateContacts = this.mechanism.lastRotationFalseGateContacts;
+      for (let contact = 0; contact < rotationFalseGateContacts; contact += 1) this.runSession?.recordFalseGate();
       const falseGate = this.mechanism.falseGateAtDial;
-      if (falseGate) this.runSession?.recordFalseGate();
       if (falseGate) {
         this.audio.falseGate(this.mechanism.contactDepth, preload.edgeHardness);
         this.haptics.pulse("false-gate");
