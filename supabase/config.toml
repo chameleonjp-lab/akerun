@@ -1,0 +1,5 @@
+# The function performs its own Origin + Publishable key validation.
+# Keep this explicit so CLI deployments do not re-enable JWT verification and
+# reject the browser contract before the function body runs.
+[functions.akerun-competition]
+verify_jwt = false

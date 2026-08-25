@@ -68,16 +68,22 @@ Pelagicの停止待ちは一時停止ではありません。プレイ時間は�
 
 プレイヤー名、訓練完了、問題別自己ベスト、送信失敗結果、収蔵品の解放状態を端末内へ保存します。
 
-ランキングは、カメレオンJPの実験場で使っている共通RPCへ接続します。
+ランキングは、カメレオンJPの実験場で使っている共通の `games`、`game_scores`、`score_runs` を参照します。Akerun専用の公開ランキングテーブルは作りません。書き込みだけは、既存の verified ゲームと同じく Edge Function を入口にします。
 
 - game slug: akerun
-- 送信: submit_score
-- 取得: get_best_score_ranking
+- 送信: `supabase/functions/akerun-competition` の prepare / begin / finish
+- 取得: `get_akerun_ranking_v1`
+- サーバーが発行するプレイIDで、問題ID・問題バージョンをプレイ中に固定する
+- 初回抽選と別問題はサーバー抽選。同じ問題の再挑戦だけ、完了済みの同一問題トークンを提示する
+- サーバー側の公式問題カタログで余分な回転、観察精度、スコアを再計算する
+- 順位はスコア降順、失敗数、時間、余分な回転数の順で比較する
 - 公開クライアントではPublishable keyだけを使用
 - 訓練、お手本、リタイア、未クリアは送信しない
-- 通信失敗時は結果を端末内へ保存し、結果画面から再送する
+- 通信失敗時はプレイIDを含む結果を端末内へ保存し、結果画面またはタイトル画面から再送する
 
-Supabase側の public.games 登録は、問題バージョンと表示順を確定した後に別途確認します。ゲーム側は独自テーブルを作りません。
+Supabase側の `akerun` は `submission_mode=verified` で登録します。公開前の安全策として、現在の初期マイグレーションでは `is_active=false` と `accepting_runs=false` にしてあります。Edge Functionのデプロイ、クライアント公開、実環境の正常系・異常系確認が終わってから有効化します。サービスキーはEdge Functionのサーバー環境変数だけで使用し、ブラウザへ出しません。
+
+この契約は、問題の固定、スコア再計算、値の範囲、二重送信を検証します。一方、ブラウザの入力履歴をサーバーで再生する完全なアンチチート証明ではありません。入力トレース検証は、現行機構をサーバー側へ移植する別フェーズとして扱います。
 
 ## iPhone操作
 
@@ -96,7 +102,7 @@ React側にはタイトル、名前入力、訓練、HUD、一時停止、結果
 - client/src/game/GameDefinitions.ts: 金庫定義、公式20問、訓練問題、開発seed
 - client/src/game/RunSession.ts: プレイ記録とスコア計算
 - client/src/game/ProgressStore.ts: 端末内進行保存と再送待ち
-- client/src/game/RankingClient.ts: 共通ランキングRPC接続
+- client/src/game/RankingClient.ts: verified Edge Functionと共通ランキングRPC接続
 - client/src/game/ArchiveLedger.ts: 収蔵品の端末内保存
 - client/src/game/ObservationLedger.ts: 観察メモの端末内保存
 - client/src/game/OfficialProblemBalance.ts: 既存機構で測定する20問のバランス基準
@@ -115,6 +121,7 @@ GitHub Actionsでも型検査、ルールテスト、本番ビルドを実行し
 ## 既知の未完了事項
 
 - 問題ごとの実機計測値は、iPhoneで20問を通しプレイして最終調整する
-- Supabaseの public.games へ akerun を登録し、実環境で送受信を確認する
+- SupabaseのEdge Functionと公開クライアントを同じ契約バージョンでデプロイし、akerunを有効化する
+- 同じ問題の再挑戦トークン、送信失敗からの再送、期限切れ、二重送信を実環境で確認する
 - VaultWorld.ts を入力、描画、セッションへ段階的に分割する
 - 公開前にiPhone Safariの縦画面で全導線を確認する

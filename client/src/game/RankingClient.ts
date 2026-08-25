@@ -2,11 +2,19 @@ import type { RunResult } from "./RunSession";
 
 export type RankingRow = {
   readonly rank?: number;
+  readonly rank_no?: number;
   readonly playerName?: string;
-  readonly score?: number;
   readonly display_name?: string;
+  readonly score?: number;
   readonly best_score?: number;
   readonly first_score?: number;
+  readonly play_count?: number;
+  readonly fault_count?: number;
+  readonly elapsed_time_ms?: number;
+  readonly excess_dial_steps?: number;
+  readonly problem_id?: string;
+  readonly problem_version?: string;
+  readonly updated_at?: string;
 };
 
 export type RankingSubmission = {
@@ -15,20 +23,53 @@ export type RankingSubmission = {
   readonly raw: unknown;
 };
 
+export type RankingRunPreparation = {
+  readonly status: "ok" | "disabled" | "error";
+  readonly runToken: string | null;
+  readonly problemId: string | null;
+  readonly problemVersion: string | null;
+};
+
+export type RankingRunStart = {
+  readonly status: "ok" | "error";
+  readonly problemId: string | null;
+  readonly problemVersion: string | null;
+};
+
 const SUPABASE_URL = "https://mlpnjgezrnhdxsxolyzj.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_drzcy0v97knU6FgjqSgBHw_0A9XPdFM";
 const SUPABASE_MODULE_URL = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.9/+esm";
-const GAME_SLUG = "akerun";
-const CLIENT_VERSION = "akerun-web-official-v1";
+export const GAME_SLUG = "akerun";
+export const CLIENT_VERSION = "akerun-web-verified-v1";
+export const CONTRACT_VERSION = "akerun-play-v1";
+export const COMPETITION_FUNCTION = "akerun-competition";
+const REQUEST_TIMEOUT_MS = 8000;
 
 type RpcClient = {
   rpc: (name: string, params: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>;
 };
 
+type FetchLike = typeof fetch;
+
+export type RankingClientOptions = {
+  readonly fetch?: FetchLike;
+  readonly rpcClient?: RpcClient;
+};
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const stringOrNull = (value: unknown) =>
+  typeof value === "string" && value.trim() ? value.trim() : null;
+
 export class RankingClient {
   private clientPromise: Promise<RpcClient | null> | null = null;
+  private readonly submissionByRunToken = new Map<string, Promise<RankingSubmission>>();
+
+  constructor(private readonly options: RankingClientOptions = {}) {}
 
   private connect() {
+    if (this.options.rpcClient) return Promise.resolve(this.options.rpcClient);
     if (!this.clientPromise) {
       this.clientPromise = import(/* @vite-ignore */ SUPABASE_MODULE_URL)
         .then((module) => module.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
@@ -47,27 +88,118 @@ export class RankingClient {
     return this.clientPromise;
   }
 
-  async submit(playerName: string, result: RunResult): Promise<RankingSubmission> {
-    const client = await this.connect();
-    if (!client) throw new Error("ranking client unavailable");
-    const response = await client.rpc("submit_score", {
-      p_display_name: playerName,
-      p_game_slug: GAME_SLUG,
-      p_score: Math.trunc(result.score),
-      p_client_version: CLIENT_VERSION,
+  private async competitionRequest(action: string, body: Record<string, unknown>) {
+    const fetchImpl = this.options.fetch ?? globalThis.fetch;
+    if (typeof fetchImpl !== "function") throw new Error("ranking fetch unavailable");
+
+    const controller = new AbortController();
+    const timer = globalThis.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetchImpl(
+        `${SUPABASE_URL}/functions/v1/${COMPETITION_FUNCTION}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: SUPABASE_PUBLISHABLE_KEY,
+          },
+          body: JSON.stringify({
+            action,
+            clientVersion: CLIENT_VERSION,
+            contractVersion: CONTRACT_VERSION,
+            ...body,
+          }),
+          signal: controller.signal,
+        },
+      );
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !isObject(data)) {
+        throw new Error(`ranking contract request failed (${response.status})`);
+      }
+      return data;
+    } catch (error) {
+      if (controller.signal.aborted) throw new Error("ranking contract request timed out");
+      throw error;
+    } finally {
+      globalThis.clearTimeout(timer);
+    }
+  }
+
+  async prepareOfficialRun(
+    playerName: string,
+    requestedProblemId?: string,
+    replayRunToken?: string | null,
+  ): Promise<RankingRunPreparation> {
+    try {
+      const data = await this.competitionRequest("prepare", {
+        playerName,
+        ...(requestedProblemId ? { problemId: requestedProblemId } : {}),
+        ...(replayRunToken ? { replayRunToken } : {}),
+      });
+      if (data.disabled === true) {
+        return { status: "disabled", runToken: null, problemId: null, problemVersion: null };
+      }
+      const runToken = stringOrNull(data.runToken);
+      const problemId = stringOrNull(data.problemId);
+      const problemVersion = stringOrNull(data.problemVersion);
+      if (data.accepted !== true || !runToken || !problemId || !problemVersion) {
+        return { status: "error", runToken: null, problemId: null, problemVersion: null };
+      }
+      return { status: "ok", runToken, problemId, problemVersion };
+    } catch {
+      return { status: "error", runToken: null, problemId: null, problemVersion: null };
+    }
+  }
+
+  async beginOfficialRun(runToken: string): Promise<RankingRunStart> {
+    try {
+      const data = await this.competitionRequest("begin", { runToken });
+      const problemId = stringOrNull(data.problemId);
+      const problemVersion = stringOrNull(data.problemVersion);
+      if (data.accepted !== true || !problemId || !problemVersion) {
+        return { status: "error", problemId: null, problemVersion: null };
+      }
+      return { status: "ok", problemId, problemVersion };
+    } catch {
+      return { status: "error", problemId: null, problemVersion: null };
+    }
+  }
+
+  async submit(playerName: string, result: RunResult, rankingRunToken?: string | null): Promise<RankingSubmission> {
+    const runToken = stringOrNull(rankingRunToken);
+    if (!runToken) throw new Error("verified ranking run is unavailable");
+    const existing = this.submissionByRunToken.get(runToken);
+    if (existing) return existing;
+
+    const promise = this.competitionRequest("finish", {
+      runToken,
+      playerName,
+      problemId: result.problemId,
+      problemVersion: result.problemVersion,
+      elapsedTimeMs: Math.max(0, Math.round(result.elapsedTime * 1000)),
+      faultCount: Math.max(0, Math.round(result.faultCount)),
+      totalDialSteps: Math.max(0, Math.round(result.totalDialSteps)),
+      excessDialSteps: Math.max(0, Math.round(result.excessDialSteps)),
+      falseGateContacts: Math.max(0, Math.round(result.falseGateContacts)),
+      observationAccuracy: Math.max(0, Math.min(100, Math.round(result.observationAccuracy))),
+      score: Math.trunc(result.score),
+    }).then((raw) => {
+      if (raw.accepted !== true) throw new Error("score was not accepted");
+      return { accepted: true, message: "ランキングへ送信しました。", raw };
     });
-    if (response.error) throw response.error;
-    const raw = Array.isArray(response.data) ? response.data[0] : response.data;
-    const accepted = Boolean((raw as { accepted?: boolean } | null)?.accepted);
-    if (!accepted) throw new Error("score was not accepted");
-    return { accepted, message: "ランキングへ送信しました。", raw };
+    this.submissionByRunToken.set(runToken, promise);
+    try {
+      return await promise;
+    } catch (error) {
+      this.submissionByRunToken.delete(runToken);
+      throw error;
+    }
   }
 
   async getBestScores(limit = 10): Promise<RankingRow[]> {
     const client = await this.connect();
     if (!client) throw new Error("ranking client unavailable");
-    const response = await client.rpc("get_best_score_ranking", {
-      p_game_slug: GAME_SLUG,
+    const response = await client.rpc("get_akerun_ranking_v1", {
       p_limit: Math.max(1, Math.min(100, Math.trunc(limit))),
     });
     if (response.error) throw response.error;
@@ -81,5 +213,9 @@ export class RankingClient {
 
   static score(row: RankingRow) {
     return Number(row.score ?? row.best_score ?? 0);
+  }
+
+  static rank(row: RankingRow, fallback: number) {
+    return Number(row.rank ?? row.rank_no ?? fallback);
   }
 }

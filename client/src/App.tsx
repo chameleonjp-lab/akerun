@@ -79,6 +79,8 @@ export default function App() {
   const [playerName, setPlayerName] = useState(() => store.getPlayerName());
   const [nameError, setNameError] = useState("");
   const [problem, setProblem] = useState<PuzzleDefinition | null>(null);
+  const [rankingRunToken, setRankingRunToken] = useState<string | null>(null);
+  const [startingOfficial, setStartingOfficial] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(1);
   const [submitStatus, setSubmitStatus] = useState("未送信");
   const [retryAvailable, setRetryAvailable] = useState(false);
@@ -128,7 +130,16 @@ export default function App() {
   useEffect(() => {
     const result = snapshot?.runResult;
     if (screen !== "result" || mode !== "official" || !snapshot?.recordable || !result) return;
-    const key = result.problemId + "@" + result.problemVersion + ":" + String(result.score) + ":" + String(result.elapsedTime);
+    const resultKey = result.problemId + "@" + result.problemVersion + ":" + String(result.score) + ":" + String(result.elapsedTime);
+    if (!rankingRunToken) {
+      const localKey = "local:" + resultKey;
+      if (submittedKeyRef.current === localKey) return;
+      store.recordBest(result);
+      submittedKeyRef.current = localKey;
+      setSubmitStatus("ランキング受付を確認できませんでした。結果は端末内へ保存しました。");
+      return;
+    }
+    const key = rankingRunToken + ":" + resultKey;
     if (submittedKeyRef.current === key || submittingKeyRef.current === key) return;
 
     // 結果確定時に自己ベストを先に保存し、通信状態と切り離す。
@@ -137,23 +148,23 @@ export default function App() {
     submittedKeyRef.current = key;
     submittingKeyRef.current = key;
     setSubmitStatus("送信中…");
-    void rankingClient.submit(playerName, result)
+    void rankingClient.submit(playerName, result, rankingRunToken)
       .then(() => {
         setRetryAvailable(false);
         setSubmitStatus("ランキングへ送信しました。");
-        store.removePendingForResult(result);
+        store.removePendingForResult(result, rankingRunToken);
       })
       .catch(() => {
         // 失敗時はsubmittedKeyを残し、自動再送ループを防ぐ。
         // 再送ボタンがretryNonceを進め、明示的にもう一度実行する。
         setRetryAvailable(true);
-        store.enqueueRanking(playerName, result);
+        store.enqueueRanking(playerName, result, rankingRunToken);
         setSubmitStatus("送信に失敗しました。結果画面の再送ボタンを押してください。");
       })
       .finally(() => {
         if (submittingKeyRef.current === key) submittingKeyRef.current = "";
       });
-  }, [mode, playerName, rankingClient, retryNonce, screen, snapshot, store]);
+  }, [mode, playerName, rankingClient, rankingRunToken, retryNonce, screen, snapshot, store]);
 
   const validateName = () => {
     const normalized = normalizePlayerName(playerName);
@@ -167,36 +178,86 @@ export default function App() {
     return saved;
   };
 
-  const startOfficial = (nextProblem?: PuzzleDefinition) => {
+  const startOfficial = async (requestedProblemId?: string, replayRunToken?: string | null) => {
     if (!store.trainingComplete) {
       setTutorialStep(1);
       setScreen("tutorial");
       return;
     }
-    const activeRun = nextProblem ? null : store.getActiveRun();
+    if (startingOfficial) return;
+    const activeRun = requestedProblemId ? null : store.getActiveRun();
     const savedName = activeRun?.playerName ? store.savePlayerName(activeRun.playerName) : validateName();
     if (!savedName || !handle) return;
-    setPlayerName(savedName);
-    let resumedProblem: PuzzleDefinition | null = null;
-    if (activeRun) {
-      try {
-        const candidate = createOfficialPuzzle(activeRun.problemId);
-        if (candidate.problemVersion === activeRun.problemVersion) resumedProblem = candidate;
-      } catch {
-        store.clearActiveRun();
+    setStartingOfficial(true);
+    setSubmitStatus("問題を準備中…");
+    try {
+      setPlayerName(savedName);
+      let chosen: PuzzleDefinition | null = null;
+      let nextRankingRunToken: string | null = activeRun?.rankingRunToken ?? null;
+
+      if (nextRankingRunToken && activeRun) {
+        const begun = await rankingClient.beginOfficialRun(nextRankingRunToken);
+        if (begun.status === "ok") {
+          try {
+            const candidate = createOfficialPuzzle(begun.problemId ?? activeRun.problemId);
+            if (candidate.problemVersion === (begun.problemVersion ?? activeRun.problemVersion)) chosen = candidate;
+          } catch {
+            // 下の新規準備へフォールバックする。
+          }
+        }
+        if (!chosen) nextRankingRunToken = null;
       }
+
+      if (!chosen) {
+        const preparation = await rankingClient.prepareOfficialRun(
+          savedName,
+          requestedProblemId ?? activeRun?.problemId,
+          replayRunToken,
+        );
+        if (preparation.status === "ok" && preparation.runToken) {
+          const begun = await rankingClient.beginOfficialRun(preparation.runToken);
+          if (begun.status === "ok" && begun.problemId && begun.problemVersion) {
+            try {
+              const candidate = createOfficialPuzzle(begun.problemId);
+              if (candidate.problemVersion === begun.problemVersion) {
+                chosen = candidate;
+                nextRankingRunToken = preparation.runToken;
+              }
+            } catch {
+              // 公式カタログにない問題は採用しない。
+            }
+          }
+        }
+      }
+
+      if (!chosen) {
+        if (requestedProblemId ?? activeRun?.problemId) {
+          try {
+            chosen = createOfficialPuzzle(requestedProblemId ?? activeRun?.problemId ?? "");
+          } catch {
+            chosen = null;
+          }
+        }
+        chosen ??= chooseOfficialProblem(activeRun?.problemId);
+        nextRankingRunToken = null;
+      }
+
+      const problemId = chosen.problemId ?? chosen.id;
+      const problemVersion = chosen.problemVersion ?? "V1";
+      store.saveActiveRun(problemId, problemVersion, savedName, nextRankingRunToken);
+      setRankingRunToken(nextRankingRunToken);
+      setProblem(chosen);
+      setMode("official");
+      setSubmitStatus(nextRankingRunToken ? "未送信" : "ランキング受付なし。プレイ結果は端末内へ保存します。");
+      setRetryAvailable(false);
+      submittedKeyRef.current = "";
+      setRetryNonce(0);
+      handle.startPuzzle(chosen);
+      setSnapshot(handle.getSnapshot());
+      setScreen("play");
+    } finally {
+      setStartingOfficial(false);
     }
-    const chosen = nextProblem ?? resumedProblem ?? chooseOfficialProblem();
-    store.saveActiveRun(chosen.problemId ?? chosen.id, chosen.problemVersion ?? "V1", savedName);
-    setProblem(chosen);
-    setMode("official");
-    setSubmitStatus("未送信");
-    setRetryAvailable(false);
-    submittedKeyRef.current = "";
-    setRetryNonce(0);
-    handle.startPuzzle(chosen);
-    setSnapshot(handle.getSnapshot());
-    setScreen("play");
   };
 
   const startTraining = () => {
@@ -204,6 +265,7 @@ export default function App() {
     const step = Math.max(1, Math.min(4, tutorialStep)) as 1 | 2 | 3 | 4;
     const trainingPuzzle = createTrainingPuzzle(step);
     setProblem(trainingPuzzle);
+    setRankingRunToken(null);
     setMode("training");
     handle.startPuzzle(trainingPuzzle, { training: true, postDial: step === 3 });
     setSnapshot(handle.getSnapshot());
@@ -213,21 +275,18 @@ export default function App() {
   const startDemo = () => {
     if (!handle) return;
     setMode("demo");
+    setRankingRunToken(null);
     handle.startDemo();
     setSnapshot(handle.getSnapshot());
     setScreen("play");
   };
 
   const startSameProblem = () => {
-    if (problem) startOfficial(problem);
+    if (problem) void startOfficial(problem.problemId ?? problem.id, rankingRunToken);
   };
 
   const startDifferentProblem = () => {
-    if (!problem) {
-      startOfficial();
-      return;
-    }
-    startOfficial(chooseOfficialProblem(problem.problemId));
+    void startOfficial();
   };
 
   const pause = () => {
@@ -243,6 +302,7 @@ export default function App() {
   const retire = () => {
     handle?.retire();
     store.clearActiveRun();
+    setRankingRunToken(null);
     if (handle) setSnapshot(handle.getSnapshot());
     setMode("retired");
     setScreen("result");
@@ -310,9 +370,14 @@ export default function App() {
     }
     setSubmitStatus("未送信記録を送信中…");
     let sent = 0;
+    let unavailable = 0;
     for (const item of pending) {
+      if (!item.rankingRunToken) {
+        unavailable += 1;
+        continue;
+      }
       try {
-        await rankingClient.submit(item.playerName, item.result);
+        await rankingClient.submit(item.playerName, item.result, item.rankingRunToken);
         store.removePending(item.id);
         store.recordBest(item.result);
         sent += 1;
@@ -320,7 +385,9 @@ export default function App() {
         // 残った記録は次回の再送対象として維持する。
       }
     }
-    setSubmitStatus(sent === pending.length ? "未送信記録をすべて送信しました。" : `${sent}/${pending.length}件を送信しました。`);
+    setSubmitStatus(unavailable
+      ? `${sent}/${pending.length}件を送信しました。旧形式の${unavailable}件は再送契約がなく、同じ問題を再プレイしてください。`
+      : sent === pending.length ? "未送信記録をすべて送信しました。" : `${sent}/${pending.length}件を送信しました。`);
   };
 
   const archiveIds = store.getArchiveIds();
@@ -357,7 +424,7 @@ export default function App() {
         {nameError ? <p className="akerun-error">{nameError}</p> : null}
         {activeRun ? <p className="akerun-small">進行中の {activeRun.problemId} を保持しています。ゲーム開始で同じ問題を再開します。</p> : null}
         <div className="akerun-title-actions">
-          <Button tone="primary" onClick={() => startOfficial()} disabled={!handle}>ゲーム開始</Button>
+          <Button tone="primary" onClick={() => void startOfficial()} disabled={!handle || startingOfficial}>{startingOfficial ? "問題を準備中…" : "ゲーム開始"}</Button>
           <Button onClick={() => { setTutorialStep(1); setScreen("tutorial"); }}>初めて遊ぶ</Button>
           <Button onClick={startDemo} disabled={!handle}>お手本を見る</Button>
         </div>
@@ -391,7 +458,7 @@ export default function App() {
             <>
               <h2>訓練が終わりました。</h2>
               <p>回す、反応を見る、判断を直す。この流れを使って、20問の通常ゲームへ進めます。</p>
-              <Button tone="primary" onClick={() => startOfficial()}>通常ゲームへ</Button>
+              <Button tone="primary" onClick={() => void startOfficial()} disabled={startingOfficial}>{startingOfficial ? "問題を準備中…" : "通常ゲームへ"}</Button>
               <Button onClick={() => setScreen("title")}>タイトルへ戻る</Button>
             </>
           ) : (
@@ -506,8 +573,8 @@ export default function App() {
                 setRetryNonce((current) => current + 1);
               }}
             >記録を再送する</Button> : null}
-            <Button tone="primary" onClick={startSameProblem} disabled={!problem || mode !== "official"}>同じ問題でもう一度</Button>
-            <Button onClick={startDifferentProblem} disabled={mode !== "official"}>別の問題に挑戦</Button>
+            <Button tone="primary" onClick={startSameProblem} disabled={!problem || mode !== "official" || startingOfficial}>同じ問題でもう一度</Button>
+            <Button onClick={startDifferentProblem} disabled={mode !== "official" || startingOfficial}>別の問題に挑戦</Button>
             <Button onClick={openRanking}>ランキング</Button>
             <Button onClick={() => void shareResult()}>結果を共有</Button>
             <Button onClick={() => setScreen("title")}>タイトルへ戻る</Button>
@@ -525,8 +592,8 @@ export default function App() {
         <p>{rankingStatus}</p>
         <div className="akerun-ranking-list">
           {rankingRows.map((row, index) => (
-            <div className="akerun-ranking-row" key={String(row.rank ?? index) + "-" + RankingClient.displayName(row)}>
-              <strong>{row.rank ?? index + 1}</strong>
+            <div className="akerun-ranking-row" key={String(RankingClient.rank(row, index + 1)) + "-" + RankingClient.displayName(row)}>
+              <strong>{RankingClient.rank(row, index + 1)}</strong>
               <span>{RankingClient.displayName(row)}</span>
               <b>{RankingClient.score(row)}</b>
             </div>

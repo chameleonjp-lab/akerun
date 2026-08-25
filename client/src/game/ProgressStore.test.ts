@@ -79,4 +79,23 @@ describe("ProgressStore", () => {
     expect(store.getActiveRun()).toBeNull();
     vi.unstubAllGlobals();
   });
+
+  it("keeps the verified run token with an active and pending result", () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+        removeItem: (key: string) => values.delete(key),
+      },
+    });
+    const store = new ProgressStore();
+    store.saveActiveRun("AKERUN-01-V1", "V1", "player one", "run-token-1");
+    expect(store.getActiveRun()?.rankingRunToken).toBe("run-token-1");
+    store.enqueueRanking("player one", result, "run-token-1");
+    expect(store.getPendingRankings()[0]?.rankingRunToken).toBe("run-token-1");
+    store.removePendingForResult(result, "run-token-1");
+    expect(store.getPendingRankings()).toHaveLength(0);
+    vi.unstubAllGlobals();
+  });
 });
