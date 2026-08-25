@@ -57,6 +57,9 @@ const isBetterResult = (candidate: RunResult, previous: RunResult) => {
   return candidate.excessDialSteps < previous.excessDialSteps;
 };
 
+const submittedFalseGateContacts = (result: RunResult) =>
+  result.avoidableFalseGateContacts ?? result.falseGateContacts;
+
 export const normalizePlayerName = (value: string) =>
   value.trim().replace(/\s+/g, " ").slice(0, 16);
 
@@ -155,7 +158,7 @@ export class ProgressStore {
       result.faultCount,
       result.totalDialSteps,
       result.excessDialSteps,
-      result.falseGateContacts,
+      submittedFalseGateContacts(result),
     ].join(":");
   }
 
@@ -167,7 +170,7 @@ export class ProgressStore {
       result.faultCount,
       result.totalDialSteps,
       result.excessDialSteps,
-      result.falseGateContacts,
+      submittedFalseGateContacts(result),
     ].join(":");
   }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createFalseGateTrainingPuzzle, createPuzzleFromSeed, createReferencePuzzle, type PuzzleDefinition } from "./GameDefinitions";
+import { createFalseGateTrainingPuzzle, createOfficialPuzzle, createPuzzleFromSeed, createReferencePuzzle, type PuzzleDefinition } from "./GameDefinitions";
 import { LockMechanism } from "./LockMechanism";
 
 const advance = (lock: LockMechanism, seconds: number) => {
@@ -181,6 +181,23 @@ describe("LockMechanism", () => {
     expect(edgeDepth(aurora)).toBeGreaterThan(edgeDepth(nocturne));
     expect(falseDepth(nocturne)).toBeGreaterThan(falseDepth(aurora));
     expect(pelagic.puzzle.vault.personality.settlingDelaySeconds).toBeGreaterThan(0);
+  });
+
+  it("公式問題へ金庫固有の候補密度と許容帯を反映する", () => {
+    const aurora = createOfficialPuzzle("AKERUN-01-V1");
+    const nocturne = createOfficialPuzzle("AKERUN-02-V1");
+    const pelagic = createOfficialPuzzle("AKERUN-03-V1");
+    const bandWidth = (band: readonly [number, number]) => band[1] - band[0];
+
+    expect(aurora.vault.personality.falseGatesPerWheel).toBe(2);
+    expect(nocturne.vault.personality.falseGatesPerWheel).toBe(3);
+    expect(pelagic.vault.personality.falseGatesPerWheel).toBe(2);
+    expect(bandWidth(aurora.difficulty.tensionBand)).toBeGreaterThan(
+      bandWidth(nocturne.difficulty.tensionBand)
+    );
+    expect(bandWidth(aurora.difficulty.fenceBand)).toBeGreaterThan(
+      bandWidth(nocturne.difficulty.fenceBand)
+    );
   });
 
   it("Pelagicは停止後の反応が落ち着くまでテンションへ進めない", () => {

@@ -70,7 +70,9 @@ describe("official puzzle catalog", () => {
       expect(new Set(puzzle.stages.map(stage => stage.target)).size).toBe(
         catalog.wheelCount
       );
-      expect(puzzle.falseGates).toHaveLength(catalog.wheelCount * 2);
+      expect(puzzle.falseGates).toHaveLength(
+        catalog.wheelCount * puzzle.vault.personality.falseGatesPerWheel
+      );
       puzzle.falseGates.forEach(gate => {
         const target = puzzle.stages.find(
           stage => stage.wheel === gate.wheel
@@ -88,7 +90,15 @@ describe("official puzzle catalog", () => {
     expect(OFFICIAL_PROBLEM_BALANCE).toHaveLength(20);
     OFFICIAL_PROBLEM_BALANCE.forEach(balance => {
       expect(balance.minimumDialSteps).toBe(balance.parDialSteps);
-      expect(balance.falseGateCount).toBe(balance.wheelCount * 2);
+      const puzzle = createOfficialPuzzle(balance.problemId);
+      expect(balance.falseGateCount).toBe(
+        balance.wheelCount * puzzle.vault.personality.falseGatesPerWheel
+      );
+      expect(balance.minimumFalseGateContacts).toBe(
+        OFFICIAL_PROBLEM_CATALOG.find(
+          item => item.problemId === balance.problemId
+        )?.parFalseGateContacts
+      );
       expect(balance.totalPasses).toBeGreaterThan(balance.wheelCount);
       expect(balance.parFaults).toBe(
         OFFICIAL_PROBLEM_CATALOG.find(

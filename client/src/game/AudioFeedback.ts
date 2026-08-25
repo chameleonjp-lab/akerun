@@ -11,6 +11,47 @@ export type AudioSampleDefinition = {
   readonly visualMeaning: string;
 };
 
+export type FalseGateToneProfile = {
+  readonly primaryFrequency: number;
+  readonly secondaryFrequency: number;
+  readonly primaryDuration: number;
+  readonly secondaryDuration: number;
+  readonly primaryGain: number;
+  readonly secondaryGain: number;
+};
+
+const clamp = (value: number, min = 0, max = 1) => Math.min(max, Math.max(min, value));
+
+/**
+ * 偽ゲートの音色を金庫固有の類似度から決める純粋関数。
+ * Nocturneは正規ゲートに近い音を返すが、画面・抵抗の差まで消さない。
+ */
+export const getFalseGateToneProfile = (
+  depth: number,
+  hardness = 0.5,
+  similarity = 0,
+): FalseGateToneProfile => {
+  const shallow = clamp(depth);
+  const edge = clamp(hardness);
+  const blend = clamp(similarity);
+  const falsePrimary = 498 + shallow * 84 + edge * 54;
+  const falseSecondary = 178;
+  const primaryFrequency = falsePrimary + (612 - falsePrimary) * blend;
+  const secondaryFrequency = falseSecondary + (306 - falseSecondary) * blend;
+  const primaryDuration = 0.034 + blend * 0.028;
+  const secondaryDuration = 0.07 + blend * 0.045;
+  const primaryGain = 0.042 + blend * 0.018;
+  const secondaryGain = 0.034 + shallow * 0.022 + blend * 0.012;
+  return {
+    primaryFrequency,
+    secondaryFrequency,
+    primaryDuration,
+    secondaryDuration,
+    primaryGain,
+    secondaryGain,
+  };
+};
+
 export const AUDIO_SAMPLE_DEFINITIONS: readonly AudioSampleDefinition[] = [
   { id: "idle", title: "空転", description: "フライが輪を拾わず、ドライブカムだけが回る音。", visualMeaning: "画面では大きな整列変化が起きません。" },
   { id: "edge", title: "ゲート縁", description: "ゲートの端に触れた軽い金属音。正解確定ではありません。", visualMeaning: "接触深度は浅く、候補を記録できます。" },
@@ -101,11 +142,11 @@ export class AudioFeedback {
   }
 
   /** 偽ゲートの浅い接触。縁音より短く、座り切らない鈍い反発を返す。 */
-  falseGate(depth: number, hardness = 0.5) {
+  falseGate(depth: number, hardness = 0.5, similarity = 0) {
     if (!this.mechanicalCueReady(0.095)) return;
-    const shallow = Math.min(1, Math.max(0, depth));
-    this.strike(498 + shallow * 84 + hardness * 54, 0.034, 0.042, "square");
-    this.strike(178, 0.07, 0.034 + shallow * 0.022, "triangle", 0.008);
+    const tone = getFalseGateToneProfile(depth, hardness, similarity);
+    this.strike(tone.primaryFrequency, tone.primaryDuration, tone.primaryGain, "square");
+    this.strike(tone.secondaryFrequency, tone.secondaryDuration, tone.secondaryGain, "triangle", 0.008);
   }
 
   /** フライが遊びの中で次の輪へ近づく擦過音。 */

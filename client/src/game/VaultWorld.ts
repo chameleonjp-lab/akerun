@@ -679,7 +679,11 @@ export class VaultWorld {
       for (let contact = 0; contact < rotationFalseGateContacts; contact += 1) this.runSession?.recordFalseGate();
       const falseGate = this.mechanism.falseGateAtDial;
       if (falseGate) {
-        this.audio.falseGate(this.mechanism.contactDepth, preload.edgeHardness);
+        this.audio.falseGate(
+          this.mechanism.contactDepth,
+          preload.edgeHardness,
+          personality.falseGateSimilarity,
+        );
         this.haptics.pulse("false-gate");
         this.setBlindSignal("EDGE");
       } else if (cueStage && this.mechanism.stage === previousStage) {

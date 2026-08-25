@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-const CLIENT_VERSION = "akerun-web-verified-v1";
-const CONTRACT_VERSION = "akerun-play-v1";
+const CLIENT_VERSION = "akerun-web-verified-v2";
+const CONTRACT_VERSION = "akerun-play-v2";
 const MAX_REQUEST_BYTES = 20_000;
 const ALLOWED_ORIGINS = new Set([
   "https://chameleonjp-lab.github.io",
