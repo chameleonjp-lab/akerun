@@ -54,6 +54,8 @@ export type GameSnapshot = {
   readonly hapticsSupported: boolean;
   readonly newlyUnlockedRewards: readonly string[];
   readonly runResult: RunResult | null;
+  /** 公式問題として保存・ランキング送信してよい結果か。 */
+  readonly recordable: boolean;
 };
 type ScreenLayout = {
   width: number;
@@ -123,6 +125,7 @@ export class VaultWorld {
   private inspectionOpen = false;
   private inspectionStep = 0;
   private trainingContract = false;
+  private lastRunRecordable = false;
 
   constructor(
     private readonly texture: DynamicTexture,
@@ -207,6 +210,7 @@ export class VaultWorld {
   }
 
   startPuzzle(puzzle: PuzzleDefinition, options?: { training?: boolean; postDial?: boolean }) {
+    this.releasePhysicalInput();
     this.demoMode = false;
     this.mechanism = new LockMechanism(puzzle);
     this.trainingContract = Boolean(options?.training);
@@ -217,6 +221,7 @@ export class VaultWorld {
     this.runElapsed = 0;
     this.runSession = new RunSession(puzzle);
     this.developmentSeed = false;
+    this.lastRunRecordable = false;
     this.newlyUnlockedRewards = [];
     this.resultSummary = null;
     this.openingProgress = 0;
@@ -256,6 +261,7 @@ export class VaultWorld {
     this.sessionActive = false;
     this.sessionPaused = false;
     this.runStarted = false;
+    this.lastRunRecordable = false;
     this.retired = true;
     this.mechanism.lastMessage = "このプレイはリタイアしました。ランキングへは送信しません。";
     this.emitSnapshot();
@@ -295,6 +301,7 @@ export class VaultWorld {
       hapticsSupported: this.haptics.isSupported,
       newlyUnlockedRewards: this.newlyUnlockedRewards.map((reward) => reward.title),
       runResult: result,
+      recordable: this.lastRunRecordable || this.canRecordOfficialRun(),
     };
   }
 
@@ -490,6 +497,7 @@ export class VaultWorld {
     if (action === "minus") this.rotateDial(-1);
     if (action === "plus") this.rotateDial(1);
     if (action === "reset") {
+      this.releasePhysicalInput();
       this.demoMode = false;
       this.mechanism.reset();
       this.newlyUnlockedRewards = [];
@@ -498,16 +506,20 @@ export class VaultWorld {
       this.openingProgress = 0;
       this.runElapsed = 0;
       this.runStarted = false;
+      this.runSession = this.sessionActive ? new RunSession(this.mechanism.puzzle) : null;
+      this.lastRunRecordable = false;
       this.resultSummary = null;
       this.telemetry.resets += 1;
       this.persistTelemetry();
     }
     if (action === "demo") {
+      this.releasePhysicalInput();
       this.mechanism.reset();
       this.newlyUnlockedRewards = [];
       this.sessionActive = false;
       this.sessionPaused = false;
       this.runSession = new RunSession(this.mechanism.puzzle);
+      this.lastRunRecordable = false;
       this.demoMode = true;
       this.demoElapsed = 0;
       this.runElapsed = 0;
@@ -527,7 +539,7 @@ export class VaultWorld {
     }
     if (action === "blind-assist" && this.isBlindMode) this.blindAssist = !this.blindAssist;
     if (action === "guide") this.tutorialVisible = !this.tutorialVisible;
-    if (action === "training") this.startFalseGateTraining();
+    if (action === "training" && !this.sessionActive && !this.demoMode) this.startFalseGateTraining();
     if (action === "contrast") this.highContrast = !this.highContrast;
     if (action === "motion") {
       this.reducedMotion = !this.reducedMotion;
@@ -543,7 +555,10 @@ export class VaultWorld {
   }
 
   private setDifficulty(difficulty: DifficultyId) {
+    // 公式・訓練・お手本の実行中は、問題機構だけを差し替えない。
+    if (this.sessionActive || this.demoMode) return;
     if (this.difficulty === difficulty) return;
+    this.releasePhysicalInput();
     this.difficulty = difficulty;
     this.puzzleSeed = (this.puzzleSeed * 1664525 + 1013904223) >>> 0;
     this.mechanism = new LockMechanism(createPuzzleFromSeed(this.puzzleSeed, difficulty));
@@ -553,6 +568,8 @@ export class VaultWorld {
     this.runElapsed = 0;
     this.runStarted = false;
     this.resultSummary = null;
+    this.runSession = null;
+    this.lastRunRecordable = false;
     this.trainingContract = false;
     this.blindAssist = false;
     this.blindSignal = null;
@@ -560,9 +577,21 @@ export class VaultWorld {
   }
 
   private startFalseGateTraining() {
+    // 実行中の公式結果を訓練機構へ差し替えない。
+    if (this.sessionActive || this.demoMode) return;
+    this.releasePhysicalInput();
+    const puzzle = createFalseGateTrainingPuzzle();
     this.demoMode = false;
     this.trainingContract = true;
-    this.mechanism = new LockMechanism(createFalseGateTrainingPuzzle());
+    this.sessionActive = true;
+    this.sessionPaused = false;
+    this.retired = false;
+    this.runStarted = true;
+    this.runElapsed = 0;
+    this.runSession = new RunSession(puzzle);
+    this.developmentSeed = false;
+    this.lastRunRecordable = false;
+    this.mechanism = new LockMechanism(puzzle);
     this.newlyUnlockedRewards = [];
     this.openingProgress = 0;
     this.runElapsed = 0;
@@ -683,6 +712,20 @@ export class VaultWorld {
     if (this.mechanism.faultCount > previousFaults) this.registerFaultTelemetry(previousFaults);
   }
 
+  private isOfficialPuzzle(puzzle: PuzzleDefinition = this.mechanism.puzzle) {
+    const problemId = puzzle.problemId ?? puzzle.id;
+    const problemVersion = puzzle.problemVersion ?? "DEV";
+    return /^AKERUN-\d{2}-V\d+$/.test(problemId) && /^V\d+$/.test(problemVersion);
+  }
+
+  private canRecordOfficialRun() {
+    return this.sessionActive
+      && !this.demoMode
+      && !this.trainingContract
+      && !this.developmentSeed
+      && this.isOfficialPuzzle();
+  }
+
   private completeUnlock() {
     this.audio.unlockRelease();
     this.haptics.pulse("unlock");
@@ -696,7 +739,8 @@ export class VaultWorld {
       seed: this.mechanism.puzzle.seed,
       reward: this.mechanism.puzzle.reward.title,
     };
-    const recordable = this.sessionActive && !this.demoMode && !this.trainingContract && !this.developmentSeed;
+    const recordable = this.canRecordOfficialRun();
+    this.lastRunRecordable = recordable;
     this.newlyUnlockedRewards = recordable && result
       ? this.archive.unlockForRun(this.mechanism.puzzle, result)
       : [];
