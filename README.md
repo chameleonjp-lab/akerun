@@ -105,7 +105,8 @@ React側にはタイトル、名前入力、訓練、HUD、一時停止、結果
 - client/src/game/RankingClient.ts: verified Edge Functionと共通ランキングRPC接続
 - client/src/game/ArchiveLedger.ts: 収蔵品の端末内保存
 - client/src/game/ObservationLedger.ts: 観察メモの端末内保存
-- client/src/game/OfficialProblemBalance.ts: 既存機構で測定する20問のバランス基準
+- client/src/game/OfficialProblemBalance.ts: 既存機構で測定・監査する20問のバランス基準
+- client/src/game/OfficialProblemBalance.test.ts: 20問の開錠可能性・重複・極端値・表同期テスト
 - docs/official-problem-balance.md: 20問の問題バランス表
 
 ## 開発コマンド
@@ -113,8 +114,11 @@ React側にはタイトル、名前入力、訓練、HUD、一時停止、結果
 ```bash
 pnpm check
 pnpm test:rules
+pnpm generate:problem-balance
 pnpm build
 ```
+
+`pnpm generate:problem-balance` は、公式20問を既存の機構で自動解法し、基準値と自動監査結果を `docs/official-problem-balance.md` へ出力します。問題定義や機構を変更したときは、表を再生成してからテストします。
 
 GitHub Actionsでも型検査、ルールテスト、本番ビルドを実行します。
 
