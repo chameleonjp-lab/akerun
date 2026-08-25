@@ -10,6 +10,7 @@ import { HapticFeedback } from "./HapticFeedback";
 import { ArchiveLedger } from "./ArchiveLedger";
 import { ObservationLedger, type ObservationCategory } from "./ObservationLedger";
 import { RunSession, type RunResult } from "./RunSession";
+import { InputController, type InputPoint, type PhysicalInput, type PhysicalInputStartResult } from "./InputController";
 
 const ASSETS = {
   reference: "/manus-storage/vault-tumbler-reference_35720048.png",
@@ -54,7 +55,6 @@ export type GameSnapshot = {
   readonly newlyUnlockedRewards: readonly string[];
   readonly runResult: RunResult | null;
 };
-type ScreenPoint = { x: number; y: number };
 type ScreenLayout = {
   width: number;
   height: number;
@@ -75,9 +75,6 @@ const INSPECTION_STEPS = [
   { label: "ANTI-PUNCH COLLAR / 保安カラー", detail: "アンチパンチカラーはスピンドル周辺を補強する保安部材です。解除対象ではなく、金庫の保護設計として記録します。" },
 ] as const;
 
-const contains = (rect: Rect, point: ScreenPoint) =>
-  point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height;
-
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 const easeOut = (value: number) => 1 - (1 - value) * (1 - value);
@@ -88,14 +85,8 @@ export class VaultWorld {
   private readonly audio = new AudioFeedback();
   private readonly haptics = new HapticFeedback();
   private readonly images: Record<string, HTMLImageElement> = {};
-  private readonly listeners: Array<() => void> = [];
   private readonly hitboxes = new Map<string, Rect>();
-  private lastPointerAngle: number | null = null;
-  private blindPointerX: number | null = null;
-  private pointerCarry = 0;
-  private activePointerId: number | null = null;
-  private activePhysicalInput: "tension" | "fence" | "bolt" | "handle" | null = null;
-  private physicalPointerStart: ScreenPoint | null = null;
+  private inputController: InputController;
   private keyboardFocus: "dial" | "tension" | "fence" | "bolt" | "handle" = "dial";
   private lastPhysicalPhase = "dial";
   private demoElapsed = 0;
@@ -168,7 +159,26 @@ export class VaultWorld {
     this.haptics.setReducedMotion(this.reducedMotion);
     this.restoreTelemetry();
     Object.entries(ASSETS).forEach(([key, url]) => this.loadImage(key, url));
-    this.bindInput();
+    this.inputController = new InputController({
+      canvas: this.canvas,
+      windowTarget: window,
+      getSurfaceSize: () => this.texture.getSize(),
+      getDialLayout: () => this.getLayout().dial,
+      getHitboxes: () => this.hitboxes,
+      isBlindMode: () => this.isBlindMode,
+      isInputEnabled: () => (this.sessionActive || this.demoMode) && !this.sessionPaused && !this.mechanism.opened,
+      onGesture: () => {
+        this.audio.enableFromGesture();
+        this.haptics.enableFromGesture();
+      },
+      onAction: (action) => this.handleAction(action),
+      onRotateDial: (steps) => this.rotateDial(steps),
+      onBeginPhysicalInput: (action) => this.beginPhysicalInput(action),
+      onUpdatePhysicalInput: (input, start, point) => this.updatePhysicalInput(input, start, point),
+      onEndPhysicalInput: (input) => this.endPhysicalInput(input),
+      onKeyDown: (event) => this.handleKeyDown(event),
+      onKeyUp: (event) => this.handleKeyUp(event),
+    });
     this.draw();
   }
 
@@ -297,8 +307,7 @@ export class VaultWorld {
   }
 
   dispose() {
-    this.listeners.forEach((remove) => remove());
-    this.listeners.length = 0;
+    this.inputController.dispose();
     this.audio.dispose();
     this.haptics.dispose();
   }
@@ -328,177 +337,65 @@ export class VaultWorld {
     }
   }
 
-  private bindInput() {
-    const onPointerDown = (event: PointerEvent) => {
-      this.audio.enableFromGesture();
-      this.haptics.enableFromGesture();
-      const point = this.mapPointer(event);
-      if (this.isBlindMode) {
-        this.blindPointerX = point.x;
-        this.activePointerId = event.pointerId;
-        try {
-          this.canvas.setPointerCapture?.(event.pointerId);
-        } catch {
-          this.activePointerId = null;
-        }
-        return;
-      }
-      const layout = this.getLayout();
-      const dx = point.x - layout.dial.x;
-      const dy = point.y - layout.dial.y;
-
-      for (const [action, rect] of Array.from(this.hitboxes.entries())) {
-        if (contains(rect, point)) {
-          if (this.beginPhysicalInput(action, event, point)) return;
-          this.handleAction(action);
-          return;
-        }
-      }
-
-      if (Math.hypot(dx, dy) <= layout.dial.radius * 1.08) {
-        this.lastPointerAngle = Math.atan2(dy, dx);
-        this.pointerCarry = 0;
-        this.activePointerId = event.pointerId;
-        try {
-          this.canvas.setPointerCapture?.(event.pointerId);
-        } catch {
-          this.activePointerId = null;
-        }
-        return;
-      }
-    };
-
-    const onPointerMove = (event: PointerEvent) => {
-      const point = this.mapPointer(event);
-      if (this.isBlindMode && this.blindPointerX !== null) {
-        const steps = Math.trunc((point.x - this.blindPointerX) / 7);
-        if (steps !== 0) {
-          this.rotateDial(steps);
-          this.blindPointerX += steps * 7;
-        }
-        return;
-      }
-      if (this.activePhysicalInput) {
-        this.updatePhysicalInput(point);
-        return;
-      }
-      if (this.lastPointerAngle === null) return;
-      const layout = this.getLayout();
-      const nextAngle = Math.atan2(point.y - layout.dial.y, point.x - layout.dial.x);
-      let delta = nextAngle - this.lastPointerAngle;
-      if (delta > Math.PI) delta -= Math.PI * 2;
-      if (delta < -Math.PI) delta += Math.PI * 2;
-      this.pointerCarry += (delta / (Math.PI * 2)) * 100;
-      const steps = this.pointerCarry > 0 ? Math.floor(this.pointerCarry) : Math.ceil(this.pointerCarry);
-      if (steps !== 0) {
-        this.rotateDial(steps);
-        this.pointerCarry -= steps;
-      }
-      this.lastPointerAngle = nextAngle;
-    };
-
-    const endPointer = (event?: PointerEvent) => {
-      if (event && this.activePointerId !== null && event.pointerId !== this.activePointerId) return;
-      const physicalInput = this.activePhysicalInput;
-      const pointerId = this.activePointerId;
-      this.activePointerId = null;
-      this.activePhysicalInput = null;
-      this.physicalPointerStart = null;
-      this.lastPointerAngle = null;
-      this.blindPointerX = null;
-      this.pointerCarry = 0;
-      if (physicalInput === "tension") this.mechanism.setTension(0);
-      if (physicalInput === "fence" && this.mechanism.phase !== "fence-seated") this.mechanism.setFenceTravel(0);
-      if (physicalInput === "bolt" && !this.mechanism.opened) this.mechanism.setBoltTravel(0);
-      if (physicalInput === "handle" && !this.mechanism.opened) this.mechanism.setHandleTurn(0);
-      if (pointerId !== null) {
-        try {
-          if (this.canvas.hasPointerCapture?.(pointerId)) this.canvas.releasePointerCapture?.(pointerId);
-        } catch {
-          // 既にブラウザ側で捕捉が解放されている場合は何もしない。
-        }
-      }
-    };
-
-    const onWheel = (event: WheelEvent) => {
+  private handleKeyDown(event: KeyboardEvent) {
+    this.audio.enableFromGesture();
+    this.haptics.enableFromGesture();
+    if (!event.shiftKey && ["ArrowRight", "d", "D"].includes(event.key)) {
       event.preventDefault();
-      this.audio.enableFromGesture();
-      this.haptics.enableFromGesture();
-      const magnitude = Math.max(1, Math.round(Math.abs(event.deltaY) / 42));
-      this.rotateDial(event.deltaY > 0 ? magnitude : -magnitude);
-    };
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      this.audio.enableFromGesture();
-      this.haptics.enableFromGesture();
-      if (!event.shiftKey && ["ArrowRight", "d", "D"].includes(event.key)) {
-        event.preventDefault();
-        this.rotateDial(1);
-      }
-      if (!event.shiftKey && ["ArrowLeft", "a", "A"].includes(event.key)) {
-        event.preventDefault();
-        this.rotateDial(-1);
-      }
-      if (event.key.toLowerCase() === "r") this.handleAction("reset");
-      if (event.key.toLowerCase() === "g") this.handleAction("guide");
-      if (event.key.toLowerCase() === "n") this.handleAction("contract");
-      if (event.key.toLowerCase() === "q") this.handleAction("training");
-      if (event.key.toLowerCase() === "l") this.handleAction("archive");
-      if (event.key.toLowerCase() === "o") this.handleAction("notes");
-      if (event.key.toLowerCase() === "j") this.handleAction("note-capture");
-      if (event.key.toLowerCase() === "i") this.handleAction("inspect");
-      if (event.key === "[") this.handleAction("inspect-prev");
-      if (event.key === "]") this.handleAction("inspect-next");
-      if (event.key.toLowerCase() === "h") this.handleAction("contrast");
-      if (event.key.toLowerCase() === "m") this.handleAction("motion");
-      if (event.key.toLowerCase() === "p") this.handleAction("precision");
-      if (event.key.toLowerCase() === "k") this.handleAction("haptics");
-      if (event.key.toLowerCase() === "s") this.handleAction("sound");
-      if (event.key.toLowerCase() === "v") this.handleAction("blind-assist");
-      if (event.key === "1") this.setDifficulty("observe");
-      if (event.key === "2") this.setDifficulty("standard");
-      if (event.key === "3") this.setDifficulty("expert");
-      if (event.key === "4") this.setDifficulty("blind");
-      if (event.key.toLowerCase() === "f") this.focusPhysicalActuator();
-      if (event.shiftKey && ["ArrowRight", "ArrowLeft"].includes(event.key)) {
-        event.preventDefault();
-        this.adjustFocusedActuator(event.key === "ArrowRight" ? 1 : -1);
-      }
-      if (this.keyboardFocus === "fence" && ["ArrowDown", "ArrowUp"].includes(event.key)) {
-        event.preventDefault();
-        this.adjustFocusedActuator(event.key === "ArrowDown" ? 1 : -1);
-      }
-      if (event.key === " " || event.key === "Spacebar") {
-        event.preventDefault();
-        this.holdFocusedActuator();
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        this.releaseFocusedActuator();
-      }
-      if (event.key === "Enter") this.focusPhysicalActuator();
-    };
-
-    const onKeyUp = (event: KeyboardEvent) => {
-      if (event.key === " " || event.key === "Spacebar") this.releaseFocusedActuator();
-    };
-
-    this.addListener(this.canvas, "pointerdown", onPointerDown as EventListener);
-    this.addListener(this.canvas, "pointermove", onPointerMove as EventListener);
-    this.addListener(this.canvas, "pointerup", endPointer as EventListener);
-    this.addListener(this.canvas, "pointercancel", endPointer as EventListener);
-    this.addListener(this.canvas, "lostpointercapture", endPointer as EventListener);
-    this.addListener(window, "pointerup", endPointer as EventListener);
-    this.addListener(window, "pointercancel", endPointer as EventListener);
-    this.addListener(this.canvas, "wheel", onWheel as EventListener, { passive: false });
-    this.addListener(window, "keydown", onKeyDown as EventListener);
-    this.addListener(window, "keyup", onKeyUp as EventListener);
+      this.rotateDial(1);
+    }
+    if (!event.shiftKey && ["ArrowLeft", "a", "A"].includes(event.key)) {
+      event.preventDefault();
+      this.rotateDial(-1);
+    }
+    if (event.key.toLowerCase() === "r") this.handleAction("reset");
+    if (event.key.toLowerCase() === "g") this.handleAction("guide");
+    if (event.key.toLowerCase() === "n") this.handleAction("contract");
+    if (event.key.toLowerCase() === "q") this.handleAction("training");
+    if (event.key.toLowerCase() === "l") this.handleAction("archive");
+    if (event.key.toLowerCase() === "o") this.handleAction("notes");
+    if (event.key.toLowerCase() === "j") this.handleAction("note-capture");
+    if (event.key.toLowerCase() === "i") this.handleAction("inspect");
+    if (event.key === "[") this.handleAction("inspect-prev");
+    if (event.key === "]") this.handleAction("inspect-next");
+    if (event.key.toLowerCase() === "h") this.handleAction("contrast");
+    if (event.key.toLowerCase() === "m") this.handleAction("motion");
+    if (event.key.toLowerCase() === "p") this.handleAction("precision");
+    if (event.key.toLowerCase() === "k") this.handleAction("haptics");
+    if (event.key.toLowerCase() === "s") this.handleAction("sound");
+    if (event.key.toLowerCase() === "v") this.handleAction("blind-assist");
+    if (event.key === "1") this.setDifficulty("observe");
+    if (event.key === "2") this.setDifficulty("standard");
+    if (event.key === "3") this.setDifficulty("expert");
+    if (event.key === "4") this.setDifficulty("blind");
+    if (event.key.toLowerCase() === "f") this.focusPhysicalActuator();
+    if (event.shiftKey && ["ArrowRight", "ArrowLeft"].includes(event.key)) {
+      event.preventDefault();
+      this.adjustFocusedActuator(event.key === "ArrowRight" ? 1 : -1);
+    }
+    if (this.keyboardFocus === "fence" && ["ArrowDown", "ArrowUp"].includes(event.key)) {
+      event.preventDefault();
+      this.adjustFocusedActuator(event.key === "ArrowDown" ? 1 : -1);
+    }
+    if (event.key === " " || event.key === "Spacebar") {
+      event.preventDefault();
+      this.holdFocusedActuator();
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      this.releaseFocusedActuator();
+    }
+    if (event.key === "Enter") this.focusPhysicalActuator();
   }
 
-  private beginPhysicalInput(action: string, event: PointerEvent, point: ScreenPoint): boolean {
+  private handleKeyUp(event: KeyboardEvent) {
+    if (event.key === " " || event.key === "Spacebar") this.releaseFocusedActuator();
+  }
+
+  private beginPhysicalInput(action: string): PhysicalInputStartResult {
     const phase = this.mechanism.phase;
     const input = action === "tension-grip" ? "tension" : action === "fence-lever" ? "fence" : action === "bolt-tab" ? "bolt" : action === "door-handle" ? "handle" : null;
-    if (!input) return false;
+    if (!input) return "not-physical";
     const allowed = (input === "tension" && (phase === "tension-ready" || phase === "tension-test" || phase === "jammed"))
       || (input === "fence" && (phase === "fence-ready" || phase === "fence-seated" || phase === "jammed"))
       || (input === "bolt" && (phase === "fence-seated" || phase === "bolt-test"))
@@ -507,45 +404,34 @@ export class VaultWorld {
       this.mechanism.lastMessage = phase === "settling"
         ? "停止後の反応を確認してから、テンションを掛けてください。"
         : "いま前に出ている部品だけが、機構へ安全に届きます。";
-      return true;
+      return "blocked";
     }
-    this.activePhysicalInput = input;
-    this.physicalPointerStart = point;
-    this.activePointerId = event.pointerId;
-    try {
-      this.canvas.setPointerCapture?.(event.pointerId);
-    } catch {
-      this.activePointerId = null;
-      this.activePhysicalInput = null;
-      this.physicalPointerStart = null;
-    }
-    return true;
+    return input;
   }
 
-  private updatePhysicalInput(point: ScreenPoint) {
-    if (!this.activePhysicalInput || !this.physicalPointerStart) return;
+  private updatePhysicalInput(input: PhysicalInput, physicalPointerStart: InputPoint, point: InputPoint) {
     const layout = this.getLayout();
     const touch = window.matchMedia?.("(pointer: coarse)").matches ?? false;
     const deadZone = touch ? 18 : 8;
     const travel = Math.max(touch ? 72 : 56, layout.width * (touch ? 0.18 : 0.11));
-    if (this.activePhysicalInput === "tension") {
-      const value = clamp((point.x - this.physicalPointerStart.x - deadZone) / travel, 0, 1);
+    if (input === "tension") {
+      const value = clamp((point.x - physicalPointerStart.x - deadZone) / travel, 0, 1);
       this.mechanism.setTension(value);
       this.audio.tensionLoad(value);
       return;
     }
-    if (this.activePhysicalInput === "fence") {
-      if (Math.abs(point.x - this.physicalPointerStart.x) > 24) {
+    if (input === "fence") {
+      if (Math.abs(point.x - physicalPointerStart.x) > 24) {
         this.mechanism.setFenceTravel(0);
         return;
       }
-      const value = clamp((this.physicalPointerStart.y - point.y - deadZone) / travel, 0, 1);
+      const value = clamp((physicalPointerStart.y - point.y - deadZone) / travel, 0, 1);
       this.mechanism.setFenceTravel(value);
       this.audio.fenceProbe(value);
       return;
     }
-    const value = clamp((point.x - this.physicalPointerStart.x - deadZone) / travel, 0, 1);
-    if (this.activePhysicalInput === "bolt") {
+    const value = clamp((point.x - physicalPointerStart.x - deadZone) / travel, 0, 1);
+    if (input === "bolt") {
       this.mechanism.setBoltTravel(value);
       this.audio.boltSlide(value);
       return;
@@ -598,16 +484,6 @@ export class VaultWorld {
     if (this.keyboardFocus === "handle" && !this.mechanism.opened) this.mechanism.setHandleTurn(0);
   }
 
-  private addListener(
-    target: EventTarget,
-    type: string,
-    listener: EventListenerOrEventListenerObject,
-    options?: AddEventListenerOptions,
-  ) {
-    target.addEventListener(type, listener, options);
-    this.listeners.push(() => target.removeEventListener(type, listener, options));
-  }
-
   private handleAction(action: string) {
     this.audio.enableFromGesture();
     this.haptics.enableFromGesture();
@@ -620,7 +496,6 @@ export class VaultWorld {
       this.releasePhysicalInput();
       this.keyboardFocus = "dial";
       this.openingProgress = 0;
-      this.pointerCarry = 0;
       this.runElapsed = 0;
       this.runStarted = false;
       this.resultSummary = null;
@@ -876,13 +751,18 @@ export class VaultWorld {
   }
 
   private releasePhysicalInput() {
-    this.activePhysicalInput = null;
-    this.physicalPointerStart = null;
-    this.activePointerId = null;
+    this.inputController.release();
     this.mechanism.setTension(0);
     if (this.mechanism.phase !== "fence-seated") this.mechanism.setFenceTravel(0);
     if (!this.mechanism.opened) this.mechanism.setBoltTravel(0);
     if (!this.mechanism.opened) this.mechanism.setHandleTurn(0);
+  }
+
+  private endPhysicalInput(input: PhysicalInput) {
+    if (input === "tension") this.mechanism.setTension(0);
+    if (input === "fence" && this.mechanism.phase !== "fence-seated") this.mechanism.setFenceTravel(0);
+    if (input === "bolt" && !this.mechanism.opened) this.mechanism.setBoltTravel(0);
+    if (input === "handle" && !this.mechanism.opened) this.mechanism.setHandleTurn(0);
   }
 
   private draw() {
@@ -2224,15 +2104,6 @@ export class VaultWorld {
   private roundRect(x: number, y: number, width: number, height: number, radius: number) {
     this.context.beginPath();
     this.context.roundRect(x, y, width, height, clamp(radius, 0, Math.min(width, height) / 2));
-  }
-
-  private mapPointer(event: PointerEvent): ScreenPoint {
-    const bounds = this.canvas.getBoundingClientRect();
-    const { width, height } = this.texture.getSize();
-    return {
-      x: ((event.clientX - bounds.left) / bounds.width) * width,
-      y: ((event.clientY - bounds.top) / bounds.height) * height,
-    };
   }
 
   private loadImage(key: string, source: string) {
