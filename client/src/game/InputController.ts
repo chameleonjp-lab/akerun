@@ -76,6 +76,8 @@ export class InputController {
   private bind() {
     const onPointerDown = (event: PointerEvent) => {
       if (!this.options.isInputEnabled()) return;
+      // 一本の指だけを操作として採用し、二本目の指で状態を乗っ取らせない。
+      if (event.isPrimary === false || this.activePointerId !== null) return;
       this.options.onGesture();
       const point = this.mapPointer(event);
       if (this.options.isBlindMode()) {
@@ -114,6 +116,7 @@ export class InputController {
 
     const onPointerMove = (event: PointerEvent) => {
       if (!this.options.isInputEnabled()) return;
+      if (this.activePointerId !== null && event.pointerId !== this.activePointerId) return;
       const point = this.mapPointer(event);
       if (this.options.isBlindMode() && this.blindPointerX !== null) {
         const steps = Math.trunc((point.x - this.blindPointerX) / 7);
