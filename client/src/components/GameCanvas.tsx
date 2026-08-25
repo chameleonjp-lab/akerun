@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { createGameScene, type GameHandle } from "@/game/scene";
 import type { GameSnapshot } from "@/game/VaultWorld";
+import { createRenderLoopController } from "@/game/RenderLoopController";
 
 type GameCanvasProps = {
   readonly onReady?: (handle: GameHandle | null) => void;
@@ -33,6 +34,7 @@ export default function GameCanvas({ onReady, onSnapshot, onVisibilityPause }: G
 
     let handle: GameHandle | null = null;
     let disposed = false;
+    let renderLoop: ReturnType<typeof createRenderLoopController> | null = null;
 
     createGameScene(
       engine,
@@ -47,7 +49,8 @@ export default function GameCanvas({ onReady, onSnapshot, onVisibilityPause }: G
         }
         handle = nextHandle;
         callbacksRef.current.onReady?.(nextHandle);
-        engine.runRenderLoop(() => nextHandle.scene.render());
+        renderLoop = createRenderLoopController(engine, () => nextHandle.scene.render());
+        renderLoop.start();
       })
       .catch((error: unknown) => {
         console.error("Vault Tumbler Labの初期化に失敗しました。", error);
@@ -55,9 +58,14 @@ export default function GameCanvas({ onReady, onSnapshot, onVisibilityPause }: G
 
     const onResize = () => engine.resize();
     const onVisibilityChange = () => {
-      if (!document.hidden || !handle) return;
-      handle.setPaused(true);
-      callbacksRef.current.onVisibilityPause?.();
+      if (document.hidden) {
+        if (!handle) return;
+        renderLoop?.stop();
+        handle.setPaused(true);
+        callbacksRef.current.onVisibilityPause?.();
+        return;
+      }
+      renderLoop?.start();
     };
     window.addEventListener("resize", onResize);
     document.addEventListener("visibilitychange", onVisibilityChange);
@@ -67,6 +75,7 @@ export default function GameCanvas({ onReady, onSnapshot, onVisibilityPause }: G
       window.removeEventListener("resize", onResize);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       callbacksRef.current.onReady?.(null);
+      renderLoop?.dispose();
       handle?.dispose();
       engine.dispose();
       startedRef.current = false;
