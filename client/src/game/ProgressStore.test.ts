@@ -16,6 +16,45 @@ const result: RunResult = {
 };
 
 describe("ProgressStore", () => {
+  it("keeps every pending result instead of truncating the queue", () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+        removeItem: (key: string) => values.delete(key),
+      },
+    });
+    const store = new ProgressStore();
+    for (let index = 0; index < 12; index += 1) {
+      store.enqueueRanking("player one", {
+        ...result,
+        score: result.score + index,
+        elapsedTime: result.elapsedTime + index,
+      });
+    }
+    expect(store.getPendingRankings()).toHaveLength(12);
+    expect(store.getPendingRankings()[0]?.result.score).toBe(result.score);
+    vi.unstubAllGlobals();
+  });
+
+  it("uses faults, time, and excess rotation to break equal-score ties", () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+        removeItem: (key: string) => values.delete(key),
+      },
+    });
+    const store = new ProgressStore();
+    expect(store.recordBest({ ...result, faultCount: 2, elapsedTime: 30, excessDialSteps: 20 }).improved).toBe(true);
+    expect(store.recordBest({ ...result, faultCount: 1, elapsedTime: 30, excessDialSteps: 20 }).improved).toBe(true);
+    expect(store.recordBest({ ...result, faultCount: 1, elapsedTime: 25, excessDialSteps: 20 }).improved).toBe(true);
+    expect(store.recordBest({ ...result, faultCount: 1, elapsedTime: 25, excessDialSteps: 10 }).improved).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
   it("saves and restores the player name and best result", () => {
     const values = new Map<string, string>();
     vi.stubGlobal("window", {
