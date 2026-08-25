@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createOfficialPuzzle } from "./GameDefinitions";
-import { RunSession, calculateRunScore, quantizeElapsedTime } from "./RunSession";
+import { RunSession, avoidableFalseGateContacts, calculateRunScore, quantizeElapsedTime } from "./RunSession";
 
 describe("RunSession", () => {
   it("tracks dial movement, false gates, faults, and excess movement", () => {
@@ -18,6 +18,21 @@ describe("RunSession", () => {
     expect(result.faultCount).toBe(1);
     expect(result.excessDialSteps).toBe(0);
     expect(result.score).toBeGreaterThan(0);
+  });
+
+  it("不可避な基準通過は偽ゲート減点へ二重計上しない", () => {
+    const problem = { ...createOfficialPuzzle("AKERUN-01-V1"), parFalseGateContacts: 24 };
+    const session = new RunSession(problem);
+    for (let count = 0; count < 24; count += 1) session.recordFalseGate();
+    expect(avoidableFalseGateContacts(problem, 24)).toBe(0);
+    expect(session.finish({ elapsedTime: problem.parTime }).observationAccuracy).toBe(100);
+
+    const extra = new RunSession(problem);
+    for (let count = 0; count < 25; count += 1) extra.recordFalseGate();
+    const result = extra.finish({ elapsedTime: problem.parTime });
+    expect(result.falseGateContacts).toBe(25);
+    expect(result.avoidableFalseGateContacts).toBe(1);
+    expect(result.observationAccuracy).toBe(96);
   });
 
   it("does not change a finished result when finish is called again", () => {

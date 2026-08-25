@@ -1,4 +1,5 @@
-import type { RunResult } from "./RunSession";
+import { createOfficialPuzzle } from "./GameDefinitions";
+import { avoidableFalseGateContacts, type RunResult } from "./RunSession";
 
 export type RankingRow = {
   readonly rank?: number;
@@ -40,8 +41,8 @@ const SUPABASE_URL = "https://mlpnjgezrnhdxsxolyzj.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_drzcy0v97knU6FgjqSgBHw_0A9XPdFM";
 const SUPABASE_MODULE_URL = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.9/+esm";
 export const GAME_SLUG = "akerun";
-export const CLIENT_VERSION = "akerun-web-verified-v1";
-export const CONTRACT_VERSION = "akerun-play-v1";
+export const CLIENT_VERSION = "akerun-web-verified-v2";
+export const CONTRACT_VERSION = "akerun-play-v2";
 export const COMPETITION_FUNCTION = "akerun-competition";
 const REQUEST_TIMEOUT_MS = 8000;
 
@@ -61,6 +62,18 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 
 const stringOrNull = (value: unknown) =>
   typeof value === "string" && value.trim() ? value.trim() : null;
+
+const submittedFalseGateContacts = (result: RunResult) => {
+  if (result.avoidableFalseGateContacts !== undefined) {
+    return result.avoidableFalseGateContacts;
+  }
+  try {
+    return avoidableFalseGateContacts(createOfficialPuzzle(result.problemId), result.falseGateContacts);
+  } catch {
+    // 旧端末保存の開発用結果は公式問題へ変換できないため、範囲検証だけに委ねる。
+    return result.falseGateContacts;
+  }
+};
 
 export class RankingClient {
   private clientPromise: Promise<RpcClient | null> | null = null;
@@ -180,7 +193,11 @@ export class RankingClient {
       faultCount: Math.max(0, Math.round(result.faultCount)),
       totalDialSteps: Math.max(0, Math.round(result.totalDialSteps)),
       excessDialSteps: Math.max(0, Math.round(result.excessDialSteps)),
-      falseGateContacts: Math.max(0, Math.round(result.falseGateContacts)),
+      // 不可避な基準通過は問題側で吸収し、余分な接触だけを検証契約へ送る。
+      falseGateContacts: Math.max(
+        0,
+        Math.round(submittedFalseGateContacts(result)),
+      ),
       observationAccuracy: Math.max(0, Math.min(100, Math.round(result.observationAccuracy))),
       score: Math.trunc(result.score),
     }).then((raw) => {

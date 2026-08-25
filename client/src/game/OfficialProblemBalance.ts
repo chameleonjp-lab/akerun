@@ -19,6 +19,7 @@ export type OfficialProblemBalance = {
   readonly vault: string;
   readonly wheelCount: number;
   readonly minimumDialSteps: number;
+  readonly minimumFalseGateContacts: number;
   readonly totalPasses: number;
   readonly falseGateCount: number;
   readonly parTime: number;
@@ -140,14 +141,6 @@ const finishThroughExistingMechanism = (route: DialRouteResult) => {
   return lock.opened;
 };
 
-const measureMinimumDialSteps = (problemId: string) => {
-  const route = measureDialRoute(problemId);
-  if (!route.solved) {
-    throw new Error(`公式問題 ${problemId} の自動計測が停止しました。`);
-  }
-  return route.steps;
-};
-
 export const measureOfficialProblemBalance = (
   problemId: string
 ): OfficialProblemBalance => {
@@ -156,7 +149,11 @@ export const measureOfficialProblemBalance = (
   );
   if (!definition) throw new Error("Unknown official problem: " + problemId);
   const puzzle = createOfficialPuzzle(problemId);
-  const minimumDialSteps = measureMinimumDialSteps(problemId);
+  const route = measureDialRoute(problemId);
+  if (!route.solved) {
+    throw new Error(`公式問題 ${problemId} の自動計測が停止しました。`);
+  }
+  const minimumDialSteps = route.steps;
   const totalPasses = puzzle.stages.reduce(
     (sum, stage) => sum + stage.passes,
     0
@@ -168,6 +165,7 @@ export const measureOfficialProblemBalance = (
     vault: puzzle.vault.title,
     wheelCount: puzzle.vault.wheelCount,
     minimumDialSteps,
+    minimumFalseGateContacts: route.falseGateContacts,
     totalPasses,
     falseGateCount: puzzle.falseGates.length,
     parTime: definition.parTime,
@@ -218,6 +216,9 @@ const auditProblemShape = (
 
   if (definition.problemVersion !== balance.problemVersion) {
     addIssue(issues, "PROBLEM_VERSION_MISMATCH");
+  }
+  if (definition.parFalseGateContacts !== balance.minimumFalseGateContacts) {
+    addIssue(issues, "PAR_FALSE_GATE_CONTACT_MISMATCH");
   }
   if (definition.targets.length !== definition.wheelCount) {
     addIssue(issues, "TARGET_COUNT_MISMATCH");
@@ -301,12 +302,13 @@ const auditProblemShape = (
     }
   }
 
-  if (puzzle.falseGates.length !== definition.wheelCount * 2) {
+  const expectedFalseGatesPerWheel = puzzle.vault.personality.falseGatesPerWheel;
+  if (puzzle.falseGates.length !== definition.wheelCount * expectedFalseGatesPerWheel) {
     addIssue(issues, "FALSE_GATE_COUNT_MISMATCH");
   }
   for (let wheel = 0; wheel < definition.wheelCount; wheel += 1) {
     const count = puzzle.falseGates.filter(gate => gate.wheel === wheel).length;
-    if (count !== 2) addIssue(issues, "FALSE_GATE_PER_WHEEL_MISMATCH");
+    if (count !== expectedFalseGatesPerWheel) addIssue(issues, "FALSE_GATE_PER_WHEEL_MISMATCH");
   }
 
   const route = measureDialRoute(definition.problemId);
@@ -439,7 +441,7 @@ export const renderOfficialProblemBalanceMarkdown = (
 ) => {
   const rows = balances.map(
     balance =>
-      `| ${balance.problemId} | ${balance.problemVersion} | ${vaultLabel(balance.vault)} | ${balance.wheelCount} | ${balance.minimumDialSteps} | ${balance.totalPasses} | ${balance.falseGateCount} | ${balance.parTime} | ${balance.parFaults} | ${tierLabel(balance.difficulty)} | ${balance.baselineScore} |`
+      `| ${balance.problemId} | ${balance.problemVersion} | ${vaultLabel(balance.vault)} | ${balance.wheelCount} | ${balance.minimumDialSteps} | ${balance.minimumFalseGateContacts} | ${balance.totalPasses} | ${balance.falseGateCount} | ${balance.parTime} | ${balance.parFaults} | ${tierLabel(balance.difficulty)} | ${balance.baselineScore} |`
   );
   const status = audit.valid ? "PASS" : "要調整";
   return [
@@ -447,12 +449,12 @@ export const renderOfficialProblemBalanceMarkdown = (
     "",
     "この表は `pnpm generate:problem-balance` で、公式問題定義と既存の `LockMechanism` から自動生成します。手書きの基準値と実装値がずれないよう、変更時は生成結果を確認してください。",
     "",
-    "最低必要回転数は、各問題を初期状態から正しい方向へ進めたときの自動解法の操作数です。基準スコアは、基準時間・最低必要回転数・問題ごとの基準失敗数・偽ゲート接触0回で `calculateRunScore` を実行した値です。アクセシビリティ設定や入力方式による減点は含みません。",
+    "最低必要回転数と基準偽ゲート接触数は、各問題を初期状態から正しい方向へ進めた自動解法から計測します。不可避な通過は基準値へ含め、基準を超えた接触だけをスコアと観察精度へ反映します。アクセシビリティ設定や入力方式による減点は含みません。",
     "",
     `自動監査: **${status}**（開錠可能 ${audit.problems.filter(problem => problem.fullyUnlockable).length}/${audit.problems.length}、基準スコア差 ${audit.scoreRange}点、外れ値 ${audit.outlierProblemIds.length}問）`,
     "",
-    "| 問題ID | Version | 金庫 | ホイール | 最低必要回転数 | 総通過回数 | 偽ゲート数 | 基準時間(s) | 基準失敗数 | 難易度 | 基準スコア |",
-    "| ------ | ------- | ---- | -------: | -------------: | ---------: | ---------: | ----------: | ---------: | ------ | ---------: |",
+    "| 問題ID | Version | 金庫 | ホイール | 最低必要回転数 | 基準偽ゲート接触 | 総通過回数 | 偽ゲート数 | 基準時間(s) | 基準失敗数 | 難易度 | 基準スコア |",
+    "| ------ | ------- | ---- | -------: | -------------: | ---------------: | ---------: | ---------: | ----------: | ---------: | ------ | ---------: |",
     ...rows,
     "",
     "基準スコアは問題基準値の補正後に極端な差が出ないよう調整しています。実機プレイ後は、操作速度・観察時間・端末性能を含む実測値で `parTime` を再調整し、問題IDとバージョンを維持したまま改訂します。",

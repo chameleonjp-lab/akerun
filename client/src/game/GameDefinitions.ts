@@ -61,6 +61,10 @@ export type VaultPersonality = {
   readonly description: string;
   readonly contactContrast: number;
   readonly falseGateSimilarity: number;
+  /** 公式問題の抵抗帯を金庫固有に広げる量。スコア補助ではなく操作感だけに使う。 */
+  readonly toleranceExpansion: number;
+  /** 金庫ごとの偽ゲート密度。比較型だけ候補を一つ増やす。 */
+  readonly falseGatesPerWheel: 2 | 3;
   readonly settlingDelaySeconds: number;
   readonly speedSensitivity: number;
 };
@@ -103,6 +107,7 @@ export type PuzzleDefinition = {
   readonly parTime?: number;
   readonly parDialSteps?: number;
   readonly parFaults?: number;
+  readonly parFalseGateContacts?: number;
   readonly difficultyWeight?: number;
   readonly problemTier?: ProblemTier;
 };
@@ -125,6 +130,8 @@ export type OfficialProblemDefinition = {
   readonly parTime: number;
   readonly parDialSteps: number;
   readonly parFaults: number;
+  /** 正しい最短経路でも通過する偽ゲート数。これを超えた分だけスコアへ反映する。 */
+  readonly parFalseGateContacts: number;
   readonly difficultyWeight: number;
 };
 
@@ -143,6 +150,8 @@ export const VAULT_DEFINITIONS: readonly VaultDefinition[] = [
       description: "正規ゲート、ゲート縁、偽ゲートの反応差が大きく、最初の観察に向く金庫。",
       contactContrast: 0.92,
       falseGateSimilarity: 0.18,
+      toleranceExpansion: 0.02,
+      falseGatesPerWheel: 2,
       settlingDelaySeconds: 0,
       speedSensitivity: 0.18,
     },
@@ -161,6 +170,8 @@ export const VAULT_DEFINITIONS: readonly VaultDefinition[] = [
       description: "偽ゲートが正規ゲートに近い反応を返すため、候補を比べて判断する金庫。",
       contactContrast: 0.58,
       falseGateSimilarity: 0.82,
+      toleranceExpansion: 0,
+      falseGatesPerWheel: 3,
       settlingDelaySeconds: 0,
       speedSensitivity: 0.36,
     },
@@ -179,6 +190,8 @@ export const VAULT_DEFINITIONS: readonly VaultDefinition[] = [
       description: "回転速度と停止後のわずかな反応を観察して判断する精密金庫。",
       contactContrast: 0.7,
       falseGateSimilarity: 0.34,
+      toleranceExpansion: 0,
+      falseGatesPerWheel: 2,
       settlingDelaySeconds: 0.16,
       speedSensitivity: 0.82,
     },
@@ -432,15 +445,21 @@ export const createMechanicalStages = (
     return { target, direction, wheel, passes, instruction: toInstruction(direction, target, passes) };
   });
 
-export const createFalseGates = (targets: readonly number[]): readonly FalseGateDefinition[] => {
-  const offsets = [[7, -9], [-8, 10], [9, -7]] as const;
+export const createFalseGates = (
+  targets: readonly number[],
+  personality?: Pick<VaultPersonality, "falseGatesPerWheel">,
+): readonly FalseGateDefinition[] => {
+  const offsets = [[7, -9, 16], [-8, 10, -14], [9, -7, 15]] as const;
+  const depths = [0.28, 0.42, 0.36] as const;
+  const gatesPerWheel = personality?.falseGatesPerWheel ?? 2;
   return targets.flatMap((target, index) => {
     const pair = offsets[index % offsets.length];
     const wheel = targets.length - index - 1;
-    return [
-      { wheel, position: normalize(target + pair[0]), depth: 0.28 },
-      { wheel, position: normalize(target + pair[1]), depth: 0.42 },
-    ];
+    return pair.slice(0, gatesPerWheel).map((offset, gateIndex) => ({
+      wheel,
+      position: normalize(target + offset),
+      depth: depths[gateIndex],
+    }));
   });
 };
 
@@ -459,7 +478,7 @@ export const createReferencePuzzle = (difficulty: DifficultyId = "standard"): Pu
     vault: VAULT_DEFINITIONS[0],
     difficulty: profile,
     stages,
-    falseGates: createFalseGates(stages.map((stage) => stage.target)),
+    falseGates: createFalseGates(stages.map((stage) => stage.target), VAULT_DEFINITIONS[0].personality),
     reward: DEFAULT_REWARD,
   };
 };
@@ -495,12 +514,23 @@ export const createFalseGateTrainingPuzzle = (): PuzzleDefinition => {
   };
 };
 
-const officialDifficulty = (tier: ProblemTier): DifficultyProfile => {
+const expandBand = (
+  band: readonly [number, number],
+  expansion: number,
+): readonly [number, number] => [
+  Math.max(0, band[0] - expansion),
+  Math.min(1, band[1] + expansion),
+];
+
+const officialDifficulty = (
+  tier: ProblemTier,
+  personality: VaultPersonality,
+): DifficultyProfile => {
   if (tier === "beginner") {
     return {
       ...DIFFICULTY_PROFILES.standard,
-      tensionBand: [0.59, 0.79],
-      fenceBand: [0.6, 0.76],
+      tensionBand: expandBand([0.59, 0.79], personality.toleranceExpansion),
+      fenceBand: expandBand([0.6, 0.76], personality.toleranceExpansion),
       tensionHoldSeconds: 0.18,
       fenceHoldSeconds: 0.28,
       maxFaults: 7,
@@ -509,37 +539,41 @@ const officialDifficulty = (tier: ProblemTier): DifficultyProfile => {
   if (tier === "advanced") {
     return {
       ...DIFFICULTY_PROFILES.standard,
-      tensionBand: [0.65, 0.73],
-      fenceBand: [0.645, 0.715],
+      tensionBand: expandBand([0.65, 0.73], personality.toleranceExpansion),
+      fenceBand: expandBand([0.645, 0.715], personality.toleranceExpansion),
       tensionHoldSeconds: 0.24,
       fenceHoldSeconds: 0.28,
       maxFaults: 4,
     };
   }
-  return DIFFICULTY_PROFILES.standard;
+  return {
+    ...DIFFICULTY_PROFILES.standard,
+    tensionBand: expandBand(DIFFICULTY_PROFILES.standard.tensionBand, personality.toleranceExpansion),
+    fenceBand: expandBand(DIFFICULTY_PROFILES.standard.fenceBand, personality.toleranceExpansion),
+  };
 };
 
 export const OFFICIAL_PROBLEM_CATALOG: readonly OfficialProblemDefinition[] = [
-  { problemId: "AKERUN-01-V1", problemVersion: "V1", seed: 40101, tier: "beginner", vaultId: "museum-aurora", wheelCount: 4, startDirection: "ccw", targets: [18, 61, 35, 82], parTime: 31, parDialSteps: 1198, parFaults: 0, difficultyWeight: 0.96 },
-  { problemId: "AKERUN-02-V1", problemVersion: "V1", seed: 40102, tier: "beginner", vaultId: "reliquary-nocturne", wheelCount: 4, startDirection: "cw", targets: [72, 24, 57, 9], parTime: 34, parDialSteps: 1201, parFaults: 0, difficultyWeight: 0.98 },
-  { problemId: "AKERUN-03-V1", problemVersion: "V1", seed: 40103, tier: "beginner", vaultId: "chronometer-pelagic", wheelCount: 5, startDirection: "ccw", targets: [43, 8, 69, 27, 84], parTime: 40, parDialSteps: 1762, parFaults: 0, difficultyWeight: 1.0 },
-  { problemId: "AKERUN-04-V1", problemVersion: "V1", seed: 40104, tier: "beginner", vaultId: "museum-aurora", wheelCount: 5, startDirection: "cw", targets: [12, 66, 31, 88, 49], parTime: 42, parDialSteps: 1727, parFaults: 0, difficultyWeight: 1.01 },
-  { problemId: "AKERUN-05-V1", problemVersion: "V1", seed: 40105, tier: "beginner", vaultId: "reliquary-nocturne", wheelCount: 6, startDirection: "ccw", targets: [81, 39, 5, 63, 24, 92], parTime: 49, parDialSteps: 2376, parFaults: 0, difficultyWeight: 1.03 },
-  { problemId: "AKERUN-06-V1", problemVersion: "V1", seed: 40106, tier: "standard", vaultId: "chronometer-pelagic", wheelCount: 4, startDirection: "cw", targets: [26, 74, 11, 58], parTime: 36, parDialSteps: 1168, parFaults: 1, difficultyWeight: 1.01 },
-  { problemId: "AKERUN-07-V1", problemVersion: "V1", seed: 40107, tier: "standard", vaultId: "museum-aurora", wheelCount: 5, startDirection: "ccw", targets: [64, 17, 86, 42, 7], parTime: 43, parDialSteps: 1711, parFaults: 1, difficultyWeight: 1.02 },
-  { problemId: "AKERUN-08-V1", problemVersion: "V1", seed: 40108, tier: "standard", vaultId: "reliquary-nocturne", wheelCount: 6, startDirection: "cw", targets: [9, 51, 78, 22, 67, 34], parTime: 51, parDialSteps: 2328, parFaults: 1, difficultyWeight: 1.04 },
-  { problemId: "AKERUN-09-V1", problemVersion: "V1", seed: 40109, tier: "standard", vaultId: "chronometer-pelagic", wheelCount: 5, startDirection: "ccw", targets: [38, 95, 16, 57, 73], parTime: 46, parDialSteps: 1823, parFaults: 1, difficultyWeight: 1.05 },
-  { problemId: "AKERUN-10-V1", problemVersion: "V1", seed: 40110, tier: "standard", vaultId: "museum-aurora", wheelCount: 6, startDirection: "cw", targets: [47, 14, 82, 29, 61, 6], parTime: 53, parDialSteps: 2388, parFaults: 1, difficultyWeight: 1.06 },
-  { problemId: "AKERUN-11-V1", problemVersion: "V1", seed: 40111, tier: "standard", vaultId: "reliquary-nocturne", wheelCount: 4, startDirection: "ccw", targets: [57, 3, 79, 34], parTime: 38, parDialSteps: 1168, parFaults: 1, difficultyWeight: 1.03 },
-  { problemId: "AKERUN-12-V1", problemVersion: "V1", seed: 40112, tier: "standard", vaultId: "chronometer-pelagic", wheelCount: 6, startDirection: "cw", targets: [23, 69, 44, 8, 91, 52], parTime: 54, parDialSteps: 2410, parFaults: 1, difficultyWeight: 1.07 },
-  { problemId: "AKERUN-13-V1", problemVersion: "V1", seed: 40113, tier: "standard", vaultId: "museum-aurora", wheelCount: 5, startDirection: "ccw", targets: [86, 32, 12, 64, 48], parTime: 47, parDialSteps: 1648, parFaults: 1, difficultyWeight: 1.06 },
-  { problemId: "AKERUN-14-V1", problemVersion: "V1", seed: 40114, tier: "standard", vaultId: "reliquary-nocturne", wheelCount: 6, startDirection: "cw", targets: [35, 88, 19, 62, 4, 76], parTime: 55, parDialSteps: 2340, parFaults: 1, difficultyWeight: 1.08 },
-  { problemId: "AKERUN-15-V1", problemVersion: "V1", seed: 40115, tier: "standard", vaultId: "chronometer-pelagic", wheelCount: 5, startDirection: "ccw", targets: [7, 54, 83, 26, 68], parTime: 48, parDialSteps: 1812, parFaults: 1, difficultyWeight: 1.05 },
-  { problemId: "AKERUN-16-V1", problemVersion: "V1", seed: 40116, tier: "advanced", vaultId: "museum-aurora", wheelCount: 6, startDirection: "cw", targets: [59, 13, 71, 36, 94, 22], parTime: 58, parDialSteps: 2428, parFaults: 2, difficultyWeight: 1.09 },
-  { problemId: "AKERUN-17-V1", problemVersion: "V1", seed: 40117, tier: "advanced", vaultId: "reliquary-nocturne", wheelCount: 5, startDirection: "ccw", targets: [44, 2, 73, 18, 91], parTime: 51, parDialSteps: 1715, parFaults: 2, difficultyWeight: 1.1 },
-  { problemId: "AKERUN-18-V1", problemVersion: "V1", seed: 40118, tier: "advanced", vaultId: "chronometer-pelagic", wheelCount: 6, startDirection: "cw", targets: [15, 67, 39, 82, 28, 54], parTime: 60, parDialSteps: 2412, parFaults: 2, difficultyWeight: 1.11 },
-  { problemId: "AKERUN-19-V1", problemVersion: "V1", seed: 40119, tier: "advanced", vaultId: "museum-aurora", wheelCount: 5, startDirection: "ccw", targets: [75, 21, 49, 93, 11], parTime: 53, parDialSteps: 1769, parFaults: 2, difficultyWeight: 1.12 },
-  { problemId: "AKERUN-20-V1", problemVersion: "V1", seed: 40120, tier: "advanced", vaultId: "reliquary-nocturne", wheelCount: 6, startDirection: "cw", targets: [6, 58, 31, 86, 17, 72], parTime: 62, parDialSteps: 2348, parFaults: 2, difficultyWeight: 1.14 },
+  { problemId: "AKERUN-01-V1", problemVersion: "V1", seed: 40101, tier: "beginner", vaultId: "museum-aurora", wheelCount: 4, startDirection: "ccw", targets: [18, 61, 35, 82], parTime: 31, parDialSteps: 1198, parFaults: 0, parFalseGateContacts: 24, difficultyWeight: 0.96 },
+  { problemId: "AKERUN-02-V1", problemVersion: "V1", seed: 40102, tier: "beginner", vaultId: "reliquary-nocturne", wheelCount: 4, startDirection: "cw", targets: [72, 24, 57, 9], parTime: 34, parDialSteps: 1201, parFaults: 0, parFalseGateContacts: 35, difficultyWeight: 0.98 },
+  { problemId: "AKERUN-03-V1", problemVersion: "V1", seed: 40103, tier: "beginner", vaultId: "chronometer-pelagic", wheelCount: 5, startDirection: "ccw", targets: [43, 8, 69, 27, 84], parTime: 40, parDialSteps: 1762, parFaults: 0, parFalseGateContacts: 35, difficultyWeight: 1.0 },
+  { problemId: "AKERUN-04-V1", problemVersion: "V1", seed: 40104, tier: "beginner", vaultId: "museum-aurora", wheelCount: 5, startDirection: "cw", targets: [12, 66, 31, 88, 49], parTime: 42, parDialSteps: 1727, parFaults: 0, parFalseGateContacts: 35, difficultyWeight: 1.01 },
+  { problemId: "AKERUN-05-V1", problemVersion: "V1", seed: 40105, tier: "beginner", vaultId: "reliquary-nocturne", wheelCount: 6, startDirection: "ccw", targets: [81, 39, 5, 63, 24, 92], parTime: 49, parDialSteps: 2376, parFaults: 0, parFalseGateContacts: 72, difficultyWeight: 1.03 },
+  { problemId: "AKERUN-06-V1", problemVersion: "V1", seed: 40106, tier: "standard", vaultId: "chronometer-pelagic", wheelCount: 4, startDirection: "cw", targets: [26, 74, 11, 58], parTime: 36, parDialSteps: 1168, parFaults: 1, parFalseGateContacts: 24, difficultyWeight: 1.01 },
+  { problemId: "AKERUN-07-V1", problemVersion: "V1", seed: 40107, tier: "standard", vaultId: "museum-aurora", wheelCount: 5, startDirection: "ccw", targets: [64, 17, 86, 42, 7], parTime: 43, parDialSteps: 1711, parFaults: 1, parFalseGateContacts: 35, difficultyWeight: 1.02 },
+  { problemId: "AKERUN-08-V1", problemVersion: "V1", seed: 40108, tier: "standard", vaultId: "reliquary-nocturne", wheelCount: 6, startDirection: "cw", targets: [9, 51, 78, 22, 67, 34], parTime: 51, parDialSteps: 2328, parFaults: 1, parFalseGateContacts: 71, difficultyWeight: 1.04 },
+  { problemId: "AKERUN-09-V1", problemVersion: "V1", seed: 40109, tier: "standard", vaultId: "chronometer-pelagic", wheelCount: 5, startDirection: "ccw", targets: [38, 95, 16, 57, 73], parTime: 46, parDialSteps: 1823, parFaults: 1, parFalseGateContacts: 35, difficultyWeight: 1.05 },
+  { problemId: "AKERUN-10-V1", problemVersion: "V1", seed: 40110, tier: "standard", vaultId: "museum-aurora", wheelCount: 6, startDirection: "cw", targets: [47, 14, 82, 29, 61, 6], parTime: 53, parDialSteps: 2388, parFaults: 1, parFalseGateContacts: 48, difficultyWeight: 1.06 },
+  { problemId: "AKERUN-11-V1", problemVersion: "V1", seed: 40111, tier: "standard", vaultId: "reliquary-nocturne", wheelCount: 4, startDirection: "ccw", targets: [57, 3, 79, 34], parTime: 38, parDialSteps: 1168, parFaults: 1, parFalseGateContacts: 37, difficultyWeight: 1.03 },
+  { problemId: "AKERUN-12-V1", problemVersion: "V1", seed: 40112, tier: "standard", vaultId: "chronometer-pelagic", wheelCount: 6, startDirection: "cw", targets: [23, 69, 44, 8, 91, 52], parTime: 54, parDialSteps: 2410, parFaults: 1, parFalseGateContacts: 48, difficultyWeight: 1.07 },
+  { problemId: "AKERUN-13-V1", problemVersion: "V1", seed: 40113, tier: "standard", vaultId: "museum-aurora", wheelCount: 5, startDirection: "ccw", targets: [86, 32, 12, 64, 48], parTime: 47, parDialSteps: 1648, parFaults: 1, parFalseGateContacts: 35, difficultyWeight: 1.06 },
+  { problemId: "AKERUN-14-V1", problemVersion: "V1", seed: 40114, tier: "standard", vaultId: "reliquary-nocturne", wheelCount: 6, startDirection: "cw", targets: [35, 88, 19, 62, 4, 76], parTime: 55, parDialSteps: 2340, parFaults: 1, parFalseGateContacts: 72, difficultyWeight: 1.08 },
+  { problemId: "AKERUN-15-V1", problemVersion: "V1", seed: 40115, tier: "standard", vaultId: "chronometer-pelagic", wheelCount: 5, startDirection: "ccw", targets: [7, 54, 83, 26, 68], parTime: 48, parDialSteps: 1812, parFaults: 1, parFalseGateContacts: 36, difficultyWeight: 1.05 },
+  { problemId: "AKERUN-16-V1", problemVersion: "V1", seed: 40116, tier: "advanced", vaultId: "museum-aurora", wheelCount: 6, startDirection: "cw", targets: [59, 13, 71, 36, 94, 22], parTime: 58, parDialSteps: 2428, parFaults: 2, parFalseGateContacts: 48, difficultyWeight: 1.09 },
+  { problemId: "AKERUN-17-V1", problemVersion: "V1", seed: 40117, tier: "advanced", vaultId: "reliquary-nocturne", wheelCount: 5, startDirection: "ccw", targets: [44, 2, 73, 18, 91], parTime: 51, parDialSteps: 1715, parFaults: 2, parFalseGateContacts: 53, difficultyWeight: 1.1 },
+  { problemId: "AKERUN-18-V1", problemVersion: "V1", seed: 40118, tier: "advanced", vaultId: "chronometer-pelagic", wheelCount: 6, startDirection: "cw", targets: [15, 67, 39, 82, 28, 54], parTime: 60, parDialSteps: 2412, parFaults: 2, parFalseGateContacts: 48, difficultyWeight: 1.11 },
+  { problemId: "AKERUN-19-V1", problemVersion: "V1", seed: 40119, tier: "advanced", vaultId: "museum-aurora", wheelCount: 5, startDirection: "ccw", targets: [75, 21, 49, 93, 11], parTime: 53, parDialSteps: 1769, parFaults: 2, parFalseGateContacts: 35, difficultyWeight: 1.12 },
+  { problemId: "AKERUN-20-V1", problemVersion: "V1", seed: 40120, tier: "advanced", vaultId: "reliquary-nocturne", wheelCount: 6, startDirection: "cw", targets: [6, 58, 31, 86, 17, 72], parTime: 62, parDialSteps: 2348, parFaults: 2, parFalseGateContacts: 71, difficultyWeight: 1.14 },
 ];
 
 const cloneVault = (vault: VaultDefinition, wheelCount: number, tier: ProblemTier): VaultDefinition => ({
@@ -560,15 +594,16 @@ export const createOfficialPuzzle = (problemId: string): PuzzleDefinition => {
     id: problem.problemId,
     seed: problem.seed,
     vault: cloneVault(vault, problem.wheelCount, problem.tier),
-    difficulty: officialDifficulty(problem.tier),
+    difficulty: officialDifficulty(problem.tier, vault.personality),
     stages,
-    falseGates: createFalseGates(problem.targets),
+    falseGates: createFalseGates(problem.targets, vault.personality),
     reward: REWARD_DEFINITIONS[VAULT_DEFINITIONS.findIndex((item) => item.id === problem.vaultId)] ?? DEFAULT_REWARD,
     problemId: problem.problemId,
     problemVersion: problem.problemVersion,
     parTime: problem.parTime,
     parDialSteps: problem.parDialSteps,
     parFaults: problem.parFaults,
+    parFalseGateContacts: problem.parFalseGateContacts,
     difficultyWeight: problem.difficultyWeight,
     problemTier: problem.tier,
   };
@@ -597,7 +632,7 @@ export const createTrainingPuzzle = (step: 1 | 2 | 3 | 4): PuzzleDefinition => {
     },
     difficulty: step === 1 || step === 3 ? DIFFICULTY_PROFILES.observe : DIFFICULTY_PROFILES.standard,
     stages,
-    falseGates: createFalseGates(targets),
+    falseGates: createFalseGates(targets, VAULT_DEFINITIONS[0].personality),
     reward: DEFAULT_REWARD,
     problemId: "TRAINING-0" + step,
     problemVersion: "V1",
@@ -632,7 +667,7 @@ export const createPuzzleFromSeed = (seed: number, difficulty: DifficultyId = "s
     vault,
     difficulty: profile,
     stages,
-    falseGates: createFalseGates(selected),
+    falseGates: createFalseGates(selected, vault.personality),
     reward: REWARD_DEFINITIONS[variantIndex],
   };
 };

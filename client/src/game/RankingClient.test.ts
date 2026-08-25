@@ -8,6 +8,7 @@ const result: RunResult = {
   totalDialSteps: 1198,
   excessDialSteps: 0,
   falseGateContacts: 0,
+  avoidableFalseGateContacts: 2,
   observationAccuracy: 100,
   score: 11720,
   problemId: "AKERUN-01-V1",
@@ -19,11 +20,12 @@ describe("RankingClient", () => {
   it("uses the verified contract and deduplicates a run token", async () => {
     const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body));
-      expect(body.clientVersion).toBe("akerun-web-verified-v1");
-      expect(body.contractVersion).toBe("akerun-play-v1");
+      expect(body.clientVersion).toBe("akerun-web-verified-v2");
+      expect(body.contractVersion).toBe("akerun-play-v2");
       expect(body.action).toBe("finish");
       expect(body.runToken).toBe("run-token-1");
       expect(body.elapsedTimeMs).toBe(31250);
+      expect(body.falseGateContacts).toBe(2);
       return new Response(JSON.stringify({ accepted: true, score: result.score }), { status: 200 });
     });
     const client = new RankingClient({ fetch });
@@ -50,6 +52,23 @@ describe("RankingClient", () => {
 
     await expect(client.prepareOfficialRun("player one", "AKERUN-01-V1", "completed-run-1"))
       .resolves.toMatchObject({ status: "ok", problemId: "AKERUN-01-V1" });
+  });
+
+  it("normalizes legacy saved results before v2 submission", async () => {
+    const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      expect(body.falseGateContacts).toBe(1);
+      return new Response(JSON.stringify({ accepted: true }), { status: 200 });
+    });
+    const client = new RankingClient({ fetch });
+    const legacy = {
+      ...result,
+      falseGateContacts: 25,
+      avoidableFalseGateContacts: undefined,
+    } satisfies RunResult;
+
+    await expect(client.submit("player one", legacy, "run-token-legacy"))
+      .resolves.toMatchObject({ accepted: true });
   });
 
   it("reads metric tie-break rows from the akerun ranking RPC", async () => {

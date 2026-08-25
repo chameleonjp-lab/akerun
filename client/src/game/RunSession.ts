@@ -5,7 +5,10 @@ export type RunResult = {
   readonly faultCount: number;
   readonly totalDialSteps: number;
   readonly excessDialSteps: number;
+  /** 物理的に通過した偽ゲートの総数。不可避な基準通過も含む表示用の値。 */
   readonly falseGateContacts: number;
+  /** 基準通過数を超えた、スコア計算上の偽ゲート接触数。 */
+  readonly avoidableFalseGateContacts?: number;
   readonly observationAccuracy: number;
   readonly score: number;
   readonly problemId: string;
@@ -19,6 +22,7 @@ export type RunSessionSnapshot = {
   readonly totalDialSteps: number;
   readonly excessDialSteps: number;
   readonly falseGateContacts: number;
+  readonly avoidableFalseGateContacts: number;
   readonly observationAccuracy: number;
   readonly score: number;
   readonly finished: boolean;
@@ -26,6 +30,14 @@ export type RunSessionSnapshot = {
 
 const nonNegative = (value: number) =>
   Math.max(0, Number.isFinite(value) ? value : 0);
+
+export const avoidableFalseGateContacts = (
+  problem: PuzzleDefinition,
+  observedContacts: number,
+) => Math.max(
+  0,
+  nonNegative(observedContacts) - nonNegative(problem.parFalseGateContacts ?? 0),
+);
 
 /**
  * The verified ranking contract sends elapsed time as integer milliseconds.
@@ -101,9 +113,10 @@ export class RunSession {
     );
     const parDialSteps = this.problem.parDialSteps ?? 600;
     const excessDialSteps = Math.max(0, this.totalDialSteps - parDialSteps);
+    const avoidableContacts = avoidableFalseGateContacts(this.problem, this.falseGateContacts);
     const observationAccuracy = Math.max(
       0,
-      Math.min(100, 100 - this.falseGateContacts * 4 - faultCount * 8)
+      Math.min(100, 100 - avoidableContacts * 4 - faultCount * 8)
     );
     this.result = {
       elapsedTime,
@@ -111,13 +124,14 @@ export class RunSession {
       totalDialSteps: this.totalDialSteps,
       excessDialSteps,
       falseGateContacts: this.falseGateContacts,
+      avoidableFalseGateContacts: avoidableContacts,
       observationAccuracy,
       score: calculateRunScore(
         this.problem,
         elapsedTime,
         faultCount,
         this.totalDialSteps,
-        this.falseGateContacts
+        avoidableContacts
       ),
       problemId: this.problem.problemId ?? this.problem.id,
       problemVersion: this.problem.problemVersion ?? "DEV",
@@ -135,8 +149,9 @@ export class RunSession {
         this.elapsedTime,
         this.faultCount,
         this.totalDialSteps,
-        this.falseGateContacts
+        avoidableFalseGateContacts(this.problem, this.falseGateContacts)
       );
+    const avoidableContacts = avoidableFalseGateContacts(this.problem, this.falseGateContacts);
     return {
       elapsedTime: this.result?.elapsedTime ?? this.elapsedTime,
       faultCount: this.result?.faultCount ?? this.faultCount,
@@ -146,9 +161,10 @@ export class RunSession {
         this.totalDialSteps - (this.problem.parDialSteps ?? 600)
       ),
       falseGateContacts: this.falseGateContacts,
+      avoidableFalseGateContacts: this.result?.avoidableFalseGateContacts ?? avoidableContacts,
       observationAccuracy:
         this.result?.observationAccuracy ??
-        Math.max(0, 100 - this.falseGateContacts * 4 - this.faultCount * 8),
+        Math.max(0, 100 - avoidableContacts * 4 - this.faultCount * 8),
       score,
       finished: this.finished,
     };

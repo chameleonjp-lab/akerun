@@ -561,6 +561,7 @@ export default function App() {
             <Stat label="観察精度" value={String(result?.observationAccuracy ?? snapshot?.observationAccuracy ?? 0) + "%"} />
             <Stat label="自己ベスト" value={best?.score ?? "—"} />
           </div>
+          {!isRetired && mode === "official" ? <p className="akerun-small">偽ゲート接触は物理的な通過数を表示し、問題ごとの不可避な基準通過はスコアから除外しています。</p> : null}
           <p className="akerun-submit-status">{mode === "official" && !isRetired ? submitStatus : "訓練・お手本・リタイアはランキング対象外です。"}</p>
           <div className="akerun-title-actions">
             {mode === "official" && !isRetired ? <Button
