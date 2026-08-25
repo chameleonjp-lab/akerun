@@ -81,6 +81,8 @@ export default function App() {
   const [problem, setProblem] = useState<PuzzleDefinition | null>(null);
   const [tutorialStep, setTutorialStep] = useState(1);
   const [submitStatus, setSubmitStatus] = useState("未送信");
+  const [retryAvailable, setRetryAvailable] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
   const [rankingRows, setRankingRows] = useState<RankingRow[]>([]);
   const [rankingStatus, setRankingStatus] = useState("まだ読み込んでいません。");
   const [settings, setSettings] = useState({
@@ -89,6 +91,7 @@ export default function App() {
     precision: false,
   });
   const submittedKeyRef = useRef("");
+  const submittingKeyRef = useRef("");
 
   const onReady = useCallback((nextHandle: GameHandle | null) => {
     setHandle(nextHandle);
@@ -124,22 +127,33 @@ export default function App() {
 
   useEffect(() => {
     const result = snapshot?.runResult;
-    if (screen !== "result" || mode !== "official" || !result) return;
+    if (screen !== "result" || mode !== "official" || !snapshot?.recordable || !result) return;
     const key = result.problemId + "@" + result.problemVersion + ":" + String(result.score) + ":" + String(result.elapsedTime);
-    if (submittedKeyRef.current === key) return;
+    if (submittedKeyRef.current === key || submittingKeyRef.current === key) return;
+
+    // 結果確定時に自己ベストを先に保存し、通信状態と切り離す。
+    store.recordBest(result);
+    setRetryAvailable(false);
     submittedKeyRef.current = key;
+    submittingKeyRef.current = key;
     setSubmitStatus("送信中…");
     void rankingClient.submit(playerName, result)
       .then(() => {
+        setRetryAvailable(false);
         setSubmitStatus("ランキングへ送信しました。");
-        store.recordBest(result);
         store.removePendingForResult(result);
       })
       .catch(() => {
+        // 失敗時はsubmittedKeyを残し、自動再送ループを防ぐ。
+        // 再送ボタンがretryNonceを進め、明示的にもう一度実行する。
+        setRetryAvailable(true);
         store.enqueueRanking(playerName, result);
         setSubmitStatus("送信に失敗しました。結果画面の再送ボタンを押してください。");
+      })
+      .finally(() => {
+        if (submittingKeyRef.current === key) submittingKeyRef.current = "";
       });
-  }, [mode, playerName, rankingClient, screen, snapshot, store]);
+  }, [mode, playerName, rankingClient, retryNonce, screen, snapshot, store]);
 
   const validateName = () => {
     const normalized = normalizePlayerName(playerName);
@@ -177,7 +191,9 @@ export default function App() {
     setProblem(chosen);
     setMode("official");
     setSubmitStatus("未送信");
+    setRetryAvailable(false);
     submittedKeyRef.current = "";
+    setRetryNonce(0);
     handle.startPuzzle(chosen);
     setSnapshot(handle.getSnapshot());
     setScreen("play");
@@ -480,11 +496,16 @@ export default function App() {
           </div>
           <p className="akerun-submit-status">{mode === "official" && !isRetired ? submitStatus : "訓練・お手本・リタイアはランキング対象外です。"}</p>
           <div className="akerun-title-actions">
-            {mode === "official" && !isRetired ? <Button onClick={() => {
-              submittedKeyRef.current = "";
-              setSubmitStatus("再送中…");
-              setScreen("result");
-            }}>記録を再送する</Button> : null}
+            {mode === "official" && !isRetired ? <Button
+              disabled={!retryAvailable || submitStatus === "送信中…" || submitStatus === "再送中…"}
+              onClick={() => {
+                if (!retryAvailable) return;
+                setRetryAvailable(false);
+                submittedKeyRef.current = "";
+                setSubmitStatus("再送中…");
+                setRetryNonce((current) => current + 1);
+              }}
+            >記録を再送する</Button> : null}
             <Button tone="primary" onClick={startSameProblem} disabled={!problem || mode !== "official"}>同じ問題でもう一度</Button>
             <Button onClick={startDifferentProblem} disabled={mode !== "official"}>別の問題に挑戦</Button>
             <Button onClick={openRanking}>ランキング</Button>

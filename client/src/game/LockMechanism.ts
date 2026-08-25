@@ -38,6 +38,8 @@ export class LockMechanism {
   handleTurn = 0;
   faultCount = 0;
   opened = false;
+  /** 直前のrotate呼び出しで通過した偽ゲート数。粗い入力でも中間接触を失わない。 */
+  lastRotationFalseGateContacts = 0;
   lastMessage = "数字を当てるのではない。ドライブカムがフライを拾う順番を観察してください。";
   private stagePasses = 0;
   private reversalCount = 0;
@@ -212,6 +214,7 @@ export class LockMechanism {
   }
 
   rotate(steps: number) {
+    this.lastRotationFalseGateContacts = 0;
     if (!Number.isFinite(steps) || steps === 0 || this.opened || this.phase === "lockout") return;
     if (this.phase !== "dial") {
       this.lastMessage = "今はダイヤルを回さない。前に出た物理部品の反応を確かめてください。";
@@ -240,6 +243,7 @@ export class LockMechanism {
 
       const falseGate = this.falseGateAtDial;
       if (falseGate) {
+        this.lastRotationFalseGateContacts += 1;
         this.lastMessage = this.puzzle.difficulty.showFalseGatePositions
           ? `輪 ${current.wheel + 1} の浅い偽ゲートに触れました。深さ ${Math.round(falseGate.depth * 100)}%。フェンスは座りません。`
           : "浅い切欠きに触れ、フェンスがわずかに反発しました。音の減衰と戻りを確かめてください。";
@@ -423,6 +427,7 @@ export class LockMechanism {
     this.settlingElapsed = 0;
     this.rotationSpeed = 0;
     this.faultCount = 0;
+    this.lastRotationFalseGateContacts = 0;
     this.opened = false;
     this.lastMessage = "初期化しました。ドライブカムと最初のフライを観察してください。";
   }

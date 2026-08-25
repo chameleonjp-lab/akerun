@@ -46,10 +46,19 @@ const writeJson = (key: string, value: unknown) => {
   }
 };
 
+const isBetterResult = (candidate: RunResult, previous: RunResult) => {
+  if (candidate.score !== previous.score) return candidate.score > previous.score;
+  if (candidate.faultCount !== previous.faultCount) return candidate.faultCount < previous.faultCount;
+  if (candidate.elapsedTime !== previous.elapsedTime) return candidate.elapsedTime < previous.elapsedTime;
+  return candidate.excessDialSteps < previous.excessDialSteps;
+};
+
 export const normalizePlayerName = (value: string) =>
   value.trim().replace(/\s+/g, " ").slice(0, 16);
 
 export class ProgressStore {
+  private sessionTrainingComplete = false;
+
   getPlayerName() {
     try {
       return normalizePlayerName(storage()?.getItem(PLAYER_NAME_KEY) ?? "");
@@ -69,6 +78,7 @@ export class ProgressStore {
   }
 
   get trainingComplete() {
+    if (this.sessionTrainingComplete) return true;
     try {
       return storage()?.getItem(TRAINING_KEY) === "1";
     } catch {
@@ -77,6 +87,7 @@ export class ProgressStore {
   }
 
   markTrainingComplete() {
+    this.sessionTrainingComplete = true;
     try {
       storage()?.setItem(TRAINING_KEY, "1");
     } catch {
@@ -93,9 +104,7 @@ export class ProgressStore {
     const records = readJson<Record<string, RunResult>>(BEST_KEY, {});
     const key = result.problemId + "@" + result.problemVersion;
     const previous = records[key];
-    const improved = !previous
-      || result.score > previous.score
-      || (result.score === previous.score && result.elapsedTime < previous.elapsedTime);
+    const improved = !previous || isBetterResult(result, previous);
     if (improved) {
       records[key] = result;
       writeJson(BEST_KEY, records);
@@ -132,17 +141,27 @@ export class ProgressStore {
   }
 
   pendingId(result: RunResult) {
-    return result.problemId + "@" + result.problemVersion + ":" + String(result.score) + ":" + String(result.elapsedTime);
+    return [
+      result.problemId + "@" + result.problemVersion,
+      result.score,
+      result.elapsedTime,
+      result.faultCount,
+      result.totalDialSteps,
+      result.excessDialSteps,
+      result.falseGateContacts,
+    ].join(":");
   }
 
   enqueueRanking(playerName: string, result: RunResult) {
     const existing = this.getPendingRankings();
     const id = this.pendingId(result);
     if (existing.some((item) => item.id === id)) return existing;
+    // 通信失敗の記録は、端末容量が許す限りすべて保持する。
+    // 件数制限で古い結果を静かに捨てると、再送要件を満たせない。
     const next = [
       ...existing,
       { id, playerName: normalizePlayerName(playerName), result, createdAt: new Date().toISOString() },
-    ].slice(-10);
+    ];
     writeJson(PENDING_KEY, next);
     return next;
   }

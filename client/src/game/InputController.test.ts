@@ -60,6 +60,20 @@ describe("InputController", () => {
     expect(options.onRotateDial).toHaveBeenCalled();
   });
 
+  it("ignores a second pointer while a dial gesture is active", () => {
+    const canvas = new TestCanvas();
+    const windowTarget = new EventTarget();
+    const options = baseOptions(canvas, windowTarget, new Map());
+
+    new InputController(options);
+    canvas.dispatchEvent(pointerEvent("pointerdown", 1, 70, 50));
+    canvas.dispatchEvent(pointerEvent("pointermove", 2, 50, 70));
+    expect(options.onRotateDial).not.toHaveBeenCalled();
+
+    canvas.dispatchEvent(pointerEvent("pointermove", 1, 50, 70));
+    expect(options.onRotateDial).toHaveBeenCalled();
+  });
+
   it("does not route input while disabled", () => {
     const canvas = new TestCanvas();
     const windowTarget = new EventTarget();
