@@ -81,7 +81,7 @@ Supabase側の public.games 登録は、問題バージョンと表示順を確�
 
 ## iPhone操作
 
-Canvas上でダイヤルと物理部品を指で操作できます。画面外へ移動した場合やバックグラウンドへ移った場合は入力を安全に解除し、バックグラウンド中は自動一時停止します。
+Canvas上でダイヤルと物理部品を指で操作できます。画面外へ移動した場合やバックグラウンドへ移った場合は入力を安全に解除し、ゲームを自動一時停止します。非表示中はBabylonの描画ループ自体も停止し、復帰時に再開します。
 
 React側にはタイトル、名前入力、訓練、HUD、一時停止、結果、ランキング、収蔵品、設定、ヘルプを配置しています。キーボード操作は補助であり、ゲーム開始や開錠に必須ではありません。
 
@@ -91,6 +91,7 @@ React側にはタイトル、名前入力、訓練、HUD、一時停止、結果
 - client/src/components/GameCanvas.tsx: Babylonキャンバスのライフサイクル
 - client/src/game/VaultWorld.ts: 金庫の描画、入力、音・振動、既存機構との同期
 - client/src/game/AudioFeedback.ts: 音の試験室のカタログと合成音
+- client/src/game/RenderLoopController.ts: 表示状態とReactライフサイクルに連動したBabylon描画ループ制御
 - client/src/game/LockMechanism.ts: 金庫ルールの状態機械
 - client/src/game/GameDefinitions.ts: 金庫定義、公式20問、訓練問題、開発seed
 - client/src/game/RunSession.ts: プレイ記録とスコア計算
