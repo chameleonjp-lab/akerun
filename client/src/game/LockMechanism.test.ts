@@ -123,6 +123,7 @@ describe("LockMechanism", () => {
       guard += 1;
     }
     expect(lock.contactProfile).toBe("false-gate");
+    expect(lock.lastRotationFalseGateContacts).toBe(1);
     expect(lock.stage).toBe(0);
     expect(lock.currentPass).toBe(1);
     expect(lock.lastMessage).toContain("偽ゲート");
