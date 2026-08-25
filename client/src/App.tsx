@@ -81,6 +81,7 @@ export default function App() {
   const [problem, setProblem] = useState<PuzzleDefinition | null>(null);
   const [tutorialStep, setTutorialStep] = useState(1);
   const [submitStatus, setSubmitStatus] = useState("未送信");
+  const [retryAvailable, setRetryAvailable] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
   const [rankingRows, setRankingRows] = useState<RankingRow[]>([]);
   const [rankingStatus, setRankingStatus] = useState("まだ読み込んでいません。");
@@ -132,17 +133,20 @@ export default function App() {
 
     // 結果確定時に自己ベストを先に保存し、通信状態と切り離す。
     store.recordBest(result);
+    setRetryAvailable(false);
     submittedKeyRef.current = key;
     submittingKeyRef.current = key;
     setSubmitStatus("送信中…");
     void rankingClient.submit(playerName, result)
       .then(() => {
+        setRetryAvailable(false);
         setSubmitStatus("ランキングへ送信しました。");
         store.removePendingForResult(result);
       })
       .catch(() => {
         // 失敗時はsubmittedKeyを残し、自動再送ループを防ぐ。
         // 再送ボタンがretryNonceを進め、明示的にもう一度実行する。
+        setRetryAvailable(true);
         store.enqueueRanking(playerName, result);
         setSubmitStatus("送信に失敗しました。結果画面の再送ボタンを押してください。");
       })
@@ -187,6 +191,7 @@ export default function App() {
     setProblem(chosen);
     setMode("official");
     setSubmitStatus("未送信");
+    setRetryAvailable(false);
     submittedKeyRef.current = "";
     setRetryNonce(0);
     handle.startPuzzle(chosen);
@@ -492,8 +497,10 @@ export default function App() {
           <p className="akerun-submit-status">{mode === "official" && !isRetired ? submitStatus : "訓練・お手本・リタイアはランキング対象外です。"}</p>
           <div className="akerun-title-actions">
             {mode === "official" && !isRetired ? <Button
-              disabled={submitStatus === "送信中…" || submitStatus === "再送中…"}
+              disabled={!retryAvailable || submitStatus === "送信中…" || submitStatus === "再送中…"}
               onClick={() => {
+                if (!retryAvailable) return;
+                setRetryAvailable(false);
                 submittedKeyRef.current = "";
                 setSubmitStatus("再送中…");
                 setRetryNonce((current) => current + 1);
