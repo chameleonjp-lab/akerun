@@ -501,7 +501,6 @@ export class VaultWorld {
       this.demoMode = false;
       this.mechanism.reset();
       this.newlyUnlockedRewards = [];
-      this.releasePhysicalInput();
       this.keyboardFocus = "dial";
       this.openingProgress = 0;
       this.runElapsed = 0;
@@ -592,10 +591,9 @@ export class VaultWorld {
     this.developmentSeed = false;
     this.lastRunRecordable = false;
     this.mechanism = new LockMechanism(puzzle);
+    this.lastPhysicalPhase = this.mechanism.phase;
     this.newlyUnlockedRewards = [];
     this.openingProgress = 0;
-    this.runElapsed = 0;
-    this.runStarted = false;
     this.resultSummary = null;
     this.tutorialVisible = true;
     this.mechanism.lastMessage = "訓練契約：橙の浅い切欠きはフェンスを座らせません。深い接触と短い音の減衰を比べてください。";
