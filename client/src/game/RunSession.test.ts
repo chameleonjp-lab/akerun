@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createOfficialPuzzle } from "./GameDefinitions";
-import { RunSession, calculateRunScore } from "./RunSession";
+import { RunSession, calculateRunScore, quantizeElapsedTime } from "./RunSession";
 
 describe("RunSession", () => {
   it("tracks dial movement, false gates, faults, and excess movement", () => {
@@ -62,5 +62,14 @@ describe("RunSession", () => {
     );
     expect(cleanRun - standardFaults).toBe(650);
     expect(standardFaults - extraFault).toBe(650);
+  });
+
+  it("quantizes elapsed time before the score is calculated", () => {
+    expect(quantizeElapsedTime(1.23456)).toBe(1.235);
+    const problem = createOfficialPuzzle("AKERUN-01-V1");
+    const session = new RunSession(problem);
+    const result = session.finish({ elapsedTime: 1.23456, faultCount: 0 });
+    expect(result.elapsedTime).toBe(1.235);
+    expect(result.score).toBe(calculateRunScore(problem, 1.235, 0, 0, 0));
   });
 });

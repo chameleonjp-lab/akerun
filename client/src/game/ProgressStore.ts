@@ -4,6 +4,8 @@ export type PendingRankingRecord = {
   readonly id: string;
   readonly playerName: string;
   readonly result: RunResult;
+  /** サーバー発行の検証済みプレイID。旧保存形式では存在しない。 */
+  readonly rankingRunToken?: string;
   readonly createdAt: string;
 };
 
@@ -11,6 +13,8 @@ export type ActiveRunRecord = {
   readonly problemId: string;
   readonly problemVersion: string;
   readonly playerName: string;
+  /** バックグラウンド復帰・再読込後も同じ検証済みプレイを再開するためのID。 */
+  readonly rankingRunToken?: string;
 };
 
 const PLAYER_NAME_KEY = "akerun-player-name";
@@ -112,11 +116,12 @@ export class ProgressStore {
     return { improved, best: records[key] ?? result };
   }
 
-  saveActiveRun(problemId: string, problemVersion: string, playerName: string) {
+  saveActiveRun(problemId: string, problemVersion: string, playerName: string, rankingRunToken?: string | null) {
     const record: ActiveRunRecord = {
       problemId: String(problemId),
       problemVersion: String(problemVersion),
       playerName: normalizePlayerName(playerName),
+      ...(rankingRunToken ? { rankingRunToken: String(rankingRunToken) } : {}),
     };
     writeJson(ACTIVE_RUN_KEY, record);
     return record;
@@ -129,6 +134,7 @@ export class ProgressStore {
       problemId: String(record.problemId),
       problemVersion: String(record.problemVersion),
       playerName: normalizePlayerName(String(record.playerName)),
+      ...(record.rankingRunToken ? { rankingRunToken: String(record.rankingRunToken) } : {}),
     };
   }
 
@@ -140,7 +146,20 @@ export class ProgressStore {
     }
   }
 
-  pendingId(result: RunResult) {
+  pendingId(result: RunResult, rankingRunToken?: string | null) {
+    return [
+      rankingRunToken || "legacy",
+      result.problemId + "@" + result.problemVersion,
+      result.score,
+      result.elapsedTime,
+      result.faultCount,
+      result.totalDialSteps,
+      result.excessDialSteps,
+      result.falseGateContacts,
+    ].join(":");
+  }
+
+  private legacyPendingId(result: RunResult) {
     return [
       result.problemId + "@" + result.problemVersion,
       result.score,
@@ -152,15 +171,21 @@ export class ProgressStore {
     ].join(":");
   }
 
-  enqueueRanking(playerName: string, result: RunResult) {
+  enqueueRanking(playerName: string, result: RunResult, rankingRunToken?: string | null) {
     const existing = this.getPendingRankings();
-    const id = this.pendingId(result);
+    const id = this.pendingId(result, rankingRunToken);
     if (existing.some((item) => item.id === id)) return existing;
     // 通信失敗の記録は、端末容量が許す限りすべて保持する。
     // 件数制限で古い結果を静かに捨てると、再送要件を満たせない。
     const next = [
       ...existing,
-      { id, playerName: normalizePlayerName(playerName), result, createdAt: new Date().toISOString() },
+      {
+        id,
+        playerName: normalizePlayerName(playerName),
+        result,
+        ...(rankingRunToken ? { rankingRunToken: String(rankingRunToken) } : {}),
+        createdAt: new Date().toISOString(),
+      },
     ];
     writeJson(PENDING_KEY, next);
     return next;
@@ -176,8 +201,10 @@ export class ProgressStore {
     writeJson(PENDING_KEY, next);
   }
 
-  removePendingForResult(result: RunResult) {
-    this.removePending(this.pendingId(result));
+  removePendingForResult(result: RunResult, rankingRunToken?: string | null) {
+    const ids = new Set([this.pendingId(result, rankingRunToken), this.legacyPendingId(result)]);
+    const next = this.getPendingRankings().filter((item) => !ids.has(item.id));
+    writeJson(PENDING_KEY, next);
   }
 
   getArchiveIds(): string[] {

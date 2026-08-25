@@ -27,6 +27,14 @@ export type RunSessionSnapshot = {
 const nonNegative = (value: number) =>
   Math.max(0, Number.isFinite(value) ? value : 0);
 
+/**
+ * The verified ranking contract sends elapsed time as integer milliseconds.
+ * Quantize once before calculating the score so the browser and server use
+ * the same value at Math.round half-step boundaries.
+ */
+export const quantizeElapsedTime = (seconds: number) =>
+  Math.round(nonNegative(seconds) * 1000) / 1000;
+
 export const calculateRunScore = (
   problem: PuzzleDefinition,
   elapsedTime: number,
@@ -86,7 +94,7 @@ export class RunSession {
     overrides?: Partial<Pick<RunResult, "elapsedTime" | "faultCount">>
   ): RunResult {
     if (this.result) return this.result;
-    const elapsedTime = nonNegative(overrides?.elapsedTime ?? this.elapsedTime);
+    const elapsedTime = quantizeElapsedTime(overrides?.elapsedTime ?? this.elapsedTime);
     const faultCount = Math.max(
       0,
       Math.round(overrides?.faultCount ?? this.faultCount)
