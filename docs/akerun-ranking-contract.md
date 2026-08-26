@@ -38,11 +38,30 @@ Akerunの通常プレイだけを、カメレオンJP実験場の共通ランキ
 
 v2では、正しい最短経路でも発生する偽ゲート通過を問題ごとの基準値へ含め、不可避な通過がスコアへ二重計上されないようにした。この契約は、問題の再抽選、問題IDの差し替え、スコア式の改ざん、派生値の不一致、二重送信を防ぐ。ただし、悪意あるブラウザがプレイ結果の各メトリクスを自作することまでは証明しない。完全な入力トレース検証は、LockMechanismの決定的ルールをサーバー検証器へ移植する別フェーズで実装する。
 
+## 現在の本番状態（2026-08-26）
+
+v2 migrationの適用と `akerun-competition` Edge Function v2の配置は完了しています。確認できた状態は次のとおりです。
+
+- `private.akerun_competition_config.client_version = akerun-web-verified-v2`
+- `private.akerun_competition_config.contract_version = akerun-play-v2`
+- 公式問題カタログは20件
+- Akerunの実行台帳は0件
+- `public.games.is_active = false`
+- `private.akerun_competition_config.accepting_runs = false`
+- 受付停止中の準備処理が新しい実行記録を作らず拒否することを確認済み
+
 ## 有効化手順
 
-初期状態は安全のため次の2つが無効になっている。
+公開前は安全のため次の2つを無効にする。
 
 - `public.games.is_active = false`
 - `private.akerun_competition_config.accepting_runs = false`
 
-Edge Functionのデプロイ、公開クライアントの反映、正常系・不正payload・再送・二重送信・ランキング取得の確認が終わった後、管理者権限で両方を有効化する。
+次の確認がすべて終わった後、管理者権限で同じ作業として両方を有効化する。
+
+1. iPhone Safariの縦画面で、名前入力から開錠・結果表示まで確認する
+2. 新規問題抽選と同じ問題の再挑戦が、問題固定を壊さず動くことを確認する
+3. 正常送信、送信失敗からの再送、期限切れ、二重送信、ランキング取得を確認する
+4. 訓練、お手本、リタイア、未クリアがランキングへ入らないことを確認する
+
+有効化後に問題形状や基準値を変更する場合は、ランキング記録への影響を避けるため問題バージョンを上げる。
