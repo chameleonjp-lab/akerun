@@ -28,6 +28,8 @@ Akerunの通常プレイだけを、カメレオンJP実験場の共通ランキ
 
 送信失敗時は `runToken` を含む結果を端末内へ保存し、明示的な再送で同じ `finish` を再実行する。完了済みトークンを同じ payload で送る場合は、サーバーが既存結果を返し、二重の `score_runs` を作らない。
 
+新しいv2結果は共通 `score_runs.metadata` に `source=akerun_verified_v2` と `verification=server-contract-v2` を付けて保存する。既存のv1結果は読み取り用に残し、ランキング取得ではv1/v2を同じ履歴として扱う。
+
 ## 順位
 
 `get_akerun_ranking_v1` は共通 `game_scores` の最高スコアを基準に、同点時は失敗数、経過時間、余分な回転数、正規化名の順で並べる。各指標は最高スコアと同じ `score_runs` のメタデータから取得する。
