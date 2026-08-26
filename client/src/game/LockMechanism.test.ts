@@ -58,6 +58,27 @@ describe("LockMechanism", () => {
     expect(new Set(first.stages.map((stage) => stage.target)).size).toBe(first.stages.length);
   });
 
+  it("機構チェックポイントを復元して、途中のダイヤル状態を保持する", () => {
+    const puzzle = createOfficialPuzzle("AKERUN-10-V1");
+    const original = new LockMechanism(puzzle);
+    original.rotate(puzzle.stages[0].direction === "cw" ? 7 : -7);
+    const checkpoint = original.snapshot;
+    const restored = new LockMechanism(puzzle);
+
+    expect(restored.restore(checkpoint)).toBe(true);
+    expect(restored.snapshot).toEqual(checkpoint);
+    expect(restored.dial).toBe(original.dial);
+    expect(restored.stage).toBe(original.stage);
+    expect(restored.tumblerValues).toEqual(original.tumblerValues);
+  });
+
+  it("開扉済みチェックポイントは途中プレイへ復元しない", () => {
+    const puzzle = createOfficialPuzzle("AKERUN-01-V1");
+    const lock = new LockMechanism(puzzle);
+    const checkpoint = { ...lock.snapshot, opened: true, phase: "open" as const };
+    expect(new LockMechanism(puzzle).restore(checkpoint)).toBe(false);
+  });
+
   it("異なる契約seedが金庫型と報酬のバリエーションを選ぶ", () => {
     const puzzles = [90210, 90211, 90212].map((seed) => createPuzzleFromSeed(seed));
     expect(new Set(puzzles.map((puzzle) => puzzle.vault.id)).size).toBe(3);

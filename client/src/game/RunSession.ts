@@ -1,4 +1,5 @@
 import type { PuzzleDefinition } from "./GameDefinitions";
+import { isLockMechanismSnapshot, type LockMechanismSnapshot } from "./LockMechanism";
 
 export type RunResult = {
   readonly elapsedTime: number;
@@ -28,8 +29,50 @@ export type RunSessionSnapshot = {
   readonly finished: boolean;
 };
 
+export type RunCheckpoint = {
+  readonly runElapsed: number;
+  readonly mechanism: LockMechanismSnapshot;
+  readonly session: RunSessionSnapshot;
+};
+
 const nonNegative = (value: number) =>
   Math.max(0, Number.isFinite(value) ? value : 0);
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const isNonNegativeNumber = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0;
+
+const isNonNegativeInteger = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 0;
+
+const isRunSessionSnapshot = (value: unknown): value is RunSessionSnapshot => {
+  if (!isRecord(value)) return false;
+  return isNonNegativeNumber(value.elapsedTime)
+    && isNonNegativeInteger(value.faultCount)
+    && isNonNegativeInteger(value.totalDialSteps)
+    && isNonNegativeInteger(value.excessDialSteps)
+    && isNonNegativeInteger(value.falseGateContacts)
+    && isNonNegativeInteger(value.avoidableFalseGateContacts)
+    && typeof value.observationAccuracy === "number"
+    && Number.isFinite(value.observationAccuracy)
+    && value.observationAccuracy >= 0
+    && value.observationAccuracy <= 100
+    && isNonNegativeInteger(value.score)
+    && value.finished === false;
+};
+
+export const isRunCheckpoint = (value: unknown): value is RunCheckpoint => {
+  if (!isRecord(value)) return false;
+  const runElapsed = value.runElapsed;
+  return isNonNegativeNumber(runElapsed)
+    && runElapsed <= 1800
+    && isLockMechanismSnapshot(value.mechanism)
+    && !value.mechanism.opened
+    && value.mechanism.phase !== "open"
+    && isRunSessionSnapshot(value.session);
+};
 
 export const avoidableFalseGateContacts = (
   problem: PuzzleDefinition,
@@ -100,6 +143,17 @@ export class RunSession {
   recordFault(count = 1) {
     if (this.finished) return;
     this.faultCount += Math.max(0, Math.round(count));
+  }
+
+  restore(snapshot: RunSessionSnapshot) {
+    if (!isRunSessionSnapshot(snapshot)) return false;
+    this.elapsedTime = snapshot.elapsedTime;
+    this.faultCount = snapshot.faultCount;
+    this.totalDialSteps = snapshot.totalDialSteps;
+    this.falseGateContacts = snapshot.falseGateContacts;
+    this.finished = false;
+    this.result = null;
+    return true;
   }
 
   finish(

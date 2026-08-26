@@ -1,4 +1,4 @@
-import type { RunResult } from "./RunSession";
+import { isRunCheckpoint, type RunCheckpoint, type RunResult } from "./RunSession";
 
 export type PendingRankingRecord = {
   readonly id: string;
@@ -13,8 +13,10 @@ export type ActiveRunRecord = {
   readonly problemId: string;
   readonly problemVersion: string;
   readonly playerName: string;
-  /** バックグラウンド復帰・再読込後も同じ検証済みプレイを再開するためのID。 */
+  /** 現在のプレイを同じ検証済み実行へ戻すためのID。 */
   readonly rankingRunToken?: string;
+  /** 再読込後に計測を初期化せず、同じ機構状態から復帰するためのチェックポイント。 */
+  readonly checkpoint?: RunCheckpoint;
 };
 
 const PLAYER_NAME_KEY = "akerun-player-name";
@@ -119,12 +121,19 @@ export class ProgressStore {
     return { improved, best: records[key] ?? result };
   }
 
-  saveActiveRun(problemId: string, problemVersion: string, playerName: string, rankingRunToken?: string | null) {
+  saveActiveRun(
+    problemId: string,
+    problemVersion: string,
+    playerName: string,
+    rankingRunToken?: string | null,
+    checkpoint?: RunCheckpoint | null,
+  ) {
     const record: ActiveRunRecord = {
       problemId: String(problemId),
       problemVersion: String(problemVersion),
       playerName: normalizePlayerName(playerName),
       ...(rankingRunToken ? { rankingRunToken: String(rankingRunToken) } : {}),
+      ...(checkpoint && isRunCheckpoint(checkpoint) ? { checkpoint } : {}),
     };
     writeJson(ACTIVE_RUN_KEY, record);
     return record;
@@ -138,6 +147,7 @@ export class ProgressStore {
       problemVersion: String(record.problemVersion),
       playerName: normalizePlayerName(String(record.playerName)),
       ...(record.rankingRunToken ? { rankingRunToken: String(record.rankingRunToken) } : {}),
+      ...(isRunCheckpoint(record.checkpoint) ? { checkpoint: record.checkpoint } : {}),
     };
   }
 

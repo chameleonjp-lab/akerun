@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { ProgressStore } from "./ProgressStore";
-import type { RunResult } from "./RunSession";
+import { LockMechanism } from "./LockMechanism";
+import { RunSession, type RunResult } from "./RunSession";
+import { createOfficialPuzzle } from "./GameDefinitions";
 
 const result: RunResult = {
   elapsedTime: 24,
@@ -96,6 +98,41 @@ describe("ProgressStore", () => {
     expect(store.getPendingRankings()[0]?.rankingRunToken).toBe("run-token-1");
     store.removePendingForResult(result, "run-token-1");
     expect(store.getPendingRankings()).toHaveLength(0);
+    vi.unstubAllGlobals();
+  });
+
+  it("persists a valid active checkpoint and rejects malformed checkpoint data", () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+        removeItem: (key: string) => values.delete(key),
+      },
+    });
+    const puzzle = createOfficialPuzzle("AKERUN-01-V1");
+    const mechanism = new LockMechanism(puzzle);
+    const session = new RunSession(puzzle);
+    session.advance(4.25);
+    session.recordDial(7);
+    const checkpoint = {
+      runElapsed: 4.25,
+      mechanism: mechanism.snapshot,
+      session: session.snapshot,
+    };
+    const store = new ProgressStore();
+
+    store.saveActiveRun("AKERUN-01-V1", "V1", "player one", "run-token-1", checkpoint);
+    expect(store.getActiveRun()?.checkpoint?.session.elapsedTime).toBe(4.25);
+
+    values.set("akerun-active-run", JSON.stringify({
+      problemId: "AKERUN-01-V1",
+      problemVersion: "V1",
+      playerName: "player one",
+      rankingRunToken: "run-token-1",
+      checkpoint: { runElapsed: "not-a-number" },
+    }));
+    expect(store.getActiveRun()?.checkpoint).toBeUndefined();
     vi.unstubAllGlobals();
   });
 });

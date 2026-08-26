@@ -9,6 +9,36 @@ export type ProtocolPhase = "dial" | "settling" | "tension-ready" | "tension-tes
 export type ResistanceState = "idle" | "hard-stop" | "candidate" | "jammed" | "seated";
 export type ContactProfile = "clear" | "edge" | "false-gate" | "true-gate";
 
+export type LockMechanismSnapshot = {
+  readonly dial: number;
+  readonly stage: number;
+  readonly tumblerValues: readonly number[];
+  readonly locked: readonly boolean[];
+  readonly lastDirection: TurnDirection;
+  readonly phase: ProtocolPhase;
+  readonly desiredTorque: number;
+  readonly appliedTorque: number;
+  readonly desiredFenceTravel: number;
+  readonly fenceTravel: number;
+  readonly desiredBoltTravel: number;
+  readonly boltTravel: number;
+  readonly desiredHandleTurn: number;
+  readonly handleTurn: number;
+  readonly faultCount: number;
+  readonly opened: boolean;
+  readonly lastRotationFalseGateContacts: number;
+  readonly lastMessage: string;
+  readonly stagePasses: number;
+  readonly reversalCount: number;
+  readonly tensionHold: number;
+  readonly fenceHold: number;
+  readonly boltHold: number;
+  readonly handleHold: number;
+  readonly overloadHold: number;
+  readonly settlingElapsed: number;
+  readonly rotationSpeed: number;
+};
+
 /** 後方互換のため、既存の基準手順を公開する。 */
 export const TUMBLER_STAGES: readonly TumblerStage[] = createReferencePuzzle().stages;
 
@@ -18,6 +48,73 @@ const clamp = (value: number, min = 0, max = 1) => Math.min(max, Math.max(min, v
 const signedDistance = (from: number, to: number) => {
   const raw = normalize(to - from);
   return raw > 50 ? raw - 100 : raw;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const isUnitNumber = (value: unknown) =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
+
+const isNonNegativeNumber = (value: unknown) =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0;
+
+const isNonNegativeInteger = (value: unknown) =>
+  typeof value === "number" && Number.isInteger(value) && value >= 0;
+
+const PROTOCOL_PHASES: readonly ProtocolPhase[] = [
+  "dial",
+  "settling",
+  "tension-ready",
+  "tension-test",
+  "fence-ready",
+  "fence-seated",
+  "bolt-test",
+  "boltwork-ready",
+  "handle-test",
+  "jammed",
+  "open",
+  "lockout",
+];
+
+export const isLockMechanismSnapshot = (value: unknown): value is LockMechanismSnapshot => {
+  if (!isRecord(value)) return false;
+  const tumblerValues = value.tumblerValues;
+  const locked = value.locked;
+  return typeof value.dial === "number"
+    && Number.isFinite(value.dial)
+    && value.dial >= 0
+    && value.dial < 100
+    && isNonNegativeInteger(value.stage)
+    && Array.isArray(tumblerValues)
+    && tumblerValues.every((item) => typeof item === "number" && Number.isFinite(item) && item >= 0 && item < 100)
+    && Array.isArray(locked)
+    && locked.every((item) => typeof item === "boolean")
+    && (value.lastDirection === "cw" || value.lastDirection === "ccw")
+    && typeof value.phase === "string"
+    && PROTOCOL_PHASES.includes(value.phase as ProtocolPhase)
+    && isUnitNumber(value.desiredTorque)
+    && isUnitNumber(value.appliedTorque)
+    && isUnitNumber(value.desiredFenceTravel)
+    && isUnitNumber(value.fenceTravel)
+    && isUnitNumber(value.desiredBoltTravel)
+    && isUnitNumber(value.boltTravel)
+    && isUnitNumber(value.desiredHandleTurn)
+    && isUnitNumber(value.handleTurn)
+    && isNonNegativeInteger(value.faultCount)
+    && typeof value.opened === "boolean"
+    && isNonNegativeInteger(value.lastRotationFalseGateContacts)
+    && typeof value.lastMessage === "string"
+    && value.lastMessage.length <= 320
+    && isNonNegativeInteger(value.stagePasses)
+    && isNonNegativeInteger(value.reversalCount)
+    && isNonNegativeNumber(value.tensionHold)
+    && isNonNegativeNumber(value.fenceHold)
+    && isNonNegativeNumber(value.boltHold)
+    && isNonNegativeNumber(value.handleHold)
+    && isNonNegativeNumber(value.overloadHold)
+    && isNonNegativeNumber(value.settlingElapsed)
+    && isUnitNumber(value.rotationSpeed);
 };
 
 export class LockMechanism {
@@ -180,6 +277,77 @@ export class LockMechanism {
     if (this.phase === "fence-seated" || this.phase === "bolt-test" || this.phase === "boltwork-ready" || this.phase === "handle-test" || this.phase === "open") return "seated";
     if (this.phase === "settling" || this.phase === "tension-ready" || this.phase === "tension-test" || this.phase === "fence-ready") return "candidate";
     return "idle";
+  }
+
+  get snapshot(): LockMechanismSnapshot {
+    return {
+      dial: this.dial,
+      stage: this.stage,
+      tumblerValues: [...this.tumblerValues],
+      locked: [...this.locked],
+      lastDirection: this.lastDirection,
+      phase: this.phase,
+      desiredTorque: this.desiredTorque,
+      appliedTorque: this.appliedTorque,
+      desiredFenceTravel: this.desiredFenceTravel,
+      fenceTravel: this.fenceTravel,
+      desiredBoltTravel: this.desiredBoltTravel,
+      boltTravel: this.boltTravel,
+      desiredHandleTurn: this.desiredHandleTurn,
+      handleTurn: this.handleTurn,
+      faultCount: this.faultCount,
+      opened: this.opened,
+      lastRotationFalseGateContacts: this.lastRotationFalseGateContacts,
+      lastMessage: this.lastMessage,
+      stagePasses: this.stagePasses,
+      reversalCount: this.reversalCount,
+      tensionHold: this.tensionHold,
+      fenceHold: this.fenceHold,
+      boltHold: this.boltHold,
+      handleHold: this.handleHold,
+      overloadHold: this.overloadHold,
+      settlingElapsed: this.settlingElapsed,
+      rotationSpeed: this.rotationSpeed,
+    };
+  }
+
+  restore(snapshot: LockMechanismSnapshot) {
+    if (!isLockMechanismSnapshot(snapshot)
+      || snapshot.opened
+      || snapshot.phase === "open"
+      || snapshot.stage > this.puzzle.stages.length
+      || snapshot.tumblerValues.length !== this.tumblerValues.length
+      || snapshot.locked.length !== this.locked.length) {
+      return false;
+    }
+    this.dial = normalize(snapshot.dial);
+    this.stage = snapshot.stage;
+    this.tumblerValues.splice(0, this.tumblerValues.length, ...snapshot.tumblerValues.map((value) => normalize(value)));
+    this.locked.splice(0, this.locked.length, ...snapshot.locked);
+    this.lastDirection = snapshot.lastDirection;
+    this.phase = snapshot.phase;
+    this.desiredTorque = clamp(snapshot.desiredTorque);
+    this.appliedTorque = clamp(snapshot.appliedTorque);
+    this.desiredFenceTravel = clamp(snapshot.desiredFenceTravel);
+    this.fenceTravel = clamp(snapshot.fenceTravel);
+    this.desiredBoltTravel = clamp(snapshot.desiredBoltTravel);
+    this.boltTravel = clamp(snapshot.boltTravel);
+    this.desiredHandleTurn = clamp(snapshot.desiredHandleTurn);
+    this.handleTurn = clamp(snapshot.handleTurn);
+    this.faultCount = snapshot.faultCount;
+    this.opened = false;
+    this.lastRotationFalseGateContacts = snapshot.lastRotationFalseGateContacts;
+    this.lastMessage = snapshot.lastMessage;
+    this.stagePasses = snapshot.stagePasses;
+    this.reversalCount = snapshot.reversalCount;
+    this.tensionHold = snapshot.tensionHold;
+    this.fenceHold = snapshot.fenceHold;
+    this.boltHold = snapshot.boltHold;
+    this.handleHold = snapshot.handleHold;
+    this.overloadHold = snapshot.overloadHold;
+    this.settlingElapsed = snapshot.settlingElapsed;
+    this.rotationSpeed = clamp(snapshot.rotationSpeed);
+    return true;
   }
 
   get protocolInstruction(): string {
