@@ -20,6 +20,36 @@ describe("RunSession", () => {
     expect(result.score).toBeGreaterThan(0);
   });
 
+  it("restores an unfinished session without accepting the derived score as input", () => {
+    const problem = createOfficialPuzzle("AKERUN-10-V1");
+    const source = new RunSession(problem);
+    source.advance(12.5);
+    source.recordDial(9);
+    source.recordFalseGate();
+    source.recordFault();
+    const restored = new RunSession(problem);
+
+    expect(restored.restore(source.snapshot)).toBe(true);
+    expect(restored.snapshot).toMatchObject({
+      elapsedTime: 12.5,
+      faultCount: 1,
+      totalDialSteps: 9,
+      falseGateContacts: 1,
+      finished: false,
+    });
+    expect(restored.snapshot.score).toBe(
+      calculateRunScore(problem, 12.5, 1, 9, avoidableFalseGateContacts(problem, 1)),
+    );
+  });
+
+  it("does not restore a finished session as an active checkpoint", () => {
+    const problem = createOfficialPuzzle("AKERUN-01-V1");
+    const finished = new RunSession(problem);
+    finished.finish();
+    const restored = new RunSession(problem);
+    expect(restored.restore(finished.snapshot)).toBe(false);
+  });
+
   it("不可避な基準通過は偽ゲート減点へ二重計上しない", () => {
     const problem = { ...createOfficialPuzzle("AKERUN-01-V1"), parFalseGateContacts: 24 };
     const session = new RunSession(problem);

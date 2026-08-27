@@ -9,8 +9,9 @@ import { AUDIO_SAMPLE_DEFINITIONS, AudioFeedback, type AudioSampleId } from "./A
 import { HapticFeedback } from "./HapticFeedback";
 import { ArchiveLedger } from "./ArchiveLedger";
 import { ObservationLedger, type ObservationCategory } from "./ObservationLedger";
-import { RunSession, type RunResult } from "./RunSession";
+import { RunSession, type RunCheckpoint, type RunResult } from "./RunSession";
 import { InputController, type InputPoint, type PhysicalInput, type PhysicalInputStartResult } from "./InputController";
+import { isOfficialProblemIdentity, shouldForfeitOfficialReset } from "./RunLifecycle";
 
 const ASSETS = {
   reference: "/manus-storage/vault-tumbler-reference_35720048.png",
@@ -209,7 +210,7 @@ export class VaultWorld {
     this.emitSnapshot();
   }
 
-  startPuzzle(puzzle: PuzzleDefinition, options?: { training?: boolean; postDial?: boolean }) {
+  startPuzzle(puzzle: PuzzleDefinition, options?: { training?: boolean; postDial?: boolean; resume?: RunCheckpoint }) {
     this.releasePhysicalInput();
     this.demoMode = false;
     this.mechanism = new LockMechanism(puzzle);
@@ -232,10 +233,24 @@ export class VaultWorld {
     this.inspectionOpen = false;
     this.blindAssist = false;
     this.blindSignal = null;
+    this.lastRotationAt = 0;
+    this.smoothedRotationSpeed = 0;
     if (options?.postDial) this.mechanism.preparePostDialTraining();
-    this.mechanism.lastMessage = options?.postDial
-      ? "ゲートは整列済みです。テンションから順番に操作してください。"
-      : "問題が固定されました。接触の反応を観察して開錠してください。";
+    const checkpoint = options?.resume;
+    const resumed = !options?.training
+      && checkpoint !== undefined
+      && checkpoint.mechanism.tumblerValues.length === this.mechanism.tumblerValues.length
+      && checkpoint.mechanism.locked.length === this.mechanism.locked.length
+      && this.mechanism.restore(checkpoint.mechanism)
+      && this.runSession?.restore(checkpoint.session) === true;
+    if (resumed && checkpoint) {
+      this.runElapsed = checkpoint.runElapsed;
+      this.mechanism.lastMessage = "前回のプレイを同じ機構状態から再開しました。計測値は保持されています。";
+    } else {
+      this.mechanism.lastMessage = options?.postDial
+        ? "ゲートは整列済みです。テンションから順番に操作してください。"
+        : "問題が固定されました。接触の反応を観察して開錠してください。";
+    }
     this.emitSnapshot();
   }
 
@@ -305,6 +320,15 @@ export class VaultWorld {
     };
   }
 
+  getCheckpoint(): RunCheckpoint | null {
+    if (!this.canRecordOfficialRun() || !this.runSession || this.mechanism.opened || this.retired) return null;
+    return {
+      runElapsed: this.runElapsed,
+      mechanism: this.mechanism.snapshot,
+      session: this.runSession.snapshot,
+    };
+  }
+
   private emitSnapshot() {
     if (!this.onSnapshotChange) return;
     const now = performance.now();
@@ -336,7 +360,7 @@ export class VaultWorld {
       ctx.fillText("MECHANISM DISPLAY RECOVERING", width * 0.5, height * 0.43);
       ctx.fillStyle = "#7c9397";
       ctx.font = `500 ${Math.max(13, width * 0.014)}px "Noto Sans JP", sans-serif`;
-      ctx.fillText("表示を安全に復旧しています。RキーまたはRESETで契約を再初期化できます。", width * 0.5, height * 0.52);
+      ctx.fillText("表示を安全に復旧しています。公式プレイ中のRESETはリタイア扱いです。", width * 0.5, height * 0.52);
       ctx.textAlign = "left";
       this.texture.update(false);
     } catch {
@@ -497,6 +521,30 @@ export class VaultWorld {
     if (action === "minus") this.rotateDial(-1);
     if (action === "plus") this.rotateDial(1);
     if (action === "reset") {
+      const problemId = this.mechanism.puzzle.problemId ?? this.mechanism.puzzle.id;
+      const problemVersion = this.mechanism.puzzle.problemVersion ?? "DEV";
+      if (shouldForfeitOfficialReset({
+        sessionActive: this.sessionActive,
+        demoMode: this.demoMode,
+        trainingContract: this.trainingContract,
+        developmentSeed: this.developmentSeed,
+        problemId,
+        problemVersion,
+      })) {
+        this.releasePhysicalInput();
+        this.sessionActive = false;
+        this.sessionPaused = false;
+        this.runStarted = false;
+        this.lastRunRecordable = false;
+        this.retired = true;
+        this.newlyUnlockedRewards = [];
+        this.resultSummary = null;
+        this.telemetry.resets += 1;
+        this.persistTelemetry();
+        this.mechanism.lastMessage = "公式プレイ中のリセットはリタイア扱いです。計測値を初期化せず、ランキングへ送信しません。";
+        this.onStatusChange?.(this.mechanism.lastMessage);
+        return;
+      }
       this.releasePhysicalInput();
       this.demoMode = false;
       this.mechanism.reset();
@@ -718,7 +766,7 @@ export class VaultWorld {
   private isOfficialPuzzle(puzzle: PuzzleDefinition = this.mechanism.puzzle) {
     const problemId = puzzle.problemId ?? puzzle.id;
     const problemVersion = puzzle.problemVersion ?? "DEV";
-    return /^AKERUN-\d{2}-V\d+$/.test(problemId) && /^V\d+$/.test(problemVersion);
+    return isOfficialProblemIdentity(problemId, problemVersion);
   }
 
   private canRecordOfficialRun() {
@@ -1568,7 +1616,11 @@ export class VaultWorld {
     const railX = layout.compact ? pad : layout.width * 0.61;
     const railWidth = layout.compact ? (layout.width - pad * 2) / 5 : bench.width / 6;
     const railHeight = unit * 2.0;
-    this.drawControlButton("reset", { x: railX, y: railY, width: railWidth - unit * 0.35, height: railHeight }, "RESET / R");
+    this.drawControlButton(
+      "reset",
+      { x: railX, y: railY, width: railWidth - unit * 0.35, height: railHeight },
+      this.canRecordOfficialRun() ? "RESET / RETIRE" : "RESET / R",
+    );
     this.drawControlButton("demo", { x: railX + railWidth, y: railY, width: railWidth - unit * 0.35, height: railHeight }, "EXAMPLE / DEMO");
     this.drawControlButton("sound", { x: railX + railWidth * 2, y: railY, width: railWidth - unit * 0.35, height: railHeight }, this.audio.isMuted ? "SOUND / OFF" : "SOUND / ON");
     const hapticButtonLabel = !this.haptics.isSupported ? "HAPTIC / N/A" : this.reducedMotion ? "HAPTIC / PAUSE" : this.haptics.isEnabled ? "HAPTIC / ON" : "HAPTIC / OFF";

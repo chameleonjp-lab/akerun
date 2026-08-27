@@ -83,6 +83,7 @@ Pelagicの停止待ちは一時停止ではありません。プレイ時間は�
 - 公開クライアントではPublishable keyだけを使用
 - 訓練、お手本、リタイア、未クリアは送信しない
 - 通信失敗時はプレイIDを含む結果を端末内へ保存し、結果画面またはタイトル画面から再送する
+- プレイ中は機構状態と計測値を端末チェックポイントへ保存し、再読込時も計測を初期化せず復元する。旧形式や壊れた保存データでは検証済みプレイIDを再利用しない
 
 Supabase側の `akerun` は `submission_mode=verified` で登録しています。2026-08-26時点で、スコア基準補正を含むv2 migrationとv2 Edge Functionは本番へ配置済みです。ただし、実機確認が終わるまで `is_active=false` と `accepting_runs=false` を維持しています。そのため、ランキング機能が停止していても、通常プレイ自体は端末内記録として続けられます。サービスキーはEdge Functionのサーバー環境変数だけで使用し、ブラウザへ出しません。
 
@@ -104,6 +105,7 @@ React側にはタイトル、名前入力、訓練、HUD、一時停止、結果
 - client/src/game/LockMechanism.ts: 金庫ルールの状態機械
 - client/src/game/GameDefinitions.ts: 金庫定義、公式20問、訓練問題、開発seed
 - client/src/game/RunSession.ts: プレイ記録とスコア計算
+- client/src/game/RunLifecycle.ts: 公式プレイのリセット・実行ライフサイクル規則
 - client/src/game/ProgressStore.ts: 端末内進行保存と再送待ち
 - client/src/game/RankingClient.ts: verified Edge Functionと共通ランキングRPC接続
 - client/src/game/ArchiveLedger.ts: 収蔵品の端末内保存

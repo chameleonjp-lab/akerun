@@ -13,6 +13,7 @@ import {
 } from "./game/GameDefinitions";
 import { ProgressStore, normalizePlayerName } from "./game/ProgressStore";
 import { RankingClient, type RankingRow } from "./game/RankingClient";
+import type { RunCheckpoint } from "./game/RunSession";
 
 type Screen = "title" | "tutorial" | "training" | "play" | "pause" | "result" | "ranking" | "archive" | "settings" | "sound-lab" | "help";
 type RunMode = "official" | "training" | "demo" | "retired";
@@ -94,17 +95,47 @@ export default function App() {
   });
   const submittedKeyRef = useRef("");
   const submittingKeyRef = useRef("");
+  const gameHandleRef = useRef<GameHandle | null>(null);
+  const activeRunContextRef = useRef<{ playerName: string; rankingRunToken: string | null } | null>(null);
+  const lastCheckpointSavedAtRef = useRef(0);
 
   const onReady = useCallback((nextHandle: GameHandle | null) => {
+    gameHandleRef.current = nextHandle;
     setHandle(nextHandle);
     if (nextHandle) setSnapshot(nextHandle.getSnapshot());
   }, []);
 
   const onSnapshot = useCallback((nextSnapshot: GameSnapshot) => {
     setSnapshot(nextSnapshot);
-  }, []);
+    const activeRun = activeRunContextRef.current;
+    if (activeRun && (nextSnapshot.status === "active" || nextSnapshot.status === "paused")) {
+      const checkpoint = gameHandleRef.current?.getCheckpoint();
+      const now = performance.now();
+      if (checkpoint && (lastCheckpointSavedAtRef.current === 0 || now - lastCheckpointSavedAtRef.current >= 250)) {
+        store.saveActiveRun(
+          nextSnapshot.problemId,
+          nextSnapshot.problemVersion,
+          activeRun.playerName,
+          activeRun.rankingRunToken,
+          checkpoint,
+        );
+        lastCheckpointSavedAtRef.current = now;
+      }
+    }
+    if (mode === "official" && nextSnapshot.status === "retired" && screen !== "result") {
+      activeRunContextRef.current = null;
+      lastCheckpointSavedAtRef.current = 0;
+      store.clearActiveRun();
+      setRankingRunToken(null);
+      setMode("retired");
+      setScreen("result");
+    }
+  }, [mode, screen, store]);
 
   const onVisibilityPause = useCallback(() => {
+    // 開錠演出中は機構がすでに停止している。ここでPAUSEへ遷移すると、
+    // 結果画面へ進める900msの演出タイマーをキャンセルしてしまう。
+    if (gameHandleRef.current?.getSnapshot().opened) return;
     if (screen === "play" || screen === "training") setScreen("pause");
   }, [screen]);
 
@@ -120,7 +151,11 @@ export default function App() {
         }
         setScreen("tutorial");
       } else {
-        if (mode === "official") store.clearActiveRun();
+        if (mode === "official") {
+          store.clearActiveRun();
+          activeRunContextRef.current = null;
+          lastCheckpointSavedAtRef.current = 0;
+        }
         setScreen("result");
       }
     }, 900);
@@ -185,33 +220,54 @@ export default function App() {
       return;
     }
     if (startingOfficial) return;
-    const activeRun = requestedProblemId ? null : store.getActiveRun();
-    const savedName = activeRun?.playerName ? store.savePlayerName(activeRun.playerName) : validateName();
+    const interruptedRun = requestedProblemId ? null : store.getActiveRun();
+    const savedName = interruptedRun?.playerName ? store.savePlayerName(interruptedRun.playerName) : validateName();
     if (!savedName || !handle) return;
     setStartingOfficial(true);
     setSubmitStatus("問題を準備中…");
     try {
       setPlayerName(savedName);
       let chosen: PuzzleDefinition | null = null;
-      let nextRankingRunToken: string | null = activeRun?.rankingRunToken ?? null;
+      let nextRankingRunToken: string | null = null;
+      let resumeCheckpoint: RunCheckpoint | undefined;
 
-      if (nextRankingRunToken && activeRun) {
-        const begun = await rankingClient.beginOfficialRun(nextRankingRunToken);
-        if (begun.status === "ok") {
-          try {
-            const candidate = createOfficialPuzzle(begun.problemId ?? activeRun.problemId);
-            if (candidate.problemVersion === (begun.problemVersion ?? activeRun.problemVersion)) chosen = candidate;
-          } catch {
-            // 下の新規準備へフォールバックする。
+      if (interruptedRun?.checkpoint) {
+        try {
+          const candidate = createOfficialPuzzle(interruptedRun.problemId);
+          const compatible = candidate.problemVersion === interruptedRun.problemVersion
+            && interruptedRun.checkpoint.mechanism.stage <= candidate.stages.length
+            && interruptedRun.checkpoint.mechanism.tumblerValues.length === candidate.vault.wheelCount
+            && interruptedRun.checkpoint.mechanism.locked.length === candidate.stages.length;
+          if (compatible) {
+            if (interruptedRun.rankingRunToken) {
+              const begun = await rankingClient.beginOfficialRun(interruptedRun.rankingRunToken);
+              if (begun.status === "ok"
+                && begun.problemId === interruptedRun.problemId
+                && begun.problemVersion === interruptedRun.problemVersion) {
+                chosen = candidate;
+                nextRankingRunToken = interruptedRun.rankingRunToken;
+                resumeCheckpoint = interruptedRun.checkpoint;
+              } else {
+                // サーバーへ再接続できない復帰は、計測を守るため端末内プレイへ落とす。
+                chosen = candidate;
+                resumeCheckpoint = interruptedRun.checkpoint;
+              }
+            } else {
+              chosen = candidate;
+              resumeCheckpoint = interruptedRun.checkpoint;
+            }
           }
+        } catch {
+          // 復元できない古い問題は、新規の公式問題へ進める。
         }
-        if (!chosen) nextRankingRunToken = null;
       }
 
       if (!chosen) {
+        // チェックポイントなしの古い保存データや期限切れトークンは再利用しない。
+        resumeCheckpoint = undefined;
         const preparation = await rankingClient.prepareOfficialRun(
           savedName,
-          requestedProblemId ?? activeRun?.problemId,
+          requestedProblemId,
           replayRunToken,
         );
         if (preparation.status === "ok" && preparation.runToken) {
@@ -231,20 +287,23 @@ export default function App() {
       }
 
       if (!chosen) {
-        if (requestedProblemId ?? activeRun?.problemId) {
+        if (requestedProblemId) {
           try {
-            chosen = createOfficialPuzzle(requestedProblemId ?? activeRun?.problemId ?? "");
+            chosen = createOfficialPuzzle(requestedProblemId);
           } catch {
             chosen = null;
           }
         }
-        chosen ??= chooseOfficialProblem(activeRun?.problemId);
+        chosen ??= chooseOfficialProblem();
         nextRankingRunToken = null;
+        resumeCheckpoint = undefined;
       }
 
       const problemId = chosen.problemId ?? chosen.id;
       const problemVersion = chosen.problemVersion ?? "V1";
-      store.saveActiveRun(problemId, problemVersion, savedName, nextRankingRunToken);
+      store.saveActiveRun(problemId, problemVersion, savedName, nextRankingRunToken, resumeCheckpoint);
+      activeRunContextRef.current = { playerName: savedName, rankingRunToken: nextRankingRunToken };
+      lastCheckpointSavedAtRef.current = 0;
       setRankingRunToken(nextRankingRunToken);
       setProblem(chosen);
       setMode("official");
@@ -252,7 +311,7 @@ export default function App() {
       setRetryAvailable(false);
       submittedKeyRef.current = "";
       setRetryNonce(0);
-      handle.startPuzzle(chosen);
+      handle.startPuzzle(chosen, resumeCheckpoint ? { resume: resumeCheckpoint } : undefined);
       setSnapshot(handle.getSnapshot());
       setScreen("play");
     } finally {
@@ -262,6 +321,8 @@ export default function App() {
 
   const startTraining = () => {
     if (!handle) return;
+    activeRunContextRef.current = null;
+    lastCheckpointSavedAtRef.current = 0;
     const step = Math.max(1, Math.min(4, tutorialStep)) as 1 | 2 | 3 | 4;
     const trainingPuzzle = createTrainingPuzzle(step);
     setProblem(trainingPuzzle);
@@ -274,6 +335,8 @@ export default function App() {
 
   const startDemo = () => {
     if (!handle) return;
+    activeRunContextRef.current = null;
+    lastCheckpointSavedAtRef.current = 0;
     setMode("demo");
     setRankingRunToken(null);
     handle.startDemo();
@@ -302,6 +365,8 @@ export default function App() {
   const retire = () => {
     handle?.retire();
     store.clearActiveRun();
+    activeRunContextRef.current = null;
+    lastCheckpointSavedAtRef.current = 0;
     setRankingRunToken(null);
     if (handle) setSnapshot(handle.getSnapshot());
     setMode("retired");
@@ -422,7 +487,11 @@ export default function App() {
           />
         </label>
         {nameError ? <p className="akerun-error">{nameError}</p> : null}
-        {activeRun ? <p className="akerun-small">進行中の {activeRun.problemId} を保持しています。ゲーム開始で同じ問題を再開します。</p> : null}
+        {activeRun ? <p className="akerun-small">
+          {activeRun.checkpoint
+            ? `前回の ${activeRun.problemId} は中断されています。保存済みの状態から再開します。`
+            : `前回の ${activeRun.problemId} は旧形式の中断記録です。新しい問題を準備します。`}
+        </p> : null}
         <div className="akerun-title-actions">
           <Button tone="primary" onClick={() => void startOfficial()} disabled={!handle || startingOfficial}>{startingOfficial ? "問題を準備中…" : "ゲーム開始"}</Button>
           <Button onClick={() => { setTutorialStep(1); setScreen("tutorial"); }}>初めて遊ぶ</Button>
@@ -516,7 +585,7 @@ export default function App() {
         <Button onClick={() => handle?.performAction("notes")}>観察メモ</Button>
         <Button onClick={() => handle?.performAction("note-capture")}>候補に追加</Button>
         <Button onClick={() => handle?.performAction("inspect")}>分解観察</Button>
-        <Button onClick={() => handle?.performAction("reset")}>リセット</Button>
+        <Button onClick={() => handle?.performAction("reset")}>{mode === "official" ? "リセット（リタイア扱い）" : "リセット"}</Button>
         <Button onClick={() => openOverlay("help")}>ヘルプ</Button>
         <Button tone="danger" onClick={retire}>リタイア</Button>
       </nav>

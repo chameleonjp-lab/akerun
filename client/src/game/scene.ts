@@ -12,10 +12,12 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { VaultWorld, type GameSnapshot } from "./VaultWorld";
 import type { PuzzleDefinition } from "./GameDefinitions";
+import type { RunCheckpoint } from "./RunSession";
 
 export type PuzzleStartOptions = {
   readonly training?: boolean;
   readonly postDial?: boolean;
+  readonly resume?: RunCheckpoint;
 };
 
 export type GameHandle = {
@@ -27,6 +29,7 @@ export type GameHandle = {
   reset: () => void;
   performAction: (action: string) => void;
   getSnapshot: () => GameSnapshot;
+  getCheckpoint: () => RunCheckpoint | null;
   dispose: () => void;
 };
 
@@ -84,6 +87,7 @@ export async function createGameScene(
     reset: () => world.performAction("reset"),
     performAction: (action) => world.performAction(action),
     getSnapshot: () => world.getSnapshot(),
+    getCheckpoint: () => world.getCheckpoint(),
     dispose: () => {
       world.dispose();
       scene.dispose();
