@@ -191,6 +191,18 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    if (body.action === "abandon") {
+      const result = await callInternalRpc("akerun_abandon_run_internal", {
+        p_run_token: requiredString(body, "runToken"),
+        p_client_version: CLIENT_VERSION,
+      }) as Record<string, unknown> | null;
+      return json(req, 200, {
+        accepted: result?.abandoned === true,
+        abandoned: result?.abandoned === true,
+        status: typeof result?.status === "string" ? result.status : null,
+      });
+    }
+
     if (body.action === "finish") {
       const result = await callInternalRpc("akerun_finalize_run_internal", {
         p_run_token: requiredString(body, "runToken"),

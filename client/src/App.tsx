@@ -173,6 +173,13 @@ export default function App() {
     if (screen === "play" || screen === "training") setScreen("pause");
   }, [saveActiveCheckpointNow, screen]);
 
+  const abandonUnclaimedOfficialRun = (runToken: string | null | undefined) => {
+    if (!runToken) return;
+    // 開始確認に失敗した実行は、端末内プレイへ移る前にサーバー側でも
+    // 競技用トークンを破棄する。通信断時はサーバーの予約期限が後始末する。
+    void rankingClient.abandonOfficialRun(runToken);
+  };
+
   useEffect(() => {
     if (!snapshot?.opened || (screen !== "play" && screen !== "training")) return;
     const timer = window.setTimeout(() => {
@@ -265,6 +272,7 @@ export default function App() {
       let chosen: PuzzleDefinition | null = null;
       let nextRankingRunToken: string | null = null;
       let resumeCheckpoint: RunCheckpoint | undefined;
+      let rankingFallbackStatus = "ランキング受付なし。プレイ結果は端末内へ保存します。";
 
       if (interruptedRun?.checkpoint) {
         try {
@@ -284,6 +292,8 @@ export default function App() {
                 resumeCheckpoint = interruptedRun.checkpoint;
               } else {
                 // サーバーへ再接続できない復帰は、計測を守るため端末内プレイへ落とす。
+                abandonUnclaimedOfficialRun(interruptedRun.rankingRunToken);
+                rankingFallbackStatus = "ランキング実行の再開確認に失敗しました。結果は端末内へ保存します。";
                 chosen = candidate;
                 resumeCheckpoint = interruptedRun.checkpoint;
               }
@@ -297,6 +307,12 @@ export default function App() {
         }
       }
 
+      // 壊れたチェックポイントや旧形式の保存値で新規問題へ切り替える
+      // 場合も、前の既知トークンを競技用の未消費実行として残さない。
+      if (!chosen && interruptedRun?.rankingRunToken) {
+        abandonUnclaimedOfficialRun(interruptedRun.rankingRunToken);
+      }
+
       if (!chosen) {
         // チェックポイントなしの古い保存データや期限切れトークンは再利用しない。
         resumeCheckpoint = undefined;
@@ -305,6 +321,11 @@ export default function App() {
           requestedProblemId,
           replayRunToken,
         );
+        if (preparation.status === "disabled") {
+          rankingFallbackStatus = "ランキングは現在停止中です。結果は端末内へ保存します。";
+        } else if (preparation.status === "error") {
+          rankingFallbackStatus = "ランキングの開始確認に失敗しました。結果は端末内へ保存します。";
+        }
         if (preparation.status === "ok" && preparation.runToken) {
           const begun = await rankingClient.beginOfficialRun(preparation.runToken);
           if (begun.status === "ok" && begun.problemId && begun.problemVersion) {
@@ -317,6 +338,10 @@ export default function App() {
             } catch {
               // 公式カタログにない問題は採用しない。
             }
+          }
+          if (!chosen) {
+            abandonUnclaimedOfficialRun(preparation.runToken);
+            rankingFallbackStatus = "ランキング問題の確認に失敗しました。結果は端末内へ保存します。";
           }
         }
       }
@@ -342,7 +367,7 @@ export default function App() {
       setRankingRunToken(nextRankingRunToken);
       setProblem(chosen);
       setMode("official");
-      setSubmitStatus(nextRankingRunToken ? "未送信" : "ランキング受付なし。プレイ結果は端末内へ保存します。");
+      setSubmitStatus(nextRankingRunToken ? "未送信" : rankingFallbackStatus);
       setRetryAvailable(false);
       submittedKeyRef.current = "";
       setRetryNonce(0);

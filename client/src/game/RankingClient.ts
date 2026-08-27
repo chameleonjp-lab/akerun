@@ -185,6 +185,23 @@ export class RankingClient {
     return { status: "error", problemId: null, problemVersion: null };
   }
 
+  /**
+   * 開始確認に失敗して端末内プレイへ退避する前に、サーバー側の予約を
+   * 競技用トークンとして残さない。通信断時はサーバー側の短い予約期限に
+   * 任せるため、この操作自体は呼び出し元へ失敗を返さない。
+   */
+  async abandonOfficialRun(runToken: string): Promise<boolean> {
+    try {
+      const data = await this.competitionRequest("abandon", { runToken });
+      return data.abandoned === true
+        || data.status === "completed"
+        || data.status === "expired"
+        || data.status === "rejected";
+    } catch {
+      return false;
+    }
+  }
+
   async submit(playerName: string, result: RunResult, rankingRunToken?: string | null): Promise<RankingSubmission> {
     const runToken = stringOrNull(rankingRunToken);
     if (!runToken) throw new Error("verified ranking run is unavailable");
