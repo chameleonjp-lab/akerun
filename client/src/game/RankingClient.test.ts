@@ -73,6 +73,34 @@ describe("RankingClient", () => {
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
+  it("abandons an unclaimed verified run after startup falls back locally", async () => {
+    const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      expect(body.clientVersion).toBe("akerun-web-verified-v2");
+      expect(body.contractVersion).toBe("akerun-play-v2");
+      expect(body.action).toBe("abandon");
+      expect(body.runToken).toBe("run-token-orphan");
+      return new Response(JSON.stringify({
+        accepted: true,
+        abandoned: true,
+        status: "rejected",
+      }), { status: 200 });
+    });
+    const client = new RankingClient({ fetch });
+
+    await expect(client.abandonOfficialRun("run-token-orphan")).resolves.toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not turn a cleanup network failure into a user-facing startup failure", async () => {
+    const fetch = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    const client = new RankingClient({ fetch });
+
+    await expect(client.abandonOfficialRun("run-token-orphan")).resolves.toBe(false);
+  });
+
   it("normalizes legacy saved results before v2 submission", async () => {
     const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body));
