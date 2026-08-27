@@ -165,17 +165,24 @@ export class RankingClient {
   }
 
   async beginOfficialRun(runToken: string): Promise<RankingRunStart> {
-    try {
-      const data = await this.competitionRequest("begin", { runToken });
-      const problemId = stringOrNull(data.problemId);
-      const problemVersion = stringOrNull(data.problemVersion);
-      if (data.accepted !== true || !problemId || !problemVersion) {
-        return { status: "error", problemId: null, problemVersion: null };
+    // begin は同じトークンに対して冪等なので、応答だけが失われた
+    // 一時的な通信断では同じ実行をもう一度確認できる。
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const data = await this.competitionRequest("begin", { runToken });
+        const problemId = stringOrNull(data.problemId);
+        const problemVersion = stringOrNull(data.problemVersion);
+        if (data.accepted !== true || !problemId || !problemVersion) {
+          return { status: "error", problemId: null, problemVersion: null };
+        }
+        return { status: "ok", problemId, problemVersion };
+      } catch {
+        if (attempt === 1) {
+          return { status: "error", problemId: null, problemVersion: null };
+        }
       }
-      return { status: "ok", problemId, problemVersion };
-    } catch {
-      return { status: "error", problemId: null, problemVersion: null };
     }
+    return { status: "error", problemId: null, problemVersion: null };
   }
 
   async submit(playerName: string, result: RunResult, rankingRunToken?: string | null): Promise<RankingSubmission> {

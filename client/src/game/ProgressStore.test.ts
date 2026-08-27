@@ -101,6 +101,27 @@ describe("ProgressStore", () => {
     vi.unstubAllGlobals();
   });
 
+  it("persists a completed official result before clearing its active run", () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+        removeItem: (key: string) => values.delete(key),
+      },
+    });
+    const store = new ProgressStore();
+    store.saveActiveRun("AKERUN-01-V1", "V1", "player one", "run-token-1");
+
+    store.persistOfficialCompletion("player one", result, "run-token-1");
+
+    expect(store.getActiveRun()).toBeNull();
+    expect(store.getBest("AKERUN-01-V1", "V1")).toEqual(result);
+    expect(store.getPendingRankings()).toHaveLength(1);
+    expect(store.getPendingRankings()[0]?.rankingRunToken).toBe("run-token-1");
+    vi.unstubAllGlobals();
+  });
+
   it("persists a valid active checkpoint and rejects malformed checkpoint data", () => {
     const values = new Map<string, string>();
     vi.stubGlobal("window", {

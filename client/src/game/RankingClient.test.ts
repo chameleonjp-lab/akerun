@@ -54,6 +54,25 @@ describe("RankingClient", () => {
       .resolves.toMatchObject({ status: "ok", problemId: "AKERUN-01-V1" });
   });
 
+  it("retries an interrupted begin request with the same token", async () => {
+    let attempts = 0;
+    const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      attempts += 1;
+      expect(JSON.parse(String(init?.body)).runToken).toBe("run-token-1");
+      if (attempts === 1) throw new Error("temporary network failure");
+      return new Response(JSON.stringify({
+        accepted: true,
+        problemId: "AKERUN-01-V1",
+        problemVersion: "V1",
+      }), { status: 200 });
+    });
+    const client = new RankingClient({ fetch });
+
+    await expect(client.beginOfficialRun("run-token-1"))
+      .resolves.toMatchObject({ status: "ok", problemId: "AKERUN-01-V1" });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
   it("normalizes legacy saved results before v2 submission", async () => {
     const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body));

@@ -95,6 +95,8 @@ export default function App() {
   });
   const submittedKeyRef = useRef("");
   const submittingKeyRef = useRef("");
+  const startingOfficialRef = useRef(false);
+  const retryingPendingRef = useRef(false);
   const gameHandleRef = useRef<GameHandle | null>(null);
   const activeRunContextRef = useRef<{ playerName: string; rankingRunToken: string | null } | null>(null);
   const lastCheckpointSavedAtRef = useRef(0);
@@ -105,9 +107,39 @@ export default function App() {
     if (nextHandle) setSnapshot(nextHandle.getSnapshot());
   }, []);
 
+  const saveActiveCheckpointNow = useCallback(() => {
+    const activeRun = activeRunContextRef.current;
+    const currentHandle = gameHandleRef.current;
+    if (!activeRun || !currentHandle) return false;
+    const currentSnapshot = currentHandle.getSnapshot();
+    if (currentSnapshot.status !== "active" && currentSnapshot.status !== "paused") return false;
+    const checkpoint = currentHandle.getCheckpoint();
+    if (!checkpoint) return false;
+    store.saveActiveRun(
+      currentSnapshot.problemId,
+      currentSnapshot.problemVersion,
+      activeRun.playerName,
+      activeRun.rankingRunToken,
+      checkpoint,
+    );
+    lastCheckpointSavedAtRef.current = performance.now();
+    return true;
+  }, [store]);
+
   const onSnapshot = useCallback((nextSnapshot: GameSnapshot) => {
     setSnapshot(nextSnapshot);
     const activeRun = activeRunContextRef.current;
+    if (activeRun && nextSnapshot.status === "opened" && nextSnapshot.recordable) {
+      // 開錠は結果画面への遷移より先に確定させる。iPhoneでこの瞬間に
+      // Safariが終了しても、同じ公式実行を未完了として再利用させない。
+      if (nextSnapshot.runResult) {
+        store.persistOfficialCompletion(activeRun.playerName, nextSnapshot.runResult, activeRun.rankingRunToken);
+      } else {
+        store.clearActiveRun();
+      }
+      activeRunContextRef.current = null;
+      lastCheckpointSavedAtRef.current = 0;
+    }
     if (activeRun && (nextSnapshot.status === "active" || nextSnapshot.status === "paused")) {
       const checkpoint = gameHandleRef.current?.getCheckpoint();
       const now = performance.now();
@@ -136,8 +168,9 @@ export default function App() {
     // 開錠演出中は機構がすでに停止している。ここでPAUSEへ遷移すると、
     // 結果画面へ進める900msの演出タイマーをキャンセルしてしまう。
     if (gameHandleRef.current?.getSnapshot().opened) return;
+    saveActiveCheckpointNow();
     if (screen === "play" || screen === "training") setScreen("pause");
-  }, [screen]);
+  }, [saveActiveCheckpointNow, screen]);
 
   useEffect(() => {
     if (!snapshot?.opened || (screen !== "play" && screen !== "training")) return;
@@ -219,10 +252,11 @@ export default function App() {
       setScreen("tutorial");
       return;
     }
-    if (startingOfficial) return;
+    if (startingOfficial || startingOfficialRef.current) return;
     const interruptedRun = requestedProblemId ? null : store.getActiveRun();
     const savedName = interruptedRun?.playerName ? store.savePlayerName(interruptedRun.playerName) : validateName();
     if (!savedName || !handle) return;
+    startingOfficialRef.current = true;
     setStartingOfficial(true);
     setSubmitStatus("問題を準備中…");
     try {
@@ -315,6 +349,7 @@ export default function App() {
       setSnapshot(handle.getSnapshot());
       setScreen("play");
     } finally {
+      startingOfficialRef.current = false;
       setStartingOfficial(false);
     }
   };
@@ -428,31 +463,38 @@ export default function App() {
   };
 
   const retryPending = async () => {
+    if (retryingPendingRef.current) return;
+    retryingPendingRef.current = true;
     const pending = store.getPendingRankings();
     if (!pending.length) {
       setSubmitStatus("再送する記録はありません。");
+      retryingPendingRef.current = false;
       return;
     }
-    setSubmitStatus("未送信記録を送信中…");
-    let sent = 0;
-    let unavailable = 0;
-    for (const item of pending) {
-      if (!item.rankingRunToken) {
-        unavailable += 1;
-        continue;
+    try {
+      setSubmitStatus("未送信記録を送信中…");
+      let sent = 0;
+      let unavailable = 0;
+      for (const item of pending) {
+        if (!item.rankingRunToken) {
+          unavailable += 1;
+          continue;
+        }
+        try {
+          await rankingClient.submit(item.playerName, item.result, item.rankingRunToken);
+          store.removePending(item.id);
+          store.recordBest(item.result);
+          sent += 1;
+        } catch {
+          // 残った記録は次回の再送対象として維持する。
+        }
       }
-      try {
-        await rankingClient.submit(item.playerName, item.result, item.rankingRunToken);
-        store.removePending(item.id);
-        store.recordBest(item.result);
-        sent += 1;
-      } catch {
-        // 残った記録は次回の再送対象として維持する。
-      }
+      setSubmitStatus(unavailable
+        ? `${sent}/${pending.length}件を送信しました。旧形式の${unavailable}件は再送契約がなく、同じ問題を再プレイしてください。`
+        : sent === pending.length ? "未送信記録をすべて送信しました。" : `${sent}/${pending.length}件を送信しました。`);
+    } finally {
+      retryingPendingRef.current = false;
     }
-    setSubmitStatus(unavailable
-      ? `${sent}/${pending.length}件を送信しました。旧形式の${unavailable}件は再送契約がなく、同じ問題を再プレイしてください。`
-      : sent === pending.length ? "未送信記録をすべて送信しました。" : `${sent}/${pending.length}件を送信しました。`);
   };
 
   const archiveIds = store.getArchiveIds();
