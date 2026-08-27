@@ -13,6 +13,7 @@ import {
 } from "./game/GameDefinitions";
 import { ProgressStore, normalizePlayerName } from "./game/ProgressStore";
 import { RankingClient, type RankingRow } from "./game/RankingClient";
+import { isCoherentLockMechanismSnapshot } from "./game/LockMechanism";
 import type { RunCheckpoint } from "./game/RunSession";
 
 type Screen = "title" | "tutorial" | "training" | "play" | "pause" | "result" | "ranking" | "archive" | "settings" | "sound-lab" | "help";
@@ -269,7 +270,7 @@ export default function App() {
         try {
           const candidate = createOfficialPuzzle(interruptedRun.problemId);
           const compatible = candidate.problemVersion === interruptedRun.problemVersion
-            && interruptedRun.checkpoint.mechanism.stage <= candidate.stages.length
+            && isCoherentLockMechanismSnapshot(interruptedRun.checkpoint.mechanism, candidate)
             && interruptedRun.checkpoint.mechanism.tumblerValues.length === candidate.vault.wheelCount
             && interruptedRun.checkpoint.mechanism.locked.length === candidate.stages.length;
           if (compatible) {

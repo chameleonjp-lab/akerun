@@ -117,6 +117,210 @@ export const isLockMechanismSnapshot = (value: unknown): value is LockMechanismS
     && isUnitNumber(value.rotationSpeed);
 };
 
+const SNAPSHOT_EPSILON = 0.000001;
+const isNearlyZero = (value: number) => value <= SNAPSHOT_EPSILON;
+const isNearly = (value: number, expected: number) => Math.abs(value - expected) <= SNAPSHOT_EPSILON;
+
+const hasNoActuatorState = (snapshot: LockMechanismSnapshot) =>
+  isNearlyZero(snapshot.desiredTorque)
+  && isNearlyZero(snapshot.appliedTorque)
+  && isNearlyZero(snapshot.desiredFenceTravel)
+  && isNearlyZero(snapshot.fenceTravel)
+  && isNearlyZero(snapshot.desiredBoltTravel)
+  && isNearlyZero(snapshot.boltTravel)
+  && isNearlyZero(snapshot.desiredHandleTurn)
+  && isNearlyZero(snapshot.handleTurn)
+  && isNearlyZero(snapshot.tensionHold)
+  && isNearlyZero(snapshot.fenceHold)
+  && isNearlyZero(snapshot.boltHold)
+  && isNearlyZero(snapshot.handleHold)
+  && isNearlyZero(snapshot.overloadHold);
+
+/**
+ * 型として正しいだけでなく、指定された問題の実際の状態遷移から生成できるかを確認する。
+ * これは入力履歴の完全な証明ではなく、壊れた端末保存値によるstage/phaseの飛び越しを防ぐためのガード。
+ */
+export const isCoherentLockMechanismSnapshot = (
+  value: unknown,
+  puzzle: PuzzleDefinition,
+): value is LockMechanismSnapshot => {
+  if (!isLockMechanismSnapshot(value) || value.opened || value.phase === "open") return false;
+
+  const stageCount = puzzle.stages.length;
+  const wheelCount = puzzle.vault.wheelCount;
+  if (stageCount === 0
+    || stageCount !== wheelCount
+    || value.stage > stageCount
+    || value.tumblerValues.length !== wheelCount
+    || value.locked.length !== stageCount
+    || value.faultCount > puzzle.difficulty.maxFaults
+    || value.settlingElapsed > puzzle.vault.personality.settlingDelaySeconds + SNAPSHOT_EPSILON
+    || value.appliedTorque > value.desiredTorque + SNAPSHOT_EPSILON
+    || value.fenceTravel > value.desiredFenceTravel + SNAPSHOT_EPSILON
+    || value.boltTravel > value.desiredBoltTravel + SNAPSHOT_EPSILON
+    || value.handleTurn > value.desiredHandleTurn + SNAPSHOT_EPSILON) {
+    return false;
+  }
+
+  const stageWheels = puzzle.stages.map((stage) => stage.wheel);
+  if (new Set(stageWheels).size !== stageWheels.length
+    || puzzle.stages.some((stage) =>
+      !Number.isInteger(stage.wheel)
+      || stage.wheel < 0
+      || stage.wheel >= wheelCount
+      || !Number.isFinite(stage.target)
+      || stage.target < 0
+      || stage.target >= 100
+      || !Number.isInteger(stage.passes)
+      || stage.passes <= 0
+      || (stage.direction !== "cw" && stage.direction !== "ccw"))) {
+    return false;
+  }
+
+  const completedWheels = new Set(puzzle.stages.slice(0, value.stage).map((stage) => stage.wheel));
+  for (let wheel = 0; wheel < wheelCount; wheel += 1) {
+    if (value.locked[wheel] !== completedWheels.has(wheel)) return false;
+  }
+  for (const stage of puzzle.stages.slice(0, value.stage)) {
+    if (!isNearly(value.tumblerValues[stage.wheel] ?? -1, normalize(stage.target))) return false;
+  }
+
+  if (value.phase === "dial") {
+    const activeStage = puzzle.stages[value.stage];
+    if (!activeStage || value.stagePasses >= activeStage.passes || !hasNoActuatorState(value)) return false;
+  } else if (value.stagePasses !== 0) {
+    return false;
+  }
+
+  if (value.phase !== "dial"
+    && value.phase !== "jammed"
+    && value.phase !== "lockout"
+    && value.stage !== stageCount) {
+    return false;
+  }
+
+  if (value.phase === "settling") {
+    if (puzzle.vault.personality.settlingDelaySeconds <= 0 || !hasNoActuatorState(value)) return false;
+  }
+
+  if (value.phase === "tension-ready") {
+    if (value.stage !== stageCount
+      || value.desiredTorque > 0.02
+      || value.appliedTorque > 0.02
+      || !isNearlyZero(value.desiredFenceTravel)
+      || !isNearlyZero(value.fenceTravel)
+      || !isNearlyZero(value.desiredBoltTravel)
+      || !isNearlyZero(value.boltTravel)
+      || !isNearlyZero(value.desiredHandleTurn)
+      || !isNearlyZero(value.handleTurn)
+      || !isNearlyZero(value.tensionHold)
+      || !isNearlyZero(value.fenceHold)
+      || !isNearlyZero(value.boltHold)
+      || !isNearlyZero(value.handleHold)
+      || !isNearlyZero(value.overloadHold)) return false;
+  }
+
+  if (value.phase === "tension-test") {
+    if (value.stage !== stageCount
+      || value.desiredTorque <= 0.02
+      || value.appliedTorque <= 0.02
+      || !isNearlyZero(value.desiredFenceTravel)
+      || !isNearlyZero(value.fenceTravel)
+      || !isNearlyZero(value.desiredBoltTravel)
+      || !isNearlyZero(value.boltTravel)
+      || !isNearlyZero(value.desiredHandleTurn)
+      || !isNearlyZero(value.handleTurn)
+      || value.tensionHold >= puzzle.difficulty.tensionHoldSeconds
+      || value.overloadHold >= 0.4) return false;
+  }
+
+  if (value.phase === "fence-ready") {
+    if (value.stage !== stageCount
+      || !isNearlyZero(value.desiredTorque)
+      || !isNearlyZero(value.appliedTorque)
+      || !isNearlyZero(value.desiredBoltTravel)
+      || !isNearlyZero(value.boltTravel)
+      || !isNearlyZero(value.desiredHandleTurn)
+      || !isNearlyZero(value.handleTurn)
+      || !isNearlyZero(value.tensionHold)
+      || value.fenceHold >= puzzle.difficulty.fenceHoldSeconds
+      || !isNearlyZero(value.boltHold)
+      || !isNearlyZero(value.handleHold)
+      || value.overloadHold >= 0.24) return false;
+  }
+
+  if (value.phase === "fence-seated") {
+    if (value.stage !== stageCount
+      || !isNearlyZero(value.desiredTorque)
+      || !isNearlyZero(value.appliedTorque)
+      || !isNearly(value.desiredFenceTravel, 0.72)
+      || !isNearly(value.fenceTravel, 0.72)
+      || value.desiredBoltTravel > 0.02
+      || value.boltTravel > 0.02
+      || !isNearlyZero(value.desiredHandleTurn)
+      || !isNearlyZero(value.handleTurn)
+      || !isNearlyZero(value.tensionHold)
+      || !isNearlyZero(value.fenceHold)
+      || !isNearlyZero(value.boltHold)
+      || !isNearlyZero(value.handleHold)
+      || !isNearlyZero(value.overloadHold)) return false;
+  }
+
+  if (value.phase === "bolt-test") {
+    if (value.stage !== stageCount
+      || !isNearlyZero(value.desiredTorque)
+      || !isNearlyZero(value.appliedTorque)
+      || !isNearly(value.desiredFenceTravel, 0.72)
+      || !isNearly(value.fenceTravel, 0.72)
+      || value.desiredBoltTravel <= 0.02
+      || value.boltTravel <= 0.02
+      || !isNearlyZero(value.desiredHandleTurn)
+      || !isNearlyZero(value.handleTurn)
+      || !isNearlyZero(value.tensionHold)
+      || !isNearlyZero(value.fenceHold)
+      || value.boltHold >= 0.18
+      || !isNearlyZero(value.handleHold)
+      || !isNearlyZero(value.overloadHold)) return false;
+  }
+
+  if (value.phase === "boltwork-ready") {
+    if (value.stage !== stageCount
+      || !isNearlyZero(value.desiredTorque)
+      || !isNearlyZero(value.appliedTorque)
+      || !isNearly(value.desiredFenceTravel, 0.72)
+      || !isNearly(value.fenceTravel, 0.72)
+      || !isNearly(value.desiredBoltTravel, 1)
+      || !isNearly(value.boltTravel, 1)
+      || value.desiredHandleTurn > 0.02
+      || value.handleTurn > 0.02
+      || !isNearlyZero(value.tensionHold)
+      || !isNearlyZero(value.fenceHold)
+      || !isNearlyZero(value.boltHold)
+      || !isNearlyZero(value.handleHold)
+      || !isNearlyZero(value.overloadHold)) return false;
+  }
+
+  if (value.phase === "handle-test") {
+    if (value.stage !== stageCount
+      || !isNearlyZero(value.desiredTorque)
+      || !isNearlyZero(value.appliedTorque)
+      || !isNearly(value.desiredFenceTravel, 0.72)
+      || !isNearly(value.fenceTravel, 0.72)
+      || !isNearly(value.desiredBoltTravel, 1)
+      || !isNearly(value.boltTravel, 1)
+      || value.desiredHandleTurn <= 0.02
+      || value.handleTurn <= 0.02
+      || !isNearlyZero(value.tensionHold)
+      || !isNearlyZero(value.fenceHold)
+      || !isNearlyZero(value.boltHold)
+      || value.handleHold >= 0.2
+      || !isNearlyZero(value.overloadHold)) return false;
+  }
+
+  if (value.phase === "jammed" && !hasNoActuatorState(value)) return false;
+  return true;
+};
+
 export class LockMechanism {
   readonly puzzle: PuzzleDefinition;
   dial = 0;
@@ -312,10 +516,7 @@ export class LockMechanism {
   }
 
   restore(snapshot: LockMechanismSnapshot) {
-    if (!isLockMechanismSnapshot(snapshot)
-      || snapshot.opened
-      || snapshot.phase === "open"
-      || snapshot.stage > this.puzzle.stages.length
+    if (!isCoherentLockMechanismSnapshot(snapshot, this.puzzle)
       || snapshot.tumblerValues.length !== this.tumblerValues.length
       || snapshot.locked.length !== this.locked.length) {
       return false;

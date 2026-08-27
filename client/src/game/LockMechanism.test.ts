@@ -79,6 +79,77 @@ describe("LockMechanism", () => {
     expect(new LockMechanism(puzzle).restore(checkpoint)).toBe(false);
   });
 
+  it("問題の状態遷移と矛盾するチェックポイントを復元しない", () => {
+    const puzzle = createOfficialPuzzle("AKERUN-10-V1");
+    const lock = new LockMechanism(puzzle);
+    const skippedPhase = { ...lock.snapshot, phase: "tension-ready" as const };
+    const fresh = new LockMechanism(puzzle);
+
+    expect(fresh.restore(skippedPhase)).toBe(false);
+    expect(fresh.phase).toBe("dial");
+
+    const firstStage = puzzle.stages[0];
+    let guard = 0;
+    while (lock.stage === 0 && guard < 900) {
+      lock.rotate(firstStage.direction === "cw" ? 1 : -1);
+      guard += 1;
+    }
+    expect(lock.stage).toBe(1);
+    const tamperedValues = [...lock.tumblerValues];
+    tamperedValues[firstStage.wheel] = (tamperedValues[firstStage.wheel] + 1) % 100;
+    const tampered = { ...lock.snapshot, tumblerValues: tamperedValues };
+
+    expect(new LockMechanism(puzzle).restore(tampered)).toBe(false);
+  });
+
+  it("ダイヤルから扉ハンドルまで、実際に生成される途中状態を復元できる", () => {
+    const puzzle = createPuzzleFromSeed(90212, "observe");
+    const lock = new LockMechanism(puzzle);
+    const canRestore = () => expect(new LockMechanism(puzzle).restore(lock.snapshot)).toBe(true);
+
+    canRestore();
+    for (let index = 0; index < puzzle.stages.length; index += 1) {
+      const stage = puzzle.stages[index];
+      let guard = 0;
+      while (lock.stage === index && guard < 900) {
+        lock.rotate(stage.direction === "cw" ? 1 : -1);
+        guard += 1;
+      }
+      expect(lock.stage).toBe(index + 1);
+    }
+    expect(lock.phase).toBe("settling");
+    canRestore();
+    advance(lock, puzzle.vault.personality.settlingDelaySeconds + 0.04);
+    expect(lock.phase).toBe("tension-ready");
+    canRestore();
+
+    const [tensionMin, tensionMax] = puzzle.difficulty.tensionBand;
+    lock.setTension((tensionMin + tensionMax) / 2);
+    expect(lock.phase).toBe("tension-test");
+    canRestore();
+    advance(lock, puzzle.difficulty.tensionHoldSeconds + 0.08);
+    expect(lock.phase).toBe("fence-ready");
+    canRestore();
+
+    const [fenceMin, fenceMax] = puzzle.difficulty.fenceBand;
+    lock.setFenceTravel((fenceMin + fenceMax) / 2);
+    advance(lock, puzzle.difficulty.fenceHoldSeconds + 0.08);
+    expect(lock.phase).toBe("fence-seated");
+    canRestore();
+
+    lock.setBoltTravel(0.84);
+    expect(lock.phase).toBe("bolt-test");
+    canRestore();
+    advance(lock, 0.28);
+    expect(lock.phase).toBe("boltwork-ready");
+    canRestore();
+
+    lock.setHandleTurn(0.3);
+    expect(lock.phase).toBe("handle-test");
+    canRestore();
+    expect(new LockMechanism(puzzle).restore({ ...lock.snapshot, handleHold: 0.2 })).toBe(false);
+  });
+
   it("異なる契約seedが金庫型と報酬のバリエーションを選ぶ", () => {
     const puzzles = [90210, 90211, 90212].map((seed) => createPuzzleFromSeed(seed));
     expect(new Set(puzzles.map((puzzle) => puzzle.vault.id)).size).toBe(3);
