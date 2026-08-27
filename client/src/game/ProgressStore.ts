@@ -121,6 +121,17 @@ export class ProgressStore {
     return { improved, best: records[key] ?? result };
   }
 
+  persistOfficialCompletion(
+    playerName: string,
+    result: RunResult,
+    rankingRunToken?: string | null,
+  ) {
+    this.recordBest(result);
+    if (rankingRunToken) this.enqueueRanking(playerName, result, rankingRunToken);
+    // 開錠済みの実行を、途中状態として再開できる記録から外す。
+    this.clearActiveRun();
+  }
+
   saveActiveRun(
     problemId: string,
     problemVersion: string,
