@@ -18,8 +18,8 @@ import { isCoherentLockMechanismSnapshot } from "./game/LockMechanism";
 import type { RunCheckpoint } from "./game/RunSession";
 import { isCompleteRunTrace } from "./game/RunTrace";
 
-type Screen = "title" | "tutorial" | "training" | "play" | "pause" | "result" | "ranking" | "archive" | "settings" | "sound-lab" | "help";
-type RunMode = "official" | "training" | "demo" | "retired";
+type Screen = "title" | "tutorial" | "training" | "play" | "practice" | "pause" | "result" | "ranking" | "archive" | "settings" | "sound-lab" | "help";
+type RunMode = "official" | "practice" | "training" | "demo" | "retired";
 
 const formatTime = (seconds: number) => {
   const safe = Math.max(0, Math.floor(seconds));
@@ -440,9 +440,31 @@ export default function App() {
     setProblem(trainingPuzzle);
     setRankingRunToken(null);
     setMode("training");
-    handle.startPuzzle(trainingPuzzle, { training: true, postDial: step === 3 });
+    handle.startPuzzle(trainingPuzzle, { training: true, postDial: step === 3, recordable: false });
     setSnapshot(handle.getSnapshot());
     setScreen("training");
+  };
+
+  const startPractice = (problemId: string) => {
+    if (!handle) return;
+    let practicePuzzle: PuzzleDefinition;
+    try {
+      practicePuzzle = createOfficialPuzzle(problemId);
+    } catch {
+      return;
+    }
+    activeRunContextRef.current = null;
+    lastCheckpointSavedAtRef.current = 0;
+    setProblem(practicePuzzle);
+    setRankingRunToken(null);
+    setMode("practice");
+    setSubmitStatus("自由練習中。結果は進行とランキングへ保存しません。");
+    setRetryAvailable(false);
+    submittedKeyRef.current = "";
+    setRetryNonce(0);
+    handle.startPuzzle(practicePuzzle, { recordable: false });
+    setSnapshot(handle.getSnapshot());
+    setScreen("play");
   };
 
   const startDemo = () => {
@@ -457,11 +479,22 @@ export default function App() {
   };
 
   const startSameProblem = () => {
-    if (problem) void startOfficial(problem.problemId ?? problem.id, rankingRunToken);
+    if (!problem) return;
+    if (mode === "practice") {
+      startPractice(problem.problemId ?? problem.id);
+      return;
+    }
+    if (mode === "official") {
+      void startOfficial(problem.problemId ?? problem.id, rankingRunToken);
+    }
   };
 
   const startDifferentProblem = () => {
-    void startOfficial();
+    if (mode === "practice") {
+      setScreen("practice");
+      return;
+    }
+    if (mode === "official") void startOfficial();
   };
 
   const pause = () => {
@@ -634,12 +667,34 @@ export default function App() {
         ) : null}
         <div className="akerun-link-row">
           <Button onClick={openRanking}>ランキング</Button>
+          <Button onClick={() => setScreen("practice")}>自由練習</Button>
           <Button onClick={() => setScreen("archive")}>収蔵品</Button>
           <Button onClick={() => setScreen("settings")}>設定</Button>
           <Button onClick={() => { setReturnScreen("title"); setScreen("sound-lab"); }}>音の試験室</Button>
           <Button onClick={() => setScreen("help")}>遊び方</Button>
         </div>
         <p className="akerun-footnote">{store.trainingComplete ? "訓練完了済み。いつでも通常ゲームを開始できます。" : "初回は4段階の短い訓練から始めると理解しやすくなります。"}</p>
+      </div>
+    </div>
+  );
+
+  const renderPractice = () => (
+    <div className="akerun-screen akerun-modal-screen">
+      <div className="akerun-modal-card akerun-practice-card">
+        <p className="akerun-kicker">FREE PRACTICE / 自由練習</p>
+        <h2>問題を選んで練習する。</h2>
+        <p>20問から好きな問題を選べます。自由練習の結果は、進行・収蔵品・ランキングへ保存しません。</p>
+        <div className="akerun-practice-list">
+          {OFFICIAL_PROBLEM_CATALOG.map((catalog) => (
+            <Button
+              key={catalog.problemId}
+              onClick={() => startPractice(catalog.problemId)}
+            >
+              {catalog.problemId} / {problemTierLabel[catalog.tier]} / {catalog.wheelCount}輪
+            </Button>
+          ))}
+        </div>
+        <Button tone="primary" onClick={() => setScreen("title")}>タイトルへ戻る</Button>
       </div>
     </div>
   );
@@ -691,7 +746,7 @@ export default function App() {
     <div className="akerun-play-layer">
       <div className="akerun-hud">
         <div>
-          <p className="akerun-kicker">{mode === "demo" ? "EXAMPLE / お手本" : problem?.problemId ?? "問題準備中"}</p>
+          <p className="akerun-kicker">{mode === "demo" ? "EXAMPLE / お手本" : mode === "practice" ? "FREE PRACTICE / 自由練習" : problem?.problemId ?? "問題準備中"}</p>
           <h2>{snapshot?.vaultTitle ?? "金庫"}</h2>
         </div>
         <div className="akerun-hud-actions">
@@ -738,11 +793,13 @@ export default function App() {
   const renderResult = () => {
     const result = snapshot?.runResult;
     const isRetired = mode === "retired" || snapshot?.status === "retired";
+    const isPractice = mode === "practice";
+    const canReplay = mode === "official" || mode === "practice";
     return (
       <div className="akerun-screen akerun-modal-screen">
         <div className="akerun-result-card">
-          <p className="akerun-kicker">{isRetired ? "RETIRED / リタイア" : mode === "demo" ? "EXAMPLE RESULT / お手本" : "UNLOCK COMPLETE / 開錠完了"}</p>
-          <h2>{isRetired ? "今回は記録しません。" : snapshot?.rewardTitle ?? "開錠しました。"}</h2>
+          <p className="akerun-kicker">{isRetired ? "RETIRED / リタイア" : mode === "demo" ? "EXAMPLE RESULT / お手本" : isPractice ? "FREE PRACTICE / 自由練習" : "UNLOCK COMPLETE / 開錠完了"}</p>
+          <h2>{isRetired ? "今回は記録しません。" : isPractice ? "練習を完了しました。" : snapshot?.rewardTitle ?? "開錠しました。"}</h2>
           <p className="akerun-result-subtitle">{snapshot?.problemId} / {snapshot?.problemVersion} / {snapshot?.vaultTitle}</p>
           {mode === "official" && !isRetired ? <p className="akerun-small">獲得収蔵品：{snapshot?.rewardTitle ?? "—"}</p> : null}
           {mode === "official" && !isRetired && snapshot?.newlyUnlockedRewards.length ? (
@@ -759,7 +816,13 @@ export default function App() {
             <Stat label="自己ベスト" value={best?.score ?? "—"} />
           </div>
           {!isRetired && mode === "official" ? <p className="akerun-small">偽ゲート接触は物理的な通過数を表示し、問題ごとの不可避な基準通過はスコアから除外しています。</p> : null}
-          <p className="akerun-submit-status">{mode === "official" && !isRetired ? submitStatus : "訓練・お手本・リタイアはランキング対象外です。"}</p>
+          <p className="akerun-submit-status">{
+            mode === "official" && !isRetired
+              ? submitStatus
+              : isPractice && !isRetired
+                ? "自由練習の結果は進行やランキングへ保存しません。"
+                : "訓練・お手本・リタイアはランキング対象外です。"
+          }</p>
           <div className="akerun-title-actions">
             {mode === "official" && !isRetired ? <Button
               disabled={!retryAvailable || submitStatus === "送信中…" || submitStatus === "再送中…"}
@@ -771,8 +834,8 @@ export default function App() {
                 setRetryNonce((current) => current + 1);
               }}
             >記録を再送する</Button> : null}
-            <Button tone="primary" onClick={startSameProblem} disabled={!problem || mode !== "official" || startingOfficial}>同じ問題でもう一度</Button>
-            <Button onClick={startDifferentProblem} disabled={mode !== "official" || startingOfficial}>次の進行問題へ</Button>
+            <Button tone="primary" onClick={startSameProblem} disabled={!problem || !canReplay || startingOfficial}>同じ問題でもう一度</Button>
+            <Button onClick={startDifferentProblem} disabled={!canReplay || startingOfficial}>{isPractice ? "別の練習問題" : "次の進行問題"}</Button>
             <Button onClick={openRanking}>ランキング</Button>
             <Button onClick={() => void shareResult()}>結果を共有</Button>
             <Button onClick={() => setScreen("title")}>タイトルへ戻る</Button>
@@ -895,6 +958,7 @@ export default function App() {
   const renderOverlay = () => {
     if (screen === "title") return renderTitle();
     if (screen === "tutorial") return renderTutorial();
+    if (screen === "practice") return renderPractice();
     if (screen === "training") return renderTraining();
     if (screen === "play") return renderPlayHud();
     if (screen === "pause") return renderPause();

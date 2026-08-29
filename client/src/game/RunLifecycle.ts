@@ -12,6 +12,8 @@ export type CompetitiveResetContext = {
   readonly developmentSeed: boolean;
   readonly problemId: string;
   readonly problemVersion: string;
+  /** falseの場合は自由練習として扱い、競技用リセット規則を適用しない。 */
+  readonly recordable?: boolean;
 };
 
 export const isOfficialProblemIdentity = (problemId: string, problemVersion: string) =>
@@ -22,4 +24,5 @@ export const shouldForfeitOfficialReset = (context: CompetitiveResetContext) =>
     && !context.demoMode
     && !context.trainingContract
     && !context.developmentSeed
+    && context.recordable !== false
     && isOfficialProblemIdentity(context.problemId, context.problemVersion);

@@ -18,6 +18,7 @@ export type PuzzleStartOptions = {
   readonly training?: boolean;
   readonly postDial?: boolean;
   readonly resume?: RunCheckpoint;
+  readonly recordable?: boolean;
 };
 
 export type GameHandle = {
