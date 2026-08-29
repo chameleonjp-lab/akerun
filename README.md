@@ -5,12 +5,12 @@
 ## 現在のプレイ
 
 1. タイトルでプレイヤー名を入力する
-2. 通常ゲームを開始すると、公式20問から一問が抽選される
-3. 抽選された問題はプレイ終了まで固定される
-4. 接触反応を観察し、ホイールを順に整列する
-5. テンション、フェンス、ロックボルト、扉ハンドルを操作する
-6. 結果画面で時間、失敗、回転量、偽ゲート接触、スコアを確認する
-7. 同じ問題へ再挑戦するか、別の問題を抽選する
+2. 進行ゲームでは、未クリアの初級問題から順番に一問が選ばれる
+3. 自由練習では、公式20問から問題と難度を選べる
+4. 本日の競技では、日本時間の日付に対応する同じ問題へ全員が挑戦する
+5. 接触反応を観察し、ホイールを順に整列する
+6. テンション、フェンス、ロックボルト、扉ハンドルを操作する
+7. 結果画面で時間、失敗、回転量、偽ゲート接触、スコアを確認する
 
 初回は、ダイヤル、接触判別、後半機構、短い完全開錠の4段階訓練を用意しています。
 
@@ -92,23 +92,29 @@ Pelagicの停止待ちは一時停止ではありません。プレイ時間は�
 - プレイ中は機構状態と計測値を端末チェックポイントへ保存し、再読込時も計測を初期化せず復元する。再開時は問題固有のstage、固定ホイール、プロトコルphase、後半アクチュエータの整合性も検証し、旧形式や壊れた保存データでは検証済みプレイIDを再利用しない
 - 開錠を検知した時点で結果を端末内へ先に保存し、進行中のプレイ記録を削除する。結果画面へ移る前にSafariが終了しても、同じプレイを途中から再利用せず、保存済みの結果を再送できる
 
-Supabase側の `akerun` は `submission_mode=verified` で登録しています。2026-08-29の読み取り確認では、公式問題20件、実行記録0件、ランキング記録0件で、`is_active=false` と `accepting_runs=false` を維持していました。結果ガードmigrationは本番へ適用済みですが、操作履歴migrationとEdge Function更新はこのPRのマージ後に適用するまでランキング機能を停止します。通常プレイ自体は端末内記録として続けられます。サービスキーはEdge Functionのサーバー環境変数だけで使用し、ブラウザへ出しません。
+Supabase側の `akerun` は `submission_mode=verified` で登録しています。2026-08-29の読み取り確認では、公式問題20件、実行記録0件、ランキング記録0件で、`is_active=false` と `accepting_runs=false` を維持していました。結果ガードmigration、操作履歴migration、Edge Function更新は適用済みですが、ランキング受付フラグは安全確認が完了するまで無効のままにします。通常プレイ自体は端末内記録として続けられます。サービスキーはEdge Functionのサーバー環境変数だけで使用し、ブラウザへ出しません。
 
 この契約は、問題の固定、スコア再計算、値の範囲、操作履歴の決定的な再生、二重送信を検証します。ただし、操作履歴が実際の人間の指や端末から発生したことまでは証明しません。接続元・名前・端末単位の制限と、実機での公平性確認は後続段階です。
 
 ## iPhone操作
 
-Canvas上でダイヤルと物理部品を指で操作できます。画面外へ移動した場合やバックグラウンドへ移った場合は入力を安全に解除し、ゲームを自動一時停止します。非表示中はBabylonの描画ループ自体も停止し、復帰時に再開します。
+native Canvas 2D上でダイヤルと物理部品を指で操作できます。論理座標と画面密度を分離し、端末のDPRは最大2までに制限します。画面外へ移動した場合やバックグラウンドへ移った場合は入力を安全に解除し、ゲームを自動一時停止します。非表示中はrequestAnimationFrameを停止し、復帰時に再開します。
 
 React側にはタイトル、名前入力、訓練、HUD、一時停止、結果、ランキング、収蔵品、設定、ヘルプを配置しています。キーボード操作は補助であり、ゲーム開始や開錠に必須ではありません。
+
+## 公開
+
+mainへのマージで `.github/workflows/deploy-pages.yml` が静的サイトをビルドし、公開前に未設定の解析値、旧環境の外部パス、参照切れ素材を検査してからGitHub Pagesへ配置します。公開URLはリポジトリの `/akerun/` 配下を前提にし、Viteの `VITE_BASE_PATH` で同じ成果物をローカルとPagesへ出力します。
+
+タイトル画面には `BUILD / <12文字>` を表示します。公開画面の `data-build-commit` とGitHub Actionsのコミット番号を照合して、表示中の画面がmainのどのコミットから生成されたか確認できます。公開後のHTML、JavaScript、CSS、faviconは同じワークフロー内でHTTP 200を確認します。
 
 ## ファイル構成
 
 - client/src/App.tsx: タイトル、訓練、プレイHUD、一時停止、結果、ランキング、収蔵品、設定、音の試験室、ヘルプ
-- client/src/components/GameCanvas.tsx: Babylonキャンバスのライフサイクル
+- client/src/components/GameCanvas.tsx: 2D Canvasのライフサイクルと画面離脱処理
 - client/src/game/VaultWorld.ts: 金庫の描画、入力、音・振動、既存機構との同期
 - client/src/game/AudioFeedback.ts: 音の試験室のカタログと合成音
-- client/src/game/RenderLoopController.ts: 表示状態とReactライフサイクルに連動したBabylon描画ループ制御
+- client/src/game/RenderLoopController.ts: 表示状態とReactライフサイクルに連動したrequestAnimationFrame制御
 - client/src/game/LockMechanism.ts: 金庫ルールの状態機械
 - client/src/game/GameDefinitions.ts: 金庫定義、公式20問、訓練問題、開発seed
 - client/src/game/RunSession.ts: プレイ記録とスコア計算
@@ -128,15 +134,18 @@ pnpm check
 pnpm test:rules
 pnpm generate:problem-balance
 pnpm build
+pnpm build:pages
+pnpm verify:static-build
 ```
 
 `pnpm generate:problem-balance` は、公式20問を既存の機構で自動解法し、基準値と自動監査結果を `docs/official-problem-balance.md` へ出力します。問題定義や機構を変更したときは、表を再生成してからテストします。
 
-GitHub Actionsでも型検査、ルールテスト、本番ビルドを実行します。
+GitHub Actionsでも型検査、ルールテスト、本番ビルド、GitHub Pages用静的ビルドを実行します。
 
 ## 既知の未完了事項
 
 - 問題ごとの実機計測値は、iPhoneで20問を通しプレイして最終調整する
 - ランキングを有効化する前に、同じ問題の再挑戦、送信失敗からの再送、期限切れ、二重送信、ランキング取得を実環境で確認する
 - VaultWorld.ts を入力、描画、セッションへ段階的に分割する
-- 公開前にiPhone Safariの縦画面で全導線を確認する
+- 公開後にiPhone Safariの縦画面で全導線を確認する
+- ブラウザ自動操作、公開URLの表示確認、iPhone 17 Proで15分連続プレイを追加検証する

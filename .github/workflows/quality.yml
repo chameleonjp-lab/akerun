@@ -27,3 +27,9 @@ jobs:
         run: pnpm test:rules
       - name: Production build
         run: pnpm build
+      - name: Static Pages build
+        run: pnpm build:pages
+        env:
+          VITE_BASE_PATH: /akerun/
+          VITE_BUILD_COMMIT: ${{ github.sha }}
+          REQUIRE_BUILD_COMMIT: "1"

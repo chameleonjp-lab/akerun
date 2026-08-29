@@ -17,18 +17,9 @@ import {
   type CanvasResolution,
 } from "./CanvasSurface";
 
+const ASSET_BASE_URL = import.meta.env.BASE_URL;
 const ASSETS = {
-  reference: "/manus-storage/vault-tumbler-reference_35720048.png",
-  brass: "/manus-storage/brushed-brass-patina_3c5701a7.png",
-  door: "/manus-storage/vault-door-plate_87b42963.png",
-  mark: "/manus-storage/vault-tumbler-mark_c74fcb29.png",
-  realDoor: "/manus-storage/real-vault-door-panel_37ea387f.png",
-  realDial: "/manus-storage/real-brass-combination-dial_b7977ff0.png",
-  realLock: "/manus-storage/real-safe-lock-cutaway_398ad6d7.png",
-  blueSteel: "/manus-storage/real-blue-steel-surface_5e6d63c0.png",
-  treasure: "/manus-storage/vault-treasure-cache_f4471eb7.png",
-  treasureReliquary: "/manus-storage/obsidian-reliquary-cache_a6a04417.png",
-  treasureChronometer: "/manus-storage/sapphire-chronometer-cache_94d72841.png",
+  mark: `${ASSET_BASE_URL}assets/vault-tumbler-mark.svg`,
 } as const;
 
 type Rect = { x: number; y: number; width: number; height: number };

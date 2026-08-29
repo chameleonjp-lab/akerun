@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title">
+  <title id="title">Vault Tumbler Lab</title>
+  <rect width="96" height="96" rx="18" fill="#071015"/>
+  <circle cx="48" cy="48" r="32" fill="#18242a" stroke="#c9a963" stroke-width="3"/>
+  <circle cx="48" cy="48" r="23" fill="#0d171d" stroke="#8f7440" stroke-width="2"/>
+  <circle cx="48" cy="48" r="5" fill="#c9a963"/>
+  <path d="M48 16v16M80 48H64M48 80V64M16 48h16" stroke="#d6bd7b" stroke-width="3" stroke-linecap="round"/>
+  <path d="M48 25a23 23 0 0 1 20 12l-7 4a15 15 0 0 0-13-8z" fill="#5fd4c3"/>
+  <path d="M48 71a23 23 0 0 1-20-12l7-4a15 15 0 0 0 13 8z" fill="#5fd4c3"/>
+</svg>
