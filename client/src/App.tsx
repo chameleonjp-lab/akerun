@@ -14,12 +14,13 @@ import {
 } from "./game/GameDefinitions";
 import { ProgressStore, normalizePlayerName } from "./game/ProgressStore";
 import { RankingClient, type RankingRow } from "./game/RankingClient";
+import { competitionDayForDate } from "./game/CompetitionSchedule";
 import { isCoherentLockMechanismSnapshot } from "./game/LockMechanism";
 import type { RunCheckpoint } from "./game/RunSession";
 import { isCompleteRunTrace } from "./game/RunTrace";
 
-type Screen = "title" | "tutorial" | "training" | "play" | "practice" | "pause" | "result" | "ranking" | "archive" | "settings" | "sound-lab" | "help";
-type RunMode = "official" | "practice" | "training" | "demo" | "retired";
+type Screen = "title" | "tutorial" | "training" | "play" | "practice" | "pause" | "result" | "ranking" | "competition-ranking" | "archive" | "settings" | "sound-lab" | "help";
+type RunMode = "official" | "practice" | "competition" | "training" | "demo" | "retired";
 
 const formatTime = (seconds: number) => {
   const safe = Math.max(0, Math.floor(seconds));
@@ -97,6 +98,10 @@ export default function App() {
   const [retryNonce, setRetryNonce] = useState(0);
   const [rankingRows, setRankingRows] = useState<RankingRow[]>([]);
   const [rankingStatus, setRankingStatus] = useState("まだ読み込んでいません。");
+  const [dailyRankingRows, setDailyRankingRows] = useState<RankingRow[]>([]);
+  const [dailyRankingStatus, setDailyRankingStatus] = useState("まだ読み込んでいません。");
+  const [competitionDay, setCompetitionDay] = useState<string | null>(null);
+  const [retiredNotice, setRetiredNotice] = useState("");
   const [settings, setSettings] = useState({
     contrast: false,
     motion: false,
@@ -107,7 +112,12 @@ export default function App() {
   const startingOfficialRef = useRef(false);
   const retryingPendingRef = useRef(false);
   const gameHandleRef = useRef<GameHandle | null>(null);
-  const activeRunContextRef = useRef<{ playerName: string; rankingRunToken: string | null } | null>(null);
+  const activeRunContextRef = useRef<{
+    playerName: string;
+    rankingRunToken: string | null;
+    runMode: "official" | "competition";
+    competitionDay: string | null;
+  } | null>(null);
   const lastCheckpointSavedAtRef = useRef(0);
   const pendingAbandonmentRequestsRef = useRef(new Map<string, Promise<boolean>>());
 
@@ -154,6 +164,8 @@ export default function App() {
       activeRun.playerName,
       activeRun.rankingRunToken,
       checkpoint,
+      activeRun.runMode,
+      activeRun.competitionDay ?? undefined,
     );
     lastCheckpointSavedAtRef.current = performance.now();
     return true;
@@ -169,9 +181,10 @@ export default function App() {
     if (activeRun && nextSnapshot.status === "opened" && nextSnapshot.recordable) {
       // 開錠は結果画面への遷移より先に確定させる。iPhoneでこの瞬間に
       // Safariが終了しても、同じ公式実行を未完了として再利用させない。
-      if (nextSnapshot.runResult) {
+      if (nextSnapshot.runResult && activeRun.runMode === "official") {
         store.persistOfficialCompletion(activeRun.playerName, nextSnapshot.runResult, activeRun.rankingRunToken);
       } else {
+        // 競技結果は進行・収蔵品へ混ぜず、結果画面から送信する。
         store.clearActiveRun();
       }
       activeRunContextRef.current = null;
@@ -187,11 +200,13 @@ export default function App() {
           activeRun.playerName,
           activeRun.rankingRunToken,
           checkpoint,
+          activeRun.runMode,
+          activeRun.competitionDay ?? undefined,
         );
         lastCheckpointSavedAtRef.current = now;
       }
     }
-    if (mode === "official" && nextSnapshot.status === "retired" && screen !== "result") {
+    if ((mode === "official" || mode === "competition") && nextSnapshot.status === "retired" && screen !== "result") {
       // リタイアと公式RESETは同じ後始末を通り、通信断でもトークンを
       // 端末内の破棄待ちキューへ残して次回起動時に再送する。
       requestOfficialRunAbandonment(activeRun?.rankingRunToken);
@@ -204,13 +219,34 @@ export default function App() {
     }
   }, [mode, requestOfficialRunAbandonment, screen, store]);
 
+  const retireActiveRun = useCallback((notice = "今回は記録しません。") => {
+    const activeRun = activeRunContextRef.current;
+    if (mode === "official" || mode === "competition") {
+      void requestOfficialRunAbandonment(activeRun?.rankingRunToken);
+    }
+    gameHandleRef.current?.retire();
+    store.clearActiveRun();
+    activeRunContextRef.current = null;
+    lastCheckpointSavedAtRef.current = 0;
+    setRankingRunToken(null);
+    setRetiredNotice(notice);
+    setSubmitStatus(notice);
+    setMode("retired");
+    setScreen("result");
+  }, [mode, requestOfficialRunAbandonment, store]);
+
   const onVisibilityPause = useCallback(() => {
+    // 競技は停止中に考える抜け道を作らない。画面離脱も同じ扱いにする。
+    if (mode === "competition") {
+      retireActiveRun("競技中に画面を離れたため、今回はランキング対象外です。");
+      return;
+    }
     // 開錠演出中は機構がすでに停止している。ここでPAUSEへ遷移すると、
     // 結果画面へ進める900msの演出タイマーをキャンセルしてしまう。
     if (gameHandleRef.current?.getSnapshot().opened) return;
     saveActiveCheckpointNow();
     if (screen === "play" || screen === "training") setScreen("pause");
-  }, [saveActiveCheckpointNow, screen]);
+  }, [mode, retireActiveRun, saveActiveCheckpointNow, screen]);
 
   const abandonUnclaimedOfficialRun = (runToken: string | null | undefined) => {
     if (!runToken) return;
@@ -244,9 +280,14 @@ export default function App() {
 
   useEffect(() => {
     const result = snapshot?.runResult;
-    if (screen !== "result" || mode !== "official" || !snapshot?.recordable || !result) return;
+    const rankedMode = mode === "official" || mode === "competition";
+    if (screen !== "result" || !rankedMode || !snapshot?.recordable || !result) return;
     const resultKey = result.problemId + "@" + result.problemVersion + ":" + String(result.score) + ":" + String(result.elapsedTime);
     if (!rankingRunToken) {
+      if (mode === "competition") {
+        setSubmitStatus("競技サーバーの実行確認が失われたため、今回はランキング対象外です。");
+        return;
+      }
       const localKey = "local:" + resultKey;
       if (submittedKeyRef.current === localKey) return;
       store.recordBest(result);
@@ -257,8 +298,8 @@ export default function App() {
     const key = rankingRunToken + ":" + resultKey;
     if (submittedKeyRef.current === key || submittingKeyRef.current === key) return;
 
-    // 結果確定時に自己ベストを先に保存し、通信状態と切り離す。
-    store.recordBest(result);
+    // 公式は自己ベストを端末へ保存し、競技は日別ランキングだけへ送る。
+    if (mode === "official") store.recordBest(result);
     setRetryAvailable(false);
     submittedKeyRef.current = key;
     submittingKeyRef.current = key;
@@ -266,15 +307,15 @@ export default function App() {
     void rankingClient.submit(playerName, result, rankingRunToken)
       .then(() => {
         setRetryAvailable(false);
-        setSubmitStatus("ランキングへ送信しました。");
+        setSubmitStatus(mode === "competition" ? "本日の競技結果を送信しました。" : "ランキングへ送信しました。");
         store.removePendingForResult(result, rankingRunToken);
       })
       .catch(() => {
-        // 失敗時はsubmittedKeyを残し、自動再送ループを防ぐ。
-        // 再送ボタンがretryNonceを進め、明示的にもう一度実行する。
         setRetryAvailable(true);
         store.enqueueRanking(playerName, result, rankingRunToken);
-        setSubmitStatus("送信に失敗しました。結果画面の再送ボタンを押してください。");
+        setSubmitStatus(mode === "competition"
+          ? "本日の競技結果の送信に失敗しました。タイトルから再送できます。"
+          : "送信に失敗しました。結果画面の再送ボタンを押してください。");
       })
       .finally(() => {
         if (submittingKeyRef.current === key) submittingKeyRef.current = "";
@@ -303,7 +344,13 @@ export default function App() {
     const progressionProblem = requestedProblemId
       ? null
       : chooseProgressionProblem(store.getOfficialClearKeys());
-    const interruptedRun = requestedProblemId ? null : store.getActiveRun();
+    const savedActiveRun = requestedProblemId ? null : store.getActiveRun();
+    if (savedActiveRun?.runMode === "competition") {
+      // 競技は画面再読込後に再開させず、計測の不確実性を対象外にする。
+      void requestOfficialRunAbandonment(savedActiveRun.rankingRunToken);
+      store.clearActiveRun();
+    }
+    const interruptedRun = savedActiveRun?.runMode === "competition" ? null : savedActiveRun;
     const savedName = interruptedRun?.playerName ? store.savePlayerName(interruptedRun.playerName) : validateName();
     if (!savedName || !handle) return;
     startingOfficialRef.current = true;
@@ -412,12 +459,19 @@ export default function App() {
 
       const problemId = chosen.problemId ?? chosen.id;
       const problemVersion = chosen.problemVersion ?? "V1";
-      store.saveActiveRun(problemId, problemVersion, savedName, nextRankingRunToken, resumeCheckpoint);
-      activeRunContextRef.current = { playerName: savedName, rankingRunToken: nextRankingRunToken };
+      store.saveActiveRun(problemId, problemVersion, savedName, nextRankingRunToken, resumeCheckpoint, "official");
+      activeRunContextRef.current = {
+        playerName: savedName,
+        rankingRunToken: nextRankingRunToken,
+        runMode: "official",
+        competitionDay: null,
+      };
       lastCheckpointSavedAtRef.current = 0;
       setRankingRunToken(nextRankingRunToken);
       setProblem(chosen);
       setMode("official");
+      setCompetitionDay(null);
+      setRetiredNotice("");
       setSubmitStatus(nextRankingRunToken ? "未送信" : rankingFallbackStatus);
       setRetryAvailable(false);
       submittedKeyRef.current = "";
@@ -440,6 +494,8 @@ export default function App() {
     setProblem(trainingPuzzle);
     setRankingRunToken(null);
     setMode("training");
+    setCompetitionDay(null);
+    setRetiredNotice("");
     handle.startPuzzle(trainingPuzzle, { training: true, postDial: step === 3, recordable: false });
     setSnapshot(handle.getSnapshot());
     setScreen("training");
@@ -458,6 +514,8 @@ export default function App() {
     setProblem(practicePuzzle);
     setRankingRunToken(null);
     setMode("practice");
+    setCompetitionDay(null);
+    setRetiredNotice("");
     setSubmitStatus("自由練習中。結果は進行とランキングへ保存しません。");
     setRetryAvailable(false);
     submittedKeyRef.current = "";
@@ -467,11 +525,106 @@ export default function App() {
     setScreen("play");
   };
 
+  const startCompetition = async () => {
+    if (!store.trainingComplete) {
+      setTutorialStep(1);
+      setScreen("tutorial");
+      return;
+    }
+    if (startingOfficial || startingOfficialRef.current) return;
+    const savedName = validateName();
+    if (!savedName || !handle) return;
+
+    startingOfficialRef.current = true;
+    setStartingOfficial(true);
+    setSubmitStatus("本日の競技を準備中…");
+    setRetiredNotice("");
+    try {
+      await flushPendingRunAbandonments();
+      const preparation = await rankingClient.prepareCompetitionRun(savedName);
+      if (
+        preparation.status !== "ok"
+        || !preparation.runToken
+        || !preparation.problemId
+        || !preparation.problemVersion
+        || !preparation.competitionDay
+      ) {
+        setCompetitionDay(preparation.competitionDay ?? competitionDayForDate());
+        setSubmitStatus(
+          preparation.status === "disabled"
+            ? "本日の競技は現在停止中です。"
+            : "本日の競技を開始できませんでした。ランキング受付は停止中の可能性があります。",
+        );
+        return;
+      }
+
+      const begun = await rankingClient.beginOfficialRun(preparation.runToken);
+      if (
+        begun.status !== "ok"
+        || !begun.problemId
+        || !begun.problemVersion
+        || begun.problemId !== preparation.problemId
+        || begun.problemVersion !== preparation.problemVersion
+      ) {
+        void requestOfficialRunAbandonment(preparation.runToken);
+        setSubmitStatus("本日の競技の開始確認に失敗しました。今回は対象外です。");
+        return;
+      }
+
+      let chosen: PuzzleDefinition;
+      try {
+        chosen = createOfficialPuzzle(begun.problemId);
+      } catch {
+        void requestOfficialRunAbandonment(preparation.runToken);
+        setSubmitStatus("本日の競技問題を読み込めませんでした。今回は対象外です。");
+        return;
+      }
+      if (chosen.problemVersion !== begun.problemVersion) {
+        void requestOfficialRunAbandonment(preparation.runToken);
+        setSubmitStatus("本日の競技問題の版を確認できませんでした。今回は対象外です。");
+        return;
+      }
+
+      const problemId = chosen.problemId ?? chosen.id;
+      store.saveActiveRun(
+        problemId,
+        chosen.problemVersion ?? "V1",
+        savedName,
+        preparation.runToken,
+        undefined,
+        "competition",
+        preparation.competitionDay,
+      );
+      activeRunContextRef.current = {
+        playerName: savedName,
+        rankingRunToken: preparation.runToken,
+        runMode: "competition",
+        competitionDay: preparation.competitionDay,
+      };
+      setPlayerName(savedName);
+      setCompetitionDay(preparation.competitionDay);
+      setRankingRunToken(preparation.runToken);
+      setProblem(chosen);
+      setMode("competition");
+      setRetryAvailable(false);
+      submittedKeyRef.current = "";
+      setRetryNonce(0);
+      handle.startPuzzle(chosen, { recordable: true });
+      setSnapshot(handle.getSnapshot());
+      setScreen("play");
+    } finally {
+      startingOfficialRef.current = false;
+      setStartingOfficial(false);
+    }
+  };
+
   const startDemo = () => {
     if (!handle) return;
     activeRunContextRef.current = null;
     lastCheckpointSavedAtRef.current = 0;
     setMode("demo");
+    setCompetitionDay(null);
+    setRetiredNotice("");
     setRankingRunToken(null);
     handle.startDemo();
     setSnapshot(handle.getSnapshot());
@@ -498,30 +651,36 @@ export default function App() {
   };
 
   const pause = () => {
+    if (mode === "competition") {
+      retireActiveRun("競技中に一時停止したため、今回はランキング対象外です。");
+      return;
+    }
     handle?.setPaused(true);
     setScreen("pause");
   };
 
   const resume = () => {
+    if (mode === "competition") {
+      retireActiveRun("競技中に停止したため、今回はランキング対象外です。");
+      return;
+    }
     handle?.setPaused(false);
     setScreen(mode === "training" ? "training" : "play");
   };
 
   const retire = () => {
-    if (mode === "official") {
-      requestOfficialRunAbandonment(activeRunContextRef.current?.rankingRunToken);
-    }
-    handle?.retire();
-    store.clearActiveRun();
-    activeRunContextRef.current = null;
-    lastCheckpointSavedAtRef.current = 0;
-    setRankingRunToken(null);
-    if (handle) setSnapshot(handle.getSnapshot());
-    setMode("retired");
-    setScreen("result");
+    retireActiveRun();
   };
 
   const openOverlay = (next: Screen) => {
+    if (
+      mode === "competition"
+      && screen === "play"
+      && (next === "settings" || next === "help" || next === "sound-lab")
+    ) {
+      retireActiveRun("競技中に設定やヘルプを開いたため、今回はランキング対象外です。");
+      return;
+    }
     setReturnScreen(screen);
     if (screen === "play" || screen === "training") handle?.setPaused(true);
     setScreen(next);
@@ -575,6 +734,23 @@ export default function App() {
     void loadRanking();
   };
 
+  const loadDailyRanking = async (requestedDay = competitionDay ?? competitionDayForDate()) => {
+    setDailyRankingStatus("読み込み中…");
+    try {
+      const rows = await rankingClient.getDailyScores(requestedDay);
+      setDailyRankingRows(rows);
+      setDailyRankingStatus("日本時間 " + requestedDay + " の競技ランキング");
+    } catch {
+      setDailyRankingRows([]);
+      setDailyRankingStatus("本日の競技ランキングを読み込めませんでした。受付が停止中の可能性があります。");
+    }
+  };
+
+  const openDailyRanking = () => {
+    openOverlay("competition-ranking");
+    void loadDailyRanking();
+  };
+
   const retryPending = async () => {
     if (retryingPendingRef.current) return;
     retryingPendingRef.current = true;
@@ -618,7 +794,7 @@ export default function App() {
   const archiveIds = store.getArchiveIds();
   const pendingCount = store.getPendingRankings().length;
   const activeRun = store.getActiveRun();
-  const best = snapshot?.runResult
+  const best = mode === "official" && snapshot?.runResult
     ? store.getBest(snapshot.runResult.problemId, snapshot.runResult.problemVersion)
     : null;
   const shellClass = [
@@ -632,7 +808,7 @@ export default function App() {
       <div className="akerun-title-card">
         <p className="akerun-kicker">VAULT TUMBLER LAB / AKERUN</p>
         <h1>金庫を、観察で開ける。</h1>
-        <p className="akerun-lead">音や反応を確かめながら、金庫の内部機構を読み解きます。初級から順番に未クリア問題へ進み、20問を終えたら再挑戦できます。</p>
+        <p className="akerun-lead">音や反応を確かめながら、金庫の内部機構を読み解きます。進行ゲームは初級から順番に進み、自由練習では問題を選べます。本日の競技は日本時間の日付ごとに全員が同じ問題へ挑戦します。</p>
         <label className="akerun-field">
           <span>プレイヤー名（ランキング登録名）</span>
           <input
@@ -648,13 +824,16 @@ export default function App() {
         </label>
         {nameError ? <p className="akerun-error">{nameError}</p> : null}
         {activeRun ? <p className="akerun-small">
-          {activeRun.checkpoint
-            ? `前回の ${activeRun.problemId} は中断されています。保存済みの状態から再開します。`
-            : `前回の ${activeRun.problemId} は旧形式の中断記録です。新しい問題を準備します。`}
+          {activeRun.runMode === "competition"
+            ? "前回の競技は再開せず、ランキング対象外として破棄します。"
+            : activeRun.checkpoint
+              ? `前回の ${activeRun.problemId} は中断されています。保存済みの状態から再開します。`
+              : `前回の ${activeRun.problemId} は旧形式の中断記録です。新しい問題を準備します。`}
         </p> : null}
         <p className="akerun-small">進行状況：公式問題 ${clearedOfficialCount} / ${OFFICIAL_PROBLEM_CATALOG.length} 問クリア。次は ${nextProgressionProblem.problemId}（${problemTierLabel[nextProgressionProblem.problemTier ?? "standard"]}）です。</p>
         <div className="akerun-title-actions">
           <Button tone="primary" onClick={() => void startOfficial()} disabled={!handle || startingOfficial}>{startingOfficial ? "問題を準備中…" : "進行ゲームを開始"}</Button>
+          <Button onClick={() => void startCompetition()} disabled={!handle || startingOfficial}>{startingOfficial ? "競技を準備中…" : "本日の競技（" + competitionDayForDate() + "）"}</Button>
           <Button onClick={() => { setTutorialStep(1); setScreen("tutorial"); }}>初めて遊ぶ</Button>
           <Button onClick={startDemo} disabled={!handle}>お手本を見る</Button>
         </div>
@@ -666,7 +845,8 @@ export default function App() {
           </div>
         ) : null}
         <div className="akerun-link-row">
-          <Button onClick={openRanking}>ランキング</Button>
+          <Button onClick={openRanking}>公式ランキング</Button>
+          <Button onClick={openDailyRanking}>本日の競技ランキング</Button>
           <Button onClick={() => setScreen("practice")}>自由練習</Button>
           <Button onClick={() => setScreen("archive")}>収蔵品</Button>
           <Button onClick={() => setScreen("settings")}>設定</Button>
@@ -746,12 +926,12 @@ export default function App() {
     <div className="akerun-play-layer">
       <div className="akerun-hud">
         <div>
-          <p className="akerun-kicker">{mode === "demo" ? "EXAMPLE / お手本" : mode === "practice" ? "FREE PRACTICE / 自由練習" : problem?.problemId ?? "問題準備中"}</p>
+          <p className="akerun-kicker">{mode === "demo" ? "EXAMPLE / お手本" : mode === "practice" ? "FREE PRACTICE / 自由練習" : mode === "competition" ? "DAILY COMPETITION / 本日の競技" : problem?.problemId ?? "問題準備中"}</p>
           <h2>{snapshot?.vaultTitle ?? "金庫"}</h2>
         </div>
         <div className="akerun-hud-actions">
-          <Button onClick={() => openOverlay("settings")}>設定</Button>
-          <Button onClick={pause}>一時停止</Button>
+          <Button onClick={() => openOverlay("settings")} disabled={mode === "competition"}>設定</Button>
+          <Button onClick={pause}>{mode === "competition" ? "停止すると対象外" : "一時停止"}</Button>
         </div>
       </div>
       <div className="akerun-live-panel" aria-live="polite">
@@ -768,8 +948,8 @@ export default function App() {
         <Button onClick={() => handle?.performAction("notes")}>観察メモ</Button>
         <Button onClick={() => handle?.performAction("note-capture")}>候補に追加</Button>
         <Button onClick={() => handle?.performAction("inspect")}>分解観察</Button>
-        <Button onClick={() => handle?.performAction("reset")}>{mode === "official" ? "リセット（リタイア扱い）" : "リセット"}</Button>
-        <Button onClick={() => openOverlay("help")}>ヘルプ</Button>
+        <Button onClick={() => handle?.performAction("reset")}>{mode === "official" ? "リセット（リタイア扱い）" : mode === "competition" ? "リセット（対象外）" : "リセット"}</Button>
+        <Button onClick={() => openOverlay("help")} disabled={mode === "competition"}>ヘルプ</Button>
         <Button tone="danger" onClick={retire}>リタイア</Button>
       </nav>
     </div>
@@ -779,11 +959,13 @@ export default function App() {
     <div className="akerun-screen akerun-modal-screen">
       <div className="akerun-modal-card">
         <p className="akerun-kicker">PAUSED / 一時停止</p>
-        <h2>同じ問題を保持しています。</h2>
-        <p>タイマーと入力は停止しています。再開しても問題は抽選し直しません。</p>
+        <h2>{mode === "competition" ? "競技は終了しました。" : "同じ問題を保持しています。"}</h2>
+        <p>{mode === "competition" ? "競技中に停止したため、このプレイはランキング対象外です。通常の進行ゲームや自由練習では一時停止できます。" : "タイマーと入力は停止しています。再開しても問題を抽選し直しません。"}</p>
         <div className="akerun-title-actions">
-          <Button tone="primary" onClick={resume}>再開</Button>
-          <Button onClick={() => openOverlay("settings")}>設定</Button>
+          {mode === "competition"
+            ? <Button tone="primary" onClick={() => setScreen("result")}>結果へ</Button>
+            : <Button tone="primary" onClick={resume}>再開</Button>}
+          {mode !== "competition" ? <Button onClick={() => openOverlay("settings")}>設定</Button> : null}
           <Button tone="danger" onClick={retire}>リタイア</Button>
         </div>
       </div>
@@ -794,13 +976,16 @@ export default function App() {
     const result = snapshot?.runResult;
     const isRetired = mode === "retired" || snapshot?.status === "retired";
     const isPractice = mode === "practice";
+    const isCompetition = mode === "competition";
+    const isRankedMode = mode === "official" || mode === "competition";
     const canReplay = mode === "official" || mode === "practice";
     return (
       <div className="akerun-screen akerun-modal-screen">
         <div className="akerun-result-card">
-          <p className="akerun-kicker">{isRetired ? "RETIRED / リタイア" : mode === "demo" ? "EXAMPLE RESULT / お手本" : isPractice ? "FREE PRACTICE / 自由練習" : "UNLOCK COMPLETE / 開錠完了"}</p>
-          <h2>{isRetired ? "今回は記録しません。" : isPractice ? "練習を完了しました。" : snapshot?.rewardTitle ?? "開錠しました。"}</h2>
+          <p className="akerun-kicker">{isRetired ? "RETIRED / リタイア" : mode === "demo" ? "EXAMPLE RESULT / お手本" : isPractice ? "FREE PRACTICE / 自由練習" : isCompetition ? "DAILY COMPETITION / 本日の競技" : "UNLOCK COMPLETE / 開錠完了"}</p>
+          <h2>{isRetired ? "今回は記録しません。" : isPractice ? "練習を完了しました。" : isCompetition ? "競技を完了しました。" : snapshot?.rewardTitle ?? "開錠しました。"}</h2>
           <p className="akerun-result-subtitle">{snapshot?.problemId} / {snapshot?.problemVersion} / {snapshot?.vaultTitle}</p>
+          {isCompetition ? <p className="akerun-small">競技日（日本時間）：{competitionDay ?? competitionDayForDate()}。一時停止・画面離脱をしたプレイは対象外です。</p> : null}
           {mode === "official" && !isRetired ? <p className="akerun-small">獲得収蔵品：{snapshot?.rewardTitle ?? "—"}</p> : null}
           {mode === "official" && !isRetired && snapshot?.newlyUnlockedRewards.length ? (
             <p className="akerun-submit-status">今回解放：{snapshot.newlyUnlockedRewards.join(" / ")}</p>
@@ -813,18 +998,20 @@ export default function App() {
             <Stat label="余分な回転" value={result?.excessDialSteps ?? snapshot?.excessDialSteps ?? 0} />
             <Stat label="偽ゲート接触" value={result?.falseGateContacts ?? snapshot?.falseGateContacts ?? 0} />
             <Stat label="観察精度" value={String(result?.observationAccuracy ?? snapshot?.observationAccuracy ?? 0) + "%"} />
-            <Stat label="自己ベスト" value={best?.score ?? "—"} />
+            <Stat label="自己ベスト" value={mode === "official" ? best?.score ?? "—" : "—"} />
           </div>
           {!isRetired && mode === "official" ? <p className="akerun-small">偽ゲート接触は物理的な通過数を表示し、問題ごとの不可避な基準通過はスコアから除外しています。</p> : null}
           <p className="akerun-submit-status">{
             mode === "official" && !isRetired
               ? submitStatus
-              : isPractice && !isRetired
-                ? "自由練習の結果は進行やランキングへ保存しません。"
-                : "訓練・お手本・リタイアはランキング対象外です。"
+              : isCompetition && !isRetired
+                ? submitStatus
+                : isPractice && !isRetired
+                  ? "自由練習の結果は進行やランキングへ保存しません。"
+                  : retiredNotice || "訓練・お手本・リタイアはランキング対象外です。"
           }</p>
           <div className="akerun-title-actions">
-            {mode === "official" && !isRetired ? <Button
+            {isRankedMode && !isRetired ? <Button
               disabled={!retryAvailable || submitStatus === "送信中…" || submitStatus === "再送中…"}
               onClick={() => {
                 if (!retryAvailable) return;
@@ -834,9 +1021,9 @@ export default function App() {
                 setRetryNonce((current) => current + 1);
               }}
             >記録を再送する</Button> : null}
-            <Button tone="primary" onClick={startSameProblem} disabled={!problem || !canReplay || startingOfficial}>同じ問題でもう一度</Button>
-            <Button onClick={startDifferentProblem} disabled={!canReplay || startingOfficial}>{isPractice ? "別の練習問題" : "次の進行問題"}</Button>
-            <Button onClick={openRanking}>ランキング</Button>
+            {canReplay ? <Button tone="primary" onClick={startSameProblem} disabled={!problem || startingOfficial}>同じ問題でもう一度</Button> : null}
+            {canReplay ? <Button onClick={startDifferentProblem} disabled={startingOfficial}>{isPractice ? "別の練習問題" : "次の進行問題"}</Button> : null}
+            {isCompetition && !isRetired ? <Button onClick={openDailyRanking}>本日の競技ランキング</Button> : <Button onClick={openRanking}>ランキング</Button>}
             <Button onClick={() => void shareResult()}>結果を共有</Button>
             <Button onClick={() => setScreen("title")}>タイトルへ戻る</Button>
           </div>
@@ -862,6 +1049,30 @@ export default function App() {
         </div>
         <div className="akerun-title-actions">
           <Button onClick={() => void loadRanking()}>再読み込み</Button>
+          <Button tone="primary" onClick={closeOverlay}>戻る</Button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderCompetitionRanking = () => (
+    <div className="akerun-screen akerun-modal-screen">
+      <div className="akerun-modal-card akerun-ranking-card">
+        <p className="akerun-kicker">DAILY COMPETITION / 本日の競技</p>
+        <h2>同じ問題のランキング</h2>
+        <p>{dailyRankingStatus}</p>
+        <p className="akerun-small">問題はサーバーが日本時間の日付ごとに固定します。競技中に停止・画面離脱したプレイは掲載されません。</p>
+        <div className="akerun-ranking-list">
+          {dailyRankingRows.map((row, index) => (
+            <div className="akerun-ranking-row" key={String(RankingClient.rank(row, index + 1)) + "-" + RankingClient.displayName(row)}>
+              <strong>{RankingClient.rank(row, index + 1)}</strong>
+              <span>{RankingClient.displayName(row)}</span>
+              <b>{RankingClient.score(row)}</b>
+            </div>
+          ))}
+        </div>
+        <div className="akerun-title-actions">
+          <Button onClick={() => void loadDailyRanking()}>再読み込み</Button>
           <Button tone="primary" onClick={closeOverlay}>戻る</Button>
         </div>
       </div>
@@ -949,7 +1160,7 @@ export default function App() {
           <li>テンションを抵抗帯へ合わせ、フェンスを座らせる。</li>
           <li>ロックボルトを退避させ、扉ハンドルで扉側ボルトを抜く。</li>
         </ol>
-        <p className="akerun-small">一時停止中はタイマーと入力が止まります。背景へ移った場合も自動で一時停止します。</p>
+        <p className="akerun-small">通常の進行ゲームと自由練習では一時停止できます。本日の競技では停止・設定・ヘルプ・画面離脱をするとランキング対象外になります。</p>
         <Button tone="primary" onClick={closeOverlay}>戻る</Button>
       </div>
     </div>
@@ -964,6 +1175,7 @@ export default function App() {
     if (screen === "pause") return renderPause();
     if (screen === "result") return renderResult();
     if (screen === "ranking") return renderRanking();
+    if (screen === "competition-ranking") return renderCompetitionRanking();
     if (screen === "archive") return renderArchive();
     if (screen === "settings") return renderSettings();
     if (screen === "sound-lab") return renderSoundLab();

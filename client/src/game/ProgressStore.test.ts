@@ -195,4 +195,34 @@ describe("ProgressStore", () => {
     expect(store.getActiveRun()?.checkpoint).toBeUndefined();
     vi.unstubAllGlobals();
   });
+
+  it("restores competition mode and its Japan-local day", () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+        removeItem: (key: string) => values.delete(key),
+      },
+    });
+    const store = new ProgressStore();
+
+    store.saveActiveRun(
+      "AKERUN-07-V1",
+      "V1",
+      "player one",
+      "competition-run-1",
+      null,
+      "competition",
+      "2026-08-29",
+    );
+
+    expect(store.getActiveRun()).toMatchObject({
+      runMode: "competition",
+      competitionDay: "2026-08-29",
+      rankingRunToken: "competition-run-1",
+    });
+    vi.unstubAllGlobals();
+  });
+
 });

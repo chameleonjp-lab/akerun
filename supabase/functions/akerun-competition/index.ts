@@ -242,6 +242,27 @@ Deno.serve(async (req: Request) => {
     }
 
     if (body.action === "prepare") {
+      const requestedRunMode = body.runMode;
+      if (requestedRunMode !== undefined
+        && requestedRunMode !== "official"
+        && requestedRunMode !== "competition") {
+        return json(req, 400, { accepted: false, reason: "invalid_run_mode" });
+      }
+
+      if (requestedRunMode === "competition") {
+        const result = await callInternalRpc("akerun_prepare_competition_run_internal", {
+          p_display_name: requiredString(body, "playerName"),
+          p_client_version: CLIENT_VERSION,
+        }) as Record<string, unknown> | null;
+        return json(req, 200, {
+          accepted: result?.accepted === true,
+          runToken: result?.run_token || null,
+          problemId: result?.problem_id || null,
+          problemVersion: result?.problem_version || null,
+          competitionDay: result?.competition_day || null,
+        });
+      }
+
       const result = await callInternalRpc("akerun_prepare_run_internal", {
         p_display_name: requiredString(body, "playerName"),
         p_client_version: CLIENT_VERSION,

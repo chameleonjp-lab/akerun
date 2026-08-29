@@ -32,6 +32,15 @@ export type RankingRunPreparation = {
   readonly problemVersion: string | null;
 };
 
+
+export type CompetitionRunPreparation = {
+  readonly status: "ok" | "disabled" | "error";
+  readonly runToken: string | null;
+  readonly problemId: string | null;
+  readonly problemVersion: string | null;
+  readonly competitionDay: string | null;
+};
+
 export type RankingRunStart = {
   readonly status: "ok" | "error";
   readonly problemId: string | null;
@@ -85,6 +94,12 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 
 const stringOrNull = (value: unknown) =>
   typeof value === "string" && value.trim() ? value.trim() : null;
+
+
+const competitionDayOrNull = (value: unknown) => {
+  const day = stringOrNull(value);
+  return day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null;
+};
 
 const submittedFalseGateContacts = (result: RunResult) => {
   if (result.avoidableFalseGateContacts !== undefined) {
@@ -188,6 +203,47 @@ export class RankingClient {
     }
   }
 
+
+  async prepareCompetitionRun(playerName: string): Promise<CompetitionRunPreparation> {
+    try {
+      const data = await this.competitionRequest("prepare", {
+        playerName,
+        runMode: "competition",
+      });
+      if (data.disabled === true) {
+        return {
+          status: "disabled",
+          runToken: null,
+          problemId: null,
+          problemVersion: null,
+          competitionDay: null,
+        };
+      }
+      const runToken = stringOrNull(data.runToken);
+      const problemId = stringOrNull(data.problemId);
+      const problemVersion = stringOrNull(data.problemVersion);
+      const competitionDay = competitionDayOrNull(data.competitionDay);
+      if (data.accepted !== true || !runToken || !problemId || !problemVersion || !competitionDay) {
+        return {
+          status: "error",
+          runToken: null,
+          problemId: null,
+          problemVersion: null,
+          competitionDay: null,
+        };
+      }
+      return { status: "ok", runToken, problemId, problemVersion, competitionDay };
+    } catch {
+      return {
+        status: "error",
+        runToken: null,
+        problemId: null,
+        problemVersion: null,
+        competitionDay: null,
+      };
+    }
+  }
+
   async beginOfficialRun(runToken: string): Promise<RankingRunStart> {
     // begin は同じトークンに対して冪等なので、応答だけが失われた
     // 一時的な通信断では同じ実行をもう一度確認できる。
@@ -271,6 +327,19 @@ export class RankingClient {
     const response = await client.rpc("get_akerun_ranking_v1", {
       p_limit: Math.max(1, Math.min(100, Math.trunc(limit))),
     });
+    if (response.error) throw response.error;
+    const rows = Array.isArray(response.data) ? response.data : [];
+    return rows as RankingRow[];
+  }
+
+
+  async getDailyScores(competitionDay?: string | null): Promise<RankingRow[]> {
+    const client = await this.connect();
+    if (!client) throw new Error("ranking client unavailable");
+    const day = competitionDayOrNull(competitionDay);
+    const response = await client.rpc("get_akerun_daily_ranking_v1", day
+      ? { p_competition_day: day }
+      : {});
     if (response.error) throw response.error;
     const rows = Array.isArray(response.data) ? response.data : [];
     return rows as RankingRow[];

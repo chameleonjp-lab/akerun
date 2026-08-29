@@ -134,4 +134,48 @@ describe("RankingClient", () => {
     expect(RankingClient.rank(rows[0]!, 1)).toBe(1);
     expect(RankingClient.score(rows[0]!)).toBe(11720);
   });
+
+  it("prepares a server-selected daily competition run", async () => {
+    const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      expect(body.action).toBe("prepare");
+      expect(body.runMode).toBe("competition");
+      return new Response(JSON.stringify({
+        accepted: true,
+        runToken: "competition-run-1",
+        problemId: "AKERUN-07-V1",
+        problemVersion: "V1",
+        competitionDay: "2026-08-29",
+      }), { status: 200 });
+    });
+    const client = new RankingClient({ fetch });
+
+    await expect(client.prepareCompetitionRun("player one"))
+      .resolves.toEqual({
+        status: "ok",
+        runToken: "competition-run-1",
+        problemId: "AKERUN-07-V1",
+        problemVersion: "V1",
+        competitionDay: "2026-08-29",
+      });
+  });
+
+  it("reads the server-selected daily competition ranking", async () => {
+    const rpc = {
+      rpc: vi.fn(async (name: string, params: Record<string, unknown>) => {
+        expect(name).toBe("get_akerun_daily_ranking_v1");
+        expect(params).toEqual({ p_competition_day: "2026-08-29" });
+        return {
+          data: [{ rank_no: 1, display_name: "player one", score: 12000, fault_count: 0 }],
+          error: null,
+        };
+      }),
+    };
+    const client = new RankingClient({ rpcClient: rpc });
+
+    await expect(client.getDailyScores("2026-08-29")).resolves.toMatchObject([
+      { rank_no: 1, display_name: "player one", score: 12000 },
+    ]);
+  });
+
 });
