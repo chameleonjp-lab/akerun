@@ -82,6 +82,27 @@ describe("ProgressStore", () => {
     vi.unstubAllGlobals();
   });
 
+  it("keeps failed run cleanup durable until the server confirms it", () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+        removeItem: (key: string) => values.delete(key),
+      },
+    });
+    const store = new ProgressStore();
+
+    store.enqueueRunAbandonment("run-token-1");
+    store.enqueueRunAbandonment("run-token-1");
+
+    expect(store.getPendingRunAbandonments()).toHaveLength(1);
+    expect(store.getPendingRunAbandonments()[0]?.runToken).toBe("run-token-1");
+    store.removeRunAbandonment("run-token-1");
+    expect(store.getPendingRunAbandonments()).toHaveLength(0);
+    vi.unstubAllGlobals();
+  });
+
   it("keeps the verified run token with an active and pending result", () => {
     const values = new Map<string, string>();
     vi.stubGlobal("window", {

@@ -9,6 +9,11 @@ export type PendingRankingRecord = {
   readonly createdAt: string;
 };
 
+export type PendingRunAbandonment = {
+  readonly runToken: string;
+  readonly createdAt: string;
+};
+
 export type ActiveRunRecord = {
   readonly problemId: string;
   readonly problemVersion: string;
@@ -23,6 +28,7 @@ const PLAYER_NAME_KEY = "akerun-player-name";
 const TRAINING_KEY = "akerun-training-complete";
 const BEST_KEY = "akerun-self-bests";
 const PENDING_KEY = "akerun-pending-rankings";
+const PENDING_ABANDON_KEY = "akerun-pending-abandonments";
 const ACTIVE_RUN_KEY = "akerun-active-run";
 const ARCHIVE_KEY = "vault-tumbler-lab-archive";
 
@@ -168,6 +174,37 @@ export class ProgressStore {
     } catch {
       // 保存できない環境でもプレイは継続する。
     }
+  }
+
+  enqueueRunAbandonment(runToken: string) {
+    const token = String(runToken).trim();
+    if (!token) return this.getPendingRunAbandonments();
+    const existing = this.getPendingRunAbandonments();
+    if (existing.some((item) => item.runToken === token)) return existing;
+    const next = [
+      ...existing,
+      { runToken: token, createdAt: new Date().toISOString() },
+    ];
+    writeJson(PENDING_ABANDON_KEY, next);
+    return next;
+  }
+
+  getPendingRunAbandonments(): PendingRunAbandonment[] {
+    const records = readJson<PendingRunAbandonment[]>(PENDING_ABANDON_KEY, []);
+    return Array.isArray(records)
+      ? records
+        .filter((item) => item?.runToken)
+        .map((item) => ({
+          runToken: String(item.runToken),
+          createdAt: typeof item.createdAt === "string" ? item.createdAt : "",
+        }))
+      : [];
+  }
+
+  removeRunAbandonment(runToken: string) {
+    const token = String(runToken).trim();
+    const next = this.getPendingRunAbandonments().filter((item) => item.runToken !== token);
+    writeJson(PENDING_ABANDON_KEY, next);
   }
 
   pendingId(result: RunResult, rankingRunToken?: string | null) {

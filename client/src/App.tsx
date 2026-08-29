@@ -101,6 +101,30 @@ export default function App() {
   const gameHandleRef = useRef<GameHandle | null>(null);
   const activeRunContextRef = useRef<{ playerName: string; rankingRunToken: string | null } | null>(null);
   const lastCheckpointSavedAtRef = useRef(0);
+  const pendingAbandonmentRequestsRef = useRef(new Map<string, Promise<boolean>>());
+
+  const requestOfficialRunAbandonment = useCallback((runToken: string | null | undefined) => {
+    if (!runToken) return Promise.resolve(false);
+    const token = String(runToken);
+    store.enqueueRunAbandonment(token);
+    const existing = pendingAbandonmentRequestsRef.current.get(token);
+    if (existing) return existing;
+    const request = rankingClient.abandonOfficialRun(token)
+      .then((abandoned) => {
+        if (abandoned) store.removeRunAbandonment(token);
+        return abandoned;
+      })
+      .finally(() => {
+        pendingAbandonmentRequestsRef.current.delete(token);
+      });
+    pendingAbandonmentRequestsRef.current.set(token, request);
+    return request;
+  }, [rankingClient, store]);
+
+  const flushPendingRunAbandonments = useCallback(async () => {
+    const pending = store.getPendingRunAbandonments();
+    await Promise.all(pending.map((item) => requestOfficialRunAbandonment(item.runToken)));
+  }, [requestOfficialRunAbandonment, store]);
 
   const onReady = useCallback((nextHandle: GameHandle | null) => {
     gameHandleRef.current = nextHandle;
@@ -126,6 +150,10 @@ export default function App() {
     lastCheckpointSavedAtRef.current = performance.now();
     return true;
   }, [store]);
+
+  useEffect(() => {
+    void flushPendingRunAbandonments();
+  }, [flushPendingRunAbandonments]);
 
   const onSnapshot = useCallback((nextSnapshot: GameSnapshot) => {
     setSnapshot(nextSnapshot);
@@ -156,6 +184,9 @@ export default function App() {
       }
     }
     if (mode === "official" && nextSnapshot.status === "retired" && screen !== "result") {
+      // リタイアと公式RESETは同じ後始末を通り、通信断でもトークンを
+      // 端末内の破棄待ちキューへ残して次回起動時に再送する。
+      requestOfficialRunAbandonment(activeRun?.rankingRunToken);
       activeRunContextRef.current = null;
       lastCheckpointSavedAtRef.current = 0;
       store.clearActiveRun();
@@ -163,7 +194,7 @@ export default function App() {
       setMode("retired");
       setScreen("result");
     }
-  }, [mode, screen, store]);
+  }, [mode, requestOfficialRunAbandonment, screen, store]);
 
   const onVisibilityPause = useCallback(() => {
     // 開錠演出中は機構がすでに停止している。ここでPAUSEへ遷移すると、
@@ -176,8 +207,8 @@ export default function App() {
   const abandonUnclaimedOfficialRun = (runToken: string | null | undefined) => {
     if (!runToken) return;
     // 開始確認に失敗した実行は、端末内プレイへ移る前にサーバー側でも
-    // 競技用トークンを破棄する。通信断時はサーバーの予約期限が後始末する。
-    void rankingClient.abandonOfficialRun(runToken);
+    // 競技用トークンを破棄する。通信断時は破棄待ちキューへ残す。
+    void requestOfficialRunAbandonment(runToken);
   };
 
   useEffect(() => {
@@ -268,6 +299,9 @@ export default function App() {
     setStartingOfficial(true);
     setSubmitStatus("問題を準備中…");
     try {
+      // 前回の通信断で残った破棄要求を先に再送し、同じ名前の
+      // active run 上限を不要に消費しない。
+      await flushPendingRunAbandonments();
       setPlayerName(savedName);
       let chosen: PuzzleDefinition | null = null;
       let nextRankingRunToken: string | null = null;
@@ -424,6 +458,9 @@ export default function App() {
   };
 
   const retire = () => {
+    if (mode === "official") {
+      requestOfficialRunAbandonment(activeRunContextRef.current?.rankingRunToken);
+    }
     handle?.retire();
     store.clearActiveRun();
     activeRunContextRef.current = null;
