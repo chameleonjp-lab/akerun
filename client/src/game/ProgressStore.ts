@@ -14,6 +14,13 @@ export type PendingRunAbandonment = {
   readonly createdAt: string;
 };
 
+export type OfficialClearRecord = {
+  readonly problemId: string;
+  readonly problemVersion: string;
+  readonly firstClearedAt: string;
+  readonly clearCount: number;
+};
+
 export type ActiveRunRecord = {
   readonly problemId: string;
   readonly problemVersion: string;
@@ -26,6 +33,7 @@ export type ActiveRunRecord = {
 
 const PLAYER_NAME_KEY = "akerun-player-name";
 const TRAINING_KEY = "akerun-training-complete";
+const OFFICIAL_PROGRESS_KEY = "akerun-official-clears-v1";
 const BEST_KEY = "akerun-self-bests";
 const PENDING_KEY = "akerun-pending-rankings";
 const PENDING_ABANDON_KEY = "akerun-pending-abandonments";
@@ -73,6 +81,7 @@ export const normalizePlayerName = (value: string) =>
 
 export class ProgressStore {
   private sessionTrainingComplete = false;
+  private readonly sessionOfficialClearKeys = new Set<string>();
 
   getPlayerName() {
     try {
@@ -110,6 +119,65 @@ export class ProgressStore {
     }
   }
 
+  getOfficialClearRecords(): OfficialClearRecord[] {
+    const records = readJson<OfficialClearRecord[]>(OFFICIAL_PROGRESS_KEY, []);
+    return Array.isArray(records)
+      ? records
+        .filter((record) =>
+          typeof record?.problemId === "string"
+          && typeof record.problemVersion === "string"
+          && typeof record.firstClearedAt === "string"
+          && Number.isInteger(record.clearCount)
+          && record.clearCount > 0
+        )
+        .map((record) => ({
+          problemId: String(record.problemId),
+          problemVersion: String(record.problemVersion),
+          firstClearedAt: String(record.firstClearedAt),
+          clearCount: Math.max(1, Math.floor(record.clearCount)),
+        }))
+      : [];
+  }
+
+  getOfficialClearKeys() {
+    const keys = new Set(
+      this.getOfficialClearRecords().map(
+        (record) => record.problemId + "@" + record.problemVersion
+      )
+    );
+    this.sessionOfficialClearKeys.forEach((key) => keys.add(key));
+    return Array.from(keys);
+  }
+
+  recordOfficialClear(problemId: string, problemVersion: string) {
+    const normalizedProblemId = String(problemId).trim();
+    const normalizedProblemVersion = String(problemVersion).trim();
+    if (!normalizedProblemId || !normalizedProblemVersion) return null;
+
+    const key = normalizedProblemId + "@" + normalizedProblemVersion;
+    this.sessionOfficialClearKeys.add(key);
+    const records = this.getOfficialClearRecords();
+    const index = records.findIndex(
+      (record) =>
+        record.problemId === normalizedProblemId
+        && record.problemVersion === normalizedProblemVersion
+    );
+    const previous = index >= 0 ? records[index] : null;
+    const nextRecord: OfficialClearRecord = previous
+      ? { ...previous, clearCount: previous.clearCount + 1 }
+      : {
+        problemId: normalizedProblemId,
+        problemVersion: normalizedProblemVersion,
+        firstClearedAt: new Date().toISOString(),
+        clearCount: 1,
+      };
+    const next = [...records];
+    if (index >= 0) next[index] = nextRecord;
+    else next.push(nextRecord);
+    writeJson(OFFICIAL_PROGRESS_KEY, next);
+    return nextRecord;
+  }
+
   getBest(problemId: string, problemVersion: string) {
     const records = readJson<Record<string, RunResult>>(BEST_KEY, {});
     return records[problemId + "@" + problemVersion] ?? null;
@@ -136,6 +204,7 @@ export class ProgressStore {
     rankingRunToken?: string | null,
   ) {
     this.recordBest(result);
+    this.recordOfficialClear(result.problemId, result.problemVersion);
     if (rankingRunToken) this.enqueueRanking(playerName, result, rankingRunToken);
     // 開錠済みの実行を、途中状態として再開できる記録から外す。
     this.clearActiveRun();

@@ -5,9 +5,10 @@ import type { GameHandle } from "./game/scene";
 import type { GameSnapshot } from "./game/VaultWorld";
 import { AUDIO_SAMPLE_DEFINITIONS, type AudioSampleId } from "./game/AudioFeedback";
 import {
-  chooseOfficialProblem,
+  chooseProgressionProblem,
   createOfficialPuzzle,
   createTrainingPuzzle,
+  OFFICIAL_PROBLEM_CATALOG,
   REWARD_DEFINITIONS,
   type PuzzleDefinition,
 } from "./game/GameDefinitions";
@@ -47,6 +48,12 @@ const rarityLabel: Record<string, string> = {
   standard: "通常品",
   rare: "希少品",
   special: "特別品",
+};
+
+const problemTierLabel: Record<string, string> = {
+  beginner: "初級",
+  standard: "中級",
+  advanced: "上級",
 };
 
 const tutorialCards = [
@@ -293,6 +300,9 @@ export default function App() {
       return;
     }
     if (startingOfficial || startingOfficialRef.current) return;
+    const progressionProblem = requestedProblemId
+      ? null
+      : chooseProgressionProblem(store.getOfficialClearKeys());
     const interruptedRun = requestedProblemId ? null : store.getActiveRun();
     const savedName = interruptedRun?.playerName ? store.savePlayerName(interruptedRun.playerName) : validateName();
     if (!savedName || !handle) return;
@@ -359,7 +369,7 @@ export default function App() {
         resumeCheckpoint = undefined;
         const preparation = await rankingClient.prepareOfficialRun(
           savedName,
-          requestedProblemId,
+          requestedProblemId ?? progressionProblem?.problemId,
           replayRunToken,
         );
         if (preparation.status === "disabled") {
@@ -395,7 +405,7 @@ export default function App() {
             chosen = null;
           }
         }
-        chosen ??= chooseOfficialProblem();
+        chosen ??= progressionProblem ?? chooseProgressionProblem(store.getOfficialClearKeys());
         nextRankingRunToken = null;
         resumeCheckpoint = undefined;
       }
@@ -567,6 +577,11 @@ export default function App() {
     }
   };
 
+  const officialClearKeys = store.getOfficialClearKeys();
+  const clearedOfficialCount = OFFICIAL_PROBLEM_CATALOG.filter((item) =>
+    officialClearKeys.includes(item.problemId + "@" + item.problemVersion)
+  ).length;
+  const nextProgressionProblem = chooseProgressionProblem(officialClearKeys);
   const archiveIds = store.getArchiveIds();
   const pendingCount = store.getPendingRankings().length;
   const activeRun = store.getActiveRun();
@@ -584,7 +599,7 @@ export default function App() {
       <div className="akerun-title-card">
         <p className="akerun-kicker">VAULT TUMBLER LAB / AKERUN</p>
         <h1>金庫を、観察で開ける。</h1>
-        <p className="akerun-lead">音や反応を確かめながら、金庫の内部機構を読み解きます。毎回20問から一問が固定され、速さと正確さを競います。</p>
+        <p className="akerun-lead">音や反応を確かめながら、金庫の内部機構を読み解きます。初級から順番に未クリア問題へ進み、20問を終えたら再挑戦できます。</p>
         <label className="akerun-field">
           <span>プレイヤー名（ランキング登録名）</span>
           <input
@@ -604,8 +619,9 @@ export default function App() {
             ? `前回の ${activeRun.problemId} は中断されています。保存済みの状態から再開します。`
             : `前回の ${activeRun.problemId} は旧形式の中断記録です。新しい問題を準備します。`}
         </p> : null}
+        <p className="akerun-small">進行状況：公式問題 ${clearedOfficialCount} / ${OFFICIAL_PROBLEM_CATALOG.length} 問クリア。次は ${nextProgressionProblem.problemId}（${problemTierLabel[nextProgressionProblem.problemTier ?? "standard"]}）です。</p>
         <div className="akerun-title-actions">
-          <Button tone="primary" onClick={() => void startOfficial()} disabled={!handle || startingOfficial}>{startingOfficial ? "問題を準備中…" : "ゲーム開始"}</Button>
+          <Button tone="primary" onClick={() => void startOfficial()} disabled={!handle || startingOfficial}>{startingOfficial ? "問題を準備中…" : "進行ゲームを開始"}</Button>
           <Button onClick={() => { setTutorialStep(1); setScreen("tutorial"); }}>初めて遊ぶ</Button>
           <Button onClick={startDemo} disabled={!handle}>お手本を見る</Button>
         </div>
@@ -638,7 +654,7 @@ export default function App() {
           {finished ? (
             <>
               <h2>訓練が終わりました。</h2>
-              <p>回す、反応を見る、判断を直す。この流れを使って、20問の通常ゲームへ進めます。</p>
+              <p>回す、反応を見る、判断を直す。この流れを使って、初級から順番に進みます。</p>
               <Button tone="primary" onClick={() => void startOfficial()} disabled={startingOfficial}>{startingOfficial ? "問題を準備中…" : "通常ゲームへ"}</Button>
               <Button onClick={() => setScreen("title")}>タイトルへ戻る</Button>
             </>
@@ -756,7 +772,7 @@ export default function App() {
               }}
             >記録を再送する</Button> : null}
             <Button tone="primary" onClick={startSameProblem} disabled={!problem || mode !== "official" || startingOfficial}>同じ問題でもう一度</Button>
-            <Button onClick={startDifferentProblem} disabled={mode !== "official" || startingOfficial}>別の問題に挑戦</Button>
+            <Button onClick={startDifferentProblem} disabled={mode !== "official" || startingOfficial}>次の進行問題へ</Button>
             <Button onClick={openRanking}>ランキング</Button>
             <Button onClick={() => void shareResult()}>結果を共有</Button>
             <Button onClick={() => setScreen("title")}>タイトルへ戻る</Button>

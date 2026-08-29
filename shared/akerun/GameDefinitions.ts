@@ -615,6 +615,34 @@ export const chooseOfficialProblem = (excludeProblemId?: string): PuzzleDefiniti
   return createOfficialPuzzle(available[index]?.problemId ?? OFFICIAL_PROBLEM_CATALOG[0].problemId);
 };
 
+/**
+ * 進行モードは、未クリア問題を初級・中級・上級の順で選ぶ。
+ * 同じ難易度の中ではカタログ順に固定し、初回の偶然な上級問題を避ける。
+ */
+export const chooseProgressionProblem = (
+  clearedProblemKeys: readonly string[] = []
+): PuzzleDefinition => {
+  const cleared = new Set(clearedProblemKeys);
+  const tiers: readonly ProblemTier[] = ["beginner", "standard", "advanced"];
+  const selectedTier = tiers.find((tier) =>
+    OFFICIAL_PROBLEM_CATALOG.some(
+      (problem) =>
+        problem.tier === tier
+        && !cleared.has(problem.problemId + "@" + problem.problemVersion)
+    )
+  ) ?? "advanced";
+  const nextProblem = OFFICIAL_PROBLEM_CATALOG.find(
+    (problem) =>
+      problem.tier === selectedTier
+      && !cleared.has(problem.problemId + "@" + problem.problemVersion)
+  );
+
+  // 20問をすべてクリアした後は、カタログ先頭を再挑戦対象にする。
+  return createOfficialPuzzle(
+    nextProblem?.problemId ?? OFFICIAL_PROBLEM_CATALOG[0].problemId
+  );
+};
+
 export const createTrainingPuzzle = (step: 1 | 2 | 3 | 4): PuzzleDefinition => {
   if (step === 2) return createFalseGateTrainingPuzzle();
   const wheelCount = step === 1 ? 1 : 3;

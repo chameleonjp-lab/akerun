@@ -57,6 +57,24 @@ describe("ProgressStore", () => {
     vi.unstubAllGlobals();
   });
 
+  it("records official clears for the progression mode", () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+        removeItem: (key: string) => values.delete(key),
+      },
+    });
+    const store = new ProgressStore();
+
+    expect(store.recordOfficialClear("AKERUN-01-V1", "V1")?.clearCount).toBe(1);
+    expect(store.recordOfficialClear("AKERUN-01-V1", "V1")?.clearCount).toBe(2);
+    expect(store.getOfficialClearKeys()).toEqual(["AKERUN-01-V1@V1"]);
+
+    vi.unstubAllGlobals();
+  });
+
   it("saves and restores the player name and best result", () => {
     const values = new Map<string, string>();
     vi.stubGlobal("window", {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  chooseProgressionProblem,
   createOfficialPuzzle,
   OFFICIAL_PROBLEM_CATALOG,
   createTrainingPuzzle,
@@ -60,6 +61,23 @@ describe("official puzzle catalog", () => {
     expect(
       OFFICIAL_PROBLEM_CATALOG.filter(item => item.tier === "advanced")
     ).toHaveLength(5);
+  });
+
+  it("starts with beginner problems and advances through unplayed tiers", () => {
+    const keys = (problemIds: string[]) =>
+      problemIds.map((problemId) => problemId + "@V1");
+    const beginnerIds = OFFICIAL_PROBLEM_CATALOG
+      .filter((problem) => problem.tier === "beginner")
+      .map((problem) => problem.problemId);
+    const standardIds = OFFICIAL_PROBLEM_CATALOG
+      .filter((problem) => problem.tier === "standard")
+      .map((problem) => problem.problemId);
+
+    expect(chooseProgressionProblem().problemId).toBe("AKERUN-01-V1");
+    expect(chooseProgressionProblem(keys(["AKERUN-02-V1"])).problemId).toBe("AKERUN-01-V1");
+    expect(chooseProgressionProblem(keys(beginnerIds.slice(0, 1))).problemId).toBe("AKERUN-02-V1");
+    expect(chooseProgressionProblem(keys(beginnerIds)).problemId).toBe("AKERUN-06-V1");
+    expect(chooseProgressionProblem(keys([...beginnerIds, ...standardIds])).problemId).toBe("AKERUN-16-V1");
   });
 
   it("keeps each problem's targets and false gates valid", () => {
