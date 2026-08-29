@@ -193,15 +193,23 @@ export class VaultWorld {
       return;
     }
     const gameDelta = this.demoMode ? delta * this.demoSpeed : delta;
+    const safeDelta = Number.isFinite(gameDelta) && gameDelta > 0 ? gameDelta : 0;
+    // The timer and the deterministic mechanism now advance over the same interval.
+    // This keeps the server replay aligned with the browser at frame boundaries.
+    if (this.sessionActive && !this.mechanism.opened) {
+      this.runElapsed += safeDelta;
+      this.runSession?.advance(safeDelta);
+    }
     const wasOpened = this.mechanism.opened;
-    this.mechanism.tick(gameDelta);
-    if (this.demoMode) this.advanceDemo(gameDelta);
+    let remainingDelta = safeDelta;
+    while (remainingDelta > 0 && !this.mechanism.opened) {
+      const step = Math.min(0.25, remainingDelta);
+      this.mechanism.tick(step);
+      remainingDelta -= step;
+    }
+    if (this.demoMode) this.advanceDemo(safeDelta);
     if (!wasOpened && this.mechanism.opened) this.completeUnlock();
     this.syncPhysicalFeedback();
-    if (this.sessionActive && !this.mechanism.opened) {
-      this.runElapsed += gameDelta;
-      this.runSession?.advance(gameDelta);
-    }
     const targetOpening = this.mechanism.opened ? 1 : 0;
     this.openingProgress = this.reducedMotion
       ? targetOpening
@@ -447,27 +455,27 @@ export class VaultWorld {
     const travel = Math.max(touch ? 72 : 56, layout.width * (touch ? 0.18 : 0.11));
     if (input === "tension") {
       const value = clamp((point.x - physicalPointerStart.x - deadZone) / travel, 0, 1);
-      this.mechanism.setTension(value);
+      this.setTension(value);
       this.audio.tensionLoad(value);
       return;
     }
     if (input === "fence") {
       if (Math.abs(point.x - physicalPointerStart.x) > 24) {
-        this.mechanism.setFenceTravel(0);
+        this.setFenceTravel(0);
         return;
       }
       const value = clamp((physicalPointerStart.y - point.y - deadZone) / travel, 0, 1);
-      this.mechanism.setFenceTravel(value);
+      this.setFenceTravel(value);
       this.audio.fenceProbe(value);
       return;
     }
     const value = clamp((point.x - physicalPointerStart.x - deadZone) / travel, 0, 1);
     if (input === "bolt") {
-      this.mechanism.setBoltTravel(value);
+      this.setBoltTravel(value);
       this.audio.boltSlide(value);
       return;
     }
-    this.mechanism.setHandleTurn(value);
+    this.setHandleTurn(value);
     this.audio.boltworkSlide(value);
   }
 
@@ -493,26 +501,26 @@ export class VaultWorld {
 
   private adjustFocusedActuator(direction: number) {
     const step = this.preciseInput ? 0.04 : 0.08;
-    if (this.keyboardFocus === "tension") this.mechanism.setTension(clamp(this.mechanism.desiredTorque + direction * step, 0, 1));
-    if (this.keyboardFocus === "fence") this.mechanism.setFenceTravel(clamp(this.mechanism.desiredFenceTravel + direction * step, 0, 1));
-    if (this.keyboardFocus === "bolt") this.mechanism.setBoltTravel(clamp(this.mechanism.desiredBoltTravel + direction * step, 0, 1));
-    if (this.keyboardFocus === "handle") this.mechanism.setHandleTurn(clamp(this.mechanism.desiredHandleTurn + direction * step, 0, 1));
+    if (this.keyboardFocus === "tension") this.setTension(clamp(this.mechanism.desiredTorque + direction * step, 0, 1));
+    if (this.keyboardFocus === "fence") this.setFenceTravel(clamp(this.mechanism.desiredFenceTravel + direction * step, 0, 1));
+    if (this.keyboardFocus === "bolt") this.setBoltTravel(clamp(this.mechanism.desiredBoltTravel + direction * step, 0, 1));
+    if (this.keyboardFocus === "handle") this.setHandleTurn(clamp(this.mechanism.desiredHandleTurn + direction * step, 0, 1));
   }
 
   private holdFocusedActuator() {
     const tensionBand = this.mechanism.puzzle.difficulty.tensionBand;
     const fenceBand = this.mechanism.puzzle.difficulty.fenceBand;
-    if (this.keyboardFocus === "tension") this.mechanism.setTension((tensionBand[0] + tensionBand[1]) / 2);
-    if (this.keyboardFocus === "fence") this.mechanism.setFenceTravel((fenceBand[0] + fenceBand[1]) / 2);
-    if (this.keyboardFocus === "bolt") this.mechanism.setBoltTravel(0.82);
-    if (this.keyboardFocus === "handle") this.mechanism.setHandleTurn(0.92);
+    if (this.keyboardFocus === "tension") this.setTension((tensionBand[0] + tensionBand[1]) / 2);
+    if (this.keyboardFocus === "fence") this.setFenceTravel((fenceBand[0] + fenceBand[1]) / 2);
+    if (this.keyboardFocus === "bolt") this.setBoltTravel(0.82);
+    if (this.keyboardFocus === "handle") this.setHandleTurn(0.92);
   }
 
   private releaseFocusedActuator() {
-    if (this.keyboardFocus === "tension") this.mechanism.setTension(0);
-    if (this.keyboardFocus === "fence" && this.mechanism.phase !== "fence-seated") this.mechanism.setFenceTravel(0);
-    if (this.keyboardFocus === "bolt" && !this.mechanism.opened) this.mechanism.setBoltTravel(0);
-    if (this.keyboardFocus === "handle" && !this.mechanism.opened) this.mechanism.setHandleTurn(0);
+    if (this.keyboardFocus === "tension") this.setTension(0);
+    if (this.keyboardFocus === "fence" && this.mechanism.phase !== "fence-seated") this.setFenceTravel(0);
+    if (this.keyboardFocus === "bolt" && !this.mechanism.opened) this.setBoltTravel(0);
+    if (this.keyboardFocus === "handle" && !this.mechanism.opened) this.setHandleTurn(0);
   }
 
   private handleAction(action: string) {
@@ -681,20 +689,20 @@ export class VaultWorld {
     }
     if ((this.mechanism.phase === "tension-ready" || this.mechanism.phase === "tension-test") && this.demoElapsed >= 0.08) {
       const band = this.mechanism.puzzle.difficulty.tensionBand;
-      this.mechanism.setTension((band[0] + band[1]) / 2);
+      this.setTension((band[0] + band[1]) / 2);
       return;
     }
     if (this.mechanism.phase === "fence-ready" && this.demoElapsed >= 0.08) {
       const band = this.mechanism.puzzle.difficulty.fenceBand;
-      this.mechanism.setFenceTravel((band[0] + band[1]) / 2);
+      this.setFenceTravel((band[0] + band[1]) / 2);
       return;
     }
     if ((this.mechanism.phase === "fence-seated" || this.mechanism.phase === "bolt-test") && this.demoElapsed >= 0.08) {
-      this.mechanism.setBoltTravel(0.84);
+      this.setBoltTravel(0.84);
       return;
     }
     if ((this.mechanism.phase === "boltwork-ready" || this.mechanism.phase === "handle-test") && this.demoElapsed >= 0.08) {
-      this.mechanism.setHandleTurn(0.92);
+      this.setHandleTurn(0.92);
       return;
     }
     if (this.mechanism.phase === "open") this.demoMode = false;
@@ -706,7 +714,14 @@ export class VaultWorld {
     const instantaneousSpeed = clamp((Math.abs(steps) / (elapsed / 1000)) / 108, 0, 1);
     this.smoothedRotationSpeed = this.smoothedRotationSpeed * 0.56 + instantaneousSpeed * 0.44;
     this.lastRotationAt = now;
-    const appliedSteps = this.preciseInput ? (steps > 0 ? 1 : -1) : steps;
+    const inputSteps = Number.isFinite(steps) ? Math.round(steps) : 0;
+    const appliedSteps = this.preciseInput
+      ? (inputSteps > 0 ? 1 : inputSteps < 0 ? -1 : 0)
+      : inputSteps;
+    // LockMechanism caps one call at 32 steps. Record and replay the effective
+    // operation so the client total cannot diverge from the server state.
+    const effectiveSteps = Math.sign(appliedSteps) * Math.min(32, Math.abs(appliedSteps));
+    if (!effectiveSteps) return;
     const previousDial = this.mechanism.dial;
     const previousStage = this.mechanism.stage;
     const previousPass = this.mechanism.currentPass;
@@ -715,13 +730,13 @@ export class VaultWorld {
     const previousFaults = this.mechanism.faultCount;
     this.runStarted = true;
     this.mechanism.setRotationSpeed(this.smoothedRotationSpeed);
-    this.mechanism.rotate(appliedSteps);
-    this.runSession?.recordDial(Math.abs(appliedSteps));
+    this.mechanism.rotate(effectiveSteps);
+    this.runSession?.recordRotation(effectiveSteps);
     if (this.mechanism.dial !== previousDial) {
       const preload = this.mechanism.puzzle.vault.preload;
       const personality = this.mechanism.puzzle.vault.personality;
       const audioSpeed = clamp(this.smoothedRotationSpeed * (0.72 + personality.speedSensitivity * 0.28), 0, 1);
-      this.audio.dialTick(appliedSteps > 0 ? "cw" : "ccw", audioSpeed, preload.baseResistance);
+      this.audio.dialTick(effectiveSteps > 0 ? "cw" : "ccw", audioSpeed, preload.baseResistance);
       const cueStage = this.mechanism.activeStage ?? previousActiveStage;
       const rotationFalseGateContacts = this.mechanism.lastRotationFalseGateContacts;
       for (let contact = 0; contact < rotationFalseGateContacts; contact += 1) this.runSession?.recordFalseGate();
@@ -845,19 +860,38 @@ export class VaultWorld {
     }
   }
 
+  private setTension(value: number) {
+    this.mechanism.setTension(value);
+    this.runSession?.recordActuator("tension", value);
+  }
+
+  private setFenceTravel(value: number) {
+    this.mechanism.setFenceTravel(value);
+    this.runSession?.recordActuator("fence", value);
+  }
+
+  private setBoltTravel(value: number) {
+    this.mechanism.setBoltTravel(value);
+    this.runSession?.recordActuator("bolt", value);
+  }
+
+  private setHandleTurn(value: number) {
+    this.mechanism.setHandleTurn(value);
+    this.runSession?.recordActuator("handle", value);
+  }
   private releasePhysicalInput() {
     this.inputController.release();
-    this.mechanism.setTension(0);
-    if (this.mechanism.phase !== "fence-seated") this.mechanism.setFenceTravel(0);
-    if (!this.mechanism.opened) this.mechanism.setBoltTravel(0);
-    if (!this.mechanism.opened) this.mechanism.setHandleTurn(0);
+    this.setTension(0);
+    if (this.mechanism.phase !== "fence-seated") this.setFenceTravel(0);
+    if (!this.mechanism.opened) this.setBoltTravel(0);
+    if (!this.mechanism.opened) this.setHandleTurn(0);
   }
 
   private endPhysicalInput(input: PhysicalInput) {
-    if (input === "tension") this.mechanism.setTension(0);
-    if (input === "fence" && this.mechanism.phase !== "fence-seated") this.mechanism.setFenceTravel(0);
-    if (input === "bolt" && !this.mechanism.opened) this.mechanism.setBoltTravel(0);
-    if (input === "handle" && !this.mechanism.opened) this.mechanism.setHandleTurn(0);
+    if (input === "tension") this.setTension(0);
+    if (input === "fence" && this.mechanism.phase !== "fence-seated") this.setFenceTravel(0);
+    if (input === "bolt" && !this.mechanism.opened) this.setBoltTravel(0);
+    if (input === "handle" && !this.mechanism.opened) this.setHandleTurn(0);
   }
 
   private draw() {

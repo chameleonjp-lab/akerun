@@ -1,8 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { replayAkerunTrace } from "./trace-verifier.ts";
 
 const CLIENT_VERSION = "akerun-web-verified-v2";
 const CONTRACT_VERSION = "akerun-play-v2";
-const MAX_REQUEST_BYTES = 20_000;
+const MAX_REQUEST_BYTES = 256_000;
 const ALLOWED_ORIGINS = new Set([
   "https://chameleonjp-lab.github.io",
   "http://localhost:3000",
@@ -204,19 +205,41 @@ Deno.serve(async (req: Request) => {
     }
 
     if (body.action === "finish") {
+      const runToken = requiredString(body, "runToken");
+      const displayName = requiredString(body, "playerName");
+      const problemId = requiredString(body, "problemId");
+      const problemVersion = requiredString(body, "problemVersion");
+      const elapsedTimeMs = requiredInteger(body, "elapsedTimeMs");
+      const faultCount = requiredInteger(body, "faultCount");
+      const totalDialSteps = requiredInteger(body, "totalDialSteps");
+      const excessDialSteps = requiredInteger(body, "excessDialSteps");
+      const falseGateContacts = requiredInteger(body, "falseGateContacts");
+      const observationAccuracy = requiredInteger(body, "observationAccuracy");
+      const score = requiredInteger(body, "score");
+      const operationTrace = body.operationTrace;
+      const replay = replayAkerunTrace(problemId, operationTrace, elapsedTimeMs);
+      if (!replay.ok) {
+        return json(req, 422, { accepted: false, reason: replay.reason });
+      }
+      if (replay.totalDialSteps !== totalDialSteps
+        || replay.faultCount !== faultCount
+        || replay.avoidableFalseGateContacts !== falseGateContacts) {
+        return json(req, 422, { accepted: false, reason: "trace_metrics_mismatch" });
+      }
       const result = await callInternalRpc("akerun_finalize_run_internal", {
-        p_run_token: requiredString(body, "runToken"),
-        p_display_name: requiredString(body, "playerName"),
+        p_run_token: runToken,
+        p_display_name: displayName,
         p_client_version: CLIENT_VERSION,
-        p_problem_id: requiredString(body, "problemId"),
-        p_problem_version: requiredString(body, "problemVersion"),
-        p_elapsed_time_ms: requiredInteger(body, "elapsedTimeMs"),
-        p_fault_count: requiredInteger(body, "faultCount"),
-        p_total_dial_steps: requiredInteger(body, "totalDialSteps"),
-        p_excess_dial_steps: requiredInteger(body, "excessDialSteps"),
-        p_false_gate_contacts: requiredInteger(body, "falseGateContacts"),
-        p_observation_accuracy: requiredInteger(body, "observationAccuracy"),
-        p_score: requiredInteger(body, "score"),
+        p_problem_id: problemId,
+        p_problem_version: problemVersion,
+        p_elapsed_time_ms: elapsedTimeMs,
+        p_fault_count: faultCount,
+        p_total_dial_steps: totalDialSteps,
+        p_excess_dial_steps: excessDialSteps,
+        p_false_gate_contacts: falseGateContacts,
+        p_observation_accuracy: observationAccuracy,
+        p_score: score,
+        p_operation_trace: operationTrace,
       }) as Record<string, unknown> | null;
       return json(req, 200, result || { accepted: false });
     }
