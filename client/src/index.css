@@ -622,3 +622,75 @@
     scroll-behavior: auto;
   }
 }
+
+
+/* 縦画面では、訓練説明がダイヤルを覆わない下部シートとして表示される。 */
+@media (orientation: portrait) and (max-width: 600px) {
+  .akerun-training-layer {
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0 max(10px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  }
+
+  .akerun-training-card {
+    width: 100%;
+    max-height: min(32dvh, 300px);
+    overflow: auto;
+    padding: 13px 16px 14px;
+    border-radius: 16px 16px 0 0;
+    background: rgba(7, 18, 24, 0.97);
+  }
+
+  .akerun-training-card .akerun-kicker {
+    margin-bottom: 4px;
+    font-size: 0.64rem;
+  }
+
+  .akerun-training-card h2 {
+    font-size: clamp(1.2rem, 6vw, 1.7rem);
+    line-height: 1.25;
+  }
+
+  .akerun-training-card p {
+    margin: 6px 0;
+    font-size: 0.88rem;
+    line-height: 1.45;
+  }
+
+  .akerun-training-card .akerun-small {
+    display: none;
+  }
+
+  .akerun-training-card .akerun-button {
+    min-height: 44px;
+    margin-top: 4px;
+  }
+
+  .akerun-live-panel {
+    top: max(68px, calc(env(safe-area-inset-top) + 54px));
+    width: calc(100% - 20px);
+    padding: 8px 10px;
+  }
+
+  .akerun-live-panel p {
+    margin-top: 3px;
+    font-size: 0.72rem;
+    line-height: 1.35;
+  }
+
+  .akerun-live-stats {
+    gap: 4px;
+  }
+
+  .akerun-stat {
+    padding: 5px 4px;
+  }
+
+  .akerun-stat span {
+    font-size: 0.55rem;
+  }
+
+  .akerun-stat strong {
+    font-size: 0.78rem;
+  }
+}
