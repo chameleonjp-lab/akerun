@@ -237,7 +237,7 @@ export default function App() {
 
   const onVisibilityPause = useCallback(() => {
     // 競技は停止中に考える抜け道を作らない。画面離脱も同じ扱いにする。
-    if (mode === "competition") {
+    if (mode === "competition" && screen === "play") {
       retireActiveRun("競技中に画面を離れたため、今回はランキング対象外です。");
       return;
     }
@@ -534,6 +534,14 @@ export default function App() {
     if (startingOfficial || startingOfficialRef.current) return;
     const savedName = validateName();
     if (!savedName || !handle) return;
+
+    // タイトルから競技を選んだ時点で、残っている公式の中断実行も
+    // 明示的に破棄し、別モードの実行を同時に保持しない。
+    const savedActiveRun = store.getActiveRun();
+    if (savedActiveRun) {
+      void requestOfficialRunAbandonment(savedActiveRun.rankingRunToken);
+      store.clearActiveRun();
+    }
 
     startingOfficialRef.current = true;
     setStartingOfficial(true);
