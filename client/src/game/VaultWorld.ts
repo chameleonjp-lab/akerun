@@ -2,7 +2,6 @@
  * Vault Tumbler Lab — 真鍮の機械製図室。
  * 実機風の鋼板・切削真鍮・ロック機構アセットを用い、重い金庫扉の開錠演出まで同一キャンバスへ描画する。
  */
-import type { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { createFalseGateTrainingPuzzle, createPuzzleFromSeed, createReferencePuzzle, DIFFICULTY_PROFILES, REWARD_DEFINITIONS, type DifficultyId, type PuzzleDefinition, type RewardDefinition, type TurnDirection } from "./GameDefinitions";
 import { LockMechanism } from "./LockMechanism";
 import { AUDIO_SAMPLE_DEFINITIONS, AudioFeedback, type AudioSampleId } from "./AudioFeedback";
@@ -12,6 +11,11 @@ import { ObservationLedger, type ObservationCategory } from "./ObservationLedger
 import { RunSession, type RunCheckpoint, type RunResult } from "./RunSession";
 import { InputController, type InputPoint, type PhysicalInput, type PhysicalInputStartResult } from "./InputController";
 import { isOfficialProblemIdentity, shouldForfeitOfficialReset } from "./RunLifecycle";
+import {
+  expandHitbox,
+  getCanvasResolution as calculateCanvasResolution,
+  type CanvasResolution,
+} from "./CanvasSurface";
 
 const ASSETS = {
   reference: "/manus-storage/vault-tumbler-reference_35720048.png",
@@ -62,7 +66,7 @@ type ScreenLayout = {
   width: number;
   height: number;
   compact: boolean;
-  dial: { x: number; y: number; radius: number };
+  dial: { x: number; y: number; radius: number; deadZoneRadius: number };
   internal: Rect;
   footerY: number;
 };
@@ -98,7 +102,7 @@ export class VaultWorld {
   private openingProgress = 0;
   private lastRotationAt = 0;
   private smoothedRotationSpeed = 0;
-  private lastDimensions = { width: 0, height: 0 };
+  private lastDimensions = { width: 0, height: 0, pixelRatio: 0 };
   private tutorialVisible = true;
   private difficulty: DifficultyId = "standard";
   private puzzleSeed = 7201855;
@@ -130,13 +134,11 @@ export class VaultWorld {
   private runRecordableOverride: boolean | null = null;
 
   constructor(
-    private readonly texture: DynamicTexture,
+    context: CanvasRenderingContext2D,
     private readonly canvas: HTMLCanvasElement,
     private readonly onStatusChange?: (status: string) => void,
     private readonly onSnapshotChange?: (snapshot: GameSnapshot) => void,
   ) {
-    const context = texture.getContext() as unknown as CanvasRenderingContext2D | null;
-    if (!context) throw new Error("DynamicTexture の描画コンテキストを作成できませんでした。");
     this.context = context;
     const params = new URLSearchParams(window.location.search);
     const requestedDifficulty = params.get("difficulty");
@@ -167,7 +169,7 @@ export class VaultWorld {
     this.inputController = new InputController({
       canvas: this.canvas,
       windowTarget: window,
-      getSurfaceSize: () => this.texture.getSize(),
+      getSurfaceSize: () => this.getCanvasResolution(),
       getDialLayout: () => this.getLayout().dial,
       getHitboxes: () => this.hitboxes,
       isBlindMode: () => this.isBlindMode,
@@ -356,7 +358,9 @@ export class VaultWorld {
   /** 描画系の一時例外をレンダーループ外へ漏らさず、操作可能な復旧画面を表示する。 */
   renderRecoveryOverlay() {
     try {
-      const { width, height } = this.texture.getSize();
+      const resolution = this.getCanvasResolution();
+      this.resizeCanvas(resolution);
+      const { width, height } = resolution;
       const ctx = this.context;
       ctx.clearRect(0, 0, width, height);
       ctx.fillStyle = "#071015";
@@ -372,9 +376,8 @@ export class VaultWorld {
       ctx.font = `500 ${Math.max(13, width * 0.014)}px "Noto Sans JP", sans-serif`;
       ctx.fillText("表示を安全に復旧しています。公式プレイ中のRESETはリタイア扱いです。", width * 0.5, height * 0.52);
       ctx.textAlign = "left";
-      this.texture.update(false);
     } catch {
-      // 最後の防御線。Babylonの描画ループを継続させるため例外は握りつぶす。
+      // 最後の防御線。描画ループを継続させるため例外は握りつぶす。
     }
   }
 
@@ -902,15 +905,9 @@ export class VaultWorld {
   }
 
   private draw() {
-    const width = Math.max(320, Math.floor(this.canvas.clientWidth * Math.min(2, window.devicePixelRatio || 1)));
-    const height = Math.max(520, Math.floor(this.canvas.clientHeight * Math.min(2, window.devicePixelRatio || 1)));
-    if (width !== this.lastDimensions.width || height !== this.lastDimensions.height) {
-      this.texture.scaleTo(width, height);
-      const resizedContext = this.texture.getContext() as unknown as CanvasRenderingContext2D | null;
-      if (!resizedContext) throw new Error("リサイズ後の描画コンテキストを取得できませんでした。");
-      this.context = resizedContext;
-      this.lastDimensions = { width, height };
-    }
+    const resolution = this.getCanvasResolution();
+    this.resizeCanvas(resolution);
+    const { width, height } = resolution;
 
     const ctx = this.context;
     ctx.clearRect(0, 0, width, height);
@@ -936,11 +933,42 @@ export class VaultWorld {
         this.drawObservationOverlay(layout);
       }
     }
-    this.texture.update(false);
+  }
+
+  private getCanvasResolution(): CanvasResolution {
+    const bounds = this.canvas.getBoundingClientRect();
+    return calculateCanvasResolution(
+      this.canvas.clientWidth || bounds.width,
+      this.canvas.clientHeight || bounds.height,
+      window.devicePixelRatio,
+    );
+  }
+
+  private resizeCanvas(resolution: CanvasResolution) {
+    if (
+      resolution.pixelWidth !== this.canvas.width
+      || resolution.pixelHeight !== this.canvas.height
+    ) {
+      this.canvas.width = resolution.pixelWidth;
+      this.canvas.height = resolution.pixelHeight;
+      this.lastDimensions = {
+        width: resolution.width,
+        height: resolution.height,
+        pixelRatio: resolution.pixelRatio,
+      };
+    }
+    this.context.setTransform(
+      resolution.pixelRatio,
+      0,
+      0,
+      resolution.pixelRatio,
+      0,
+      0,
+    );
   }
 
   private getLayout(): ScreenLayout {
-    const size = this.texture.getSize();
+    const size = this.getCanvasResolution();
     const width = size.width;
     const height = size.height;
     const compact = width / height < 1.12;
@@ -949,7 +977,15 @@ export class VaultWorld {
         width,
         height,
         compact,
-        dial: { x: width * 0.5, y: height * 0.245, radius: Math.min(width * 0.27, height * 0.155) },
+        dial: (() => {
+          const radius = Math.min(width * 0.27, height * 0.155);
+          return {
+            x: width * 0.5,
+            y: height * 0.245,
+            radius,
+            deadZoneRadius: radius * 0.42,
+          };
+        })(),
         internal: { x: width * 0.06, y: height * 0.475, width: width * 0.88, height: height * 0.19 },
         footerY: height * 0.695,
       };
@@ -958,7 +994,15 @@ export class VaultWorld {
       width,
       height,
       compact,
-      dial: { x: width * 0.295, y: height * 0.545, radius: Math.min(width * 0.235, height * 0.293) },
+      dial: (() => {
+        const radius = Math.min(width * 0.235, height * 0.293);
+        return {
+          x: width * 0.295,
+          y: height * 0.545,
+          radius,
+          deadZoneRadius: radius * 0.42,
+        };
+      })(),
       internal: { x: width * 0.61, y: height * 0.18, width: width * 0.345, height: height * 0.63 },
       footerY: height * 0.855,
     };
@@ -1165,7 +1209,7 @@ export class VaultWorld {
 
   private drawVaultInterior(dial: ScreenLayout["dial"], opening: number) {
     const ctx = this.context;
-    const unit = Math.max(10, Math.min(this.texture.getSize().width, this.texture.getSize().height) / 85);
+    const unit = Math.max(10, Math.min(this.getCanvasResolution().width, this.getCanvasResolution().height) / 85);
     const left = dial.x - dial.radius * 1.34;
     const top = dial.y - dial.radius * 1.34;
     const width = dial.radius * 2.68;
@@ -1282,7 +1326,7 @@ export class VaultWorld {
 
   private drawOpenDoorEdge(dial: ScreenLayout["dial"], opening: number) {
     const ctx = this.context;
-    const unit = Math.max(10, Math.min(this.texture.getSize().width, this.texture.getSize().height) / 85);
+    const unit = Math.max(10, Math.min(this.getCanvasResolution().width, this.getCanvasResolution().height) / 85);
     const hingeX = dial.x - dial.radius * 1.42;
     const doorWidth = dial.radius * 2.84;
     const edgeX = hingeX + doorWidth * (1 - opening * 0.76);
@@ -1320,7 +1364,7 @@ export class VaultWorld {
 
   private drawDialTicks(cx: number, cy: number, radius: number) {
     const ctx = this.context;
-    const unit = Math.max(10, Math.min(this.texture.getSize().width, this.texture.getSize().height) / 85);
+    const unit = Math.max(10, Math.min(this.getCanvasResolution().width, this.getCanvasResolution().height) / 85);
     for (let value = 0; value < 100; value += 1) {
       const angle = (value / 100) * Math.PI * 2 - Math.PI / 2;
       const major = value % 5 === 0;
@@ -1741,7 +1785,7 @@ export class VaultWorld {
     ctx.stroke();
     ctx.restore();
     this.drawResistanceNeedle(rect.x + rect.width * 0.16, rect.y + rect.height * 0.84, rect.width * 0.68, this.mechanism.appliedTorque, this.mechanism.resistanceState);
-    this.hitboxes.set("tension-grip", { x: centerX - unit * 2.4, y: centerY - unit * 2.4, width: arm + unit * 5.0, height: unit * 4.8 });
+    this.setHitbox("tension-grip", { x: centerX - unit * 2.4, y: centerY - unit * 2.4, width: arm + unit * 5.0, height: unit * 4.8 });
   }
 
   private drawFenceLever(rect: Rect, unit: number) {
@@ -1766,7 +1810,7 @@ export class VaultWorld {
     ctx.fillStyle = "#8da4a5";
     ctx.font = `500 ${unit * 0.58}px "Noto Sans JP", sans-serif`;
     ctx.fillText(this.mechanism.fenceDropped ? "座りを保持。次はボルトを確認します。" : "上へゆっくり押し、止まる位置を読む。", rect.x + unit * 1.1, rect.y + rect.height * 0.88);
-    this.hitboxes.set("fence-lever", { x: x - unit * 3.2, y: trackTop - unit * 1.2, width: unit * 6.4, height: trackHeight + unit * 2.4 });
+    this.setHitbox("fence-lever", { x: x - unit * 3.2, y: trackTop - unit * 1.2, width: unit * 6.4, height: trackHeight + unit * 2.4 });
   }
 
   private drawBoltTab(rect: Rect, unit: number) {
@@ -1791,7 +1835,7 @@ export class VaultWorld {
     ctx.fillStyle = "#8da4a5";
     ctx.font = `500 ${unit * 0.58}px "Noto Sans JP", sans-serif`;
     ctx.fillText("右へ押し、引っ掛かりではなく滑らかな後退を確認する。", rect.x + unit * 1.1, rect.y + rect.height * 0.88);
-    this.hitboxes.set("bolt-tab", { x: x - unit * 1.6, y: y - unit * 2.4, width: trackWidth + unit * 3.2, height: unit * 4.8 });
+    this.setHitbox("bolt-tab", { x: x - unit * 1.6, y: y - unit * 2.4, width: trackWidth + unit * 3.2, height: unit * 4.8 });
   }
 
   private drawDoorHandle(rect: Rect, unit: number) {
@@ -1822,12 +1866,12 @@ export class VaultWorld {
     ctx.fillStyle = "#8da4a5";
     ctx.font = `500 ${unit * 0.58}px "Noto Sans JP", sans-serif`;
     ctx.fillText("右へ回し、キャリーバーと扉側ボルトを受け金から後退させる。", rect.x + unit * 1.1, rect.y + rect.height * 0.92);
-    this.hitboxes.set("door-handle", { x: centerX - radius * 2.4, y: centerY - radius * 2.4, width: radius * 4.8, height: radius * 4.8 });
+    this.setHitbox("door-handle", { x: centerX - radius * 2.4, y: centerY - radius * 2.4, width: radius * 4.8, height: radius * 4.8 });
   }
 
   private drawResistanceNeedle(x: number, y: number, width: number, amount: number, state: string) {
     const ctx = this.context;
-    const unit = Math.max(10, Math.min(this.texture.getSize().width, this.texture.getSize().height) / 85);
+    const unit = Math.max(10, Math.min(this.getCanvasResolution().width, this.getCanvasResolution().height) / 85);
     this.roundRect(x, y - unit * 0.35, width, unit * 0.7, unit * 0.18);
     ctx.fillStyle = "#111b20";
     ctx.fill();
@@ -2070,10 +2114,14 @@ export class VaultWorld {
     ctx.restore();
   }
 
+  private setHitbox(action: string, rect: Rect) {
+    this.hitboxes.set(action, expandHitbox(rect));
+  }
+
   private drawControlButton(action: string, rect: Rect, label: string, accent = "#7e9b98") {
     const ctx = this.context;
-    const unit = Math.max(10, Math.min(this.texture.getSize().width, this.texture.getSize().height) / 85);
-    this.hitboxes.set(action, rect);
+    const unit = Math.max(10, Math.min(this.getCanvasResolution().width, this.getCanvasResolution().height) / 85);
+    this.setHitbox(action, rect);
     this.roundRect(rect.x, rect.y, rect.width, rect.height, unit * 0.35);
     ctx.fillStyle = "rgba(8, 15, 19, 0.88)";
     ctx.fill();
@@ -2180,7 +2228,7 @@ export class VaultWorld {
 
   private drawFrame(rect: Rect, fill: string, stroke: string) {
     const ctx = this.context;
-    const unit = Math.max(10, Math.min(this.texture.getSize().width, this.texture.getSize().height) / 85);
+    const unit = Math.max(10, Math.min(this.getCanvasResolution().width, this.getCanvasResolution().height) / 85);
     this.roundRect(rect.x, rect.y, rect.width, rect.height, unit * 0.55);
     ctx.fillStyle = fill;
     ctx.fill();

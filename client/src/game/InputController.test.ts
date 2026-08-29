@@ -74,6 +74,21 @@ describe("InputController", () => {
     expect(options.onRotateDial).toHaveBeenCalled();
   });
 
+  it("does not begin a dial gesture inside the center dead zone", () => {
+    const canvas = new TestCanvas();
+    const windowTarget = new EventTarget();
+    const options = {
+      ...baseOptions(canvas, windowTarget, new Map()),
+      getDialLayout: () => ({ x: 50, y: 50, radius: 20, deadZoneRadius: 10 }),
+    };
+    new InputController(options);
+
+    canvas.dispatchEvent(pointerEvent("pointerdown", 1, 50, 50));
+    canvas.dispatchEvent(pointerEvent("pointermove", 1, 60, 50));
+
+    expect(options.onRotateDial).not.toHaveBeenCalled();
+  });
+
   it("does not route input while disabled", () => {
     const canvas = new TestCanvas();
     const windowTarget = new EventTarget();
