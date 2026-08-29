@@ -22,6 +22,9 @@ import { isCompleteRunTrace } from "./game/RunTrace";
 type Screen = "title" | "tutorial" | "training" | "play" | "practice" | "pause" | "result" | "ranking" | "competition-ranking" | "archive" | "settings" | "sound-lab" | "help";
 type RunMode = "official" | "practice" | "competition" | "training" | "demo" | "retired";
 
+const BUILD_COMMIT = (import.meta.env.VITE_BUILD_COMMIT ?? "local").trim() || "local";
+const BUILD_LABEL = BUILD_COMMIT === "local" ? "LOCAL" : BUILD_COMMIT.slice(0, 12);
+
 const formatTime = (seconds: number) => {
   const safe = Math.max(0, Math.floor(seconds));
   return String(Math.floor(safe / 60)).padStart(2, "0") + ":" + String(safe % 60).padStart(2, "0");
@@ -815,6 +818,7 @@ export default function App() {
     <div className="akerun-screen akerun-title-screen">
       <div className="akerun-title-card">
         <p className="akerun-kicker">VAULT TUMBLER LAB / AKERUN</p>
+        <p className="akerun-build-id" data-build-commit={BUILD_COMMIT}>BUILD / {BUILD_LABEL}</p>
         <h1>金庫を、観察で開ける。</h1>
         <p className="akerun-lead">音や反応を確かめながら、金庫の内部機構を読み解きます。進行ゲームは初級から順番に進み、自由練習では問題を選べます。本日の競技は日本時間の日付ごとに全員が同じ問題へ挑戦します。</p>
         <label className="akerun-field">
