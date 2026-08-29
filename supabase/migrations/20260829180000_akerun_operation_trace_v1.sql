@@ -171,16 +171,20 @@ begin
      or p_operation_trace ->> 'version' is distinct from '1'
      or p_operation_trace ->> 'truncated' is distinct from 'false'
      or pg_catalog.jsonb_typeof(p_operation_trace -> 'events') is distinct from 'array'
-     or case
-          when pg_catalog.jsonb_typeof(p_operation_trace -> 'events') = 'array'
-            then pg_catalog.jsonb_array_length(p_operation_trace -> 'events')
-          else 0
-        end < 1
-     or case
-          when pg_catalog.jsonb_typeof(p_operation_trace -> 'events') = 'array'
-            then pg_catalog.jsonb_array_length(p_operation_trace -> 'events')
-          else 0
-        end > 8192
+     or (
+       case
+         when pg_catalog.jsonb_typeof(p_operation_trace -> 'events') = 'array'
+           then pg_catalog.jsonb_array_length(p_operation_trace -> 'events')
+         else 0
+       end < 1
+     )
+   or (
+       case
+         when pg_catalog.jsonb_typeof(p_operation_trace -> 'events') = 'array'
+           then pg_catalog.jsonb_array_length(p_operation_trace -> 'events')
+         else 0
+       end > 8192
+     )
   then
     raise exception 'akerun operation trace is invalid';
   end if;
