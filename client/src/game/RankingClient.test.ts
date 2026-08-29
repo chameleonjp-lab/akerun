@@ -23,6 +23,7 @@ describe("RankingClient", () => {
       const body = JSON.parse(String(init?.body));
       expect(body.clientVersion).toBe("akerun-web-verified-v2");
       expect(body.contractVersion).toBe("akerun-play-v2");
+      expect(body.clientInstanceId).toEqual(expect.any(String));
       expect(body.action).toBe("finish");
       expect(body.runToken).toBe("run-token-1");
       expect(body.elapsedTimeMs).toBe(31250);

@@ -18,15 +18,22 @@ function corsHeaders(req: Request) {
       : "https://chameleonjp-lab.github.io",
     "Access-Control-Allow-Headers": "apikey, content-type",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Expose-Headers": "Retry-After",
     Vary: "Origin",
   };
 }
 
-function json(req: Request, status: number, value: Record<string, unknown>) {
+function json(
+  req: Request,
+  status: number,
+  value: Record<string, unknown>,
+  extraHeaders: Record<string, string> = {},
+) {
   return new Response(JSON.stringify(value), {
     status,
     headers: {
       ...corsHeaders(req),
+      ...extraHeaders,
       "Content-Type": "application/json; charset=utf-8",
       "Cache-Control": "no-store",
     },
@@ -84,6 +91,61 @@ async function callInternalRpc(name: string, body: Record<string, unknown>) {
   const data = await response.json().catch(() => null);
   if (!response.ok) throw new Error(`internal_rpc_${response.status}`);
   return Array.isArray(data) && data.length === 1 ? data[0] : data;
+}
+
+type RateLimitAction = "prepare" | "begin" | "abandon" | "finish";
+
+const rateLimitAction = (value: unknown): RateLimitAction | null =>
+  value === "prepare" || value === "begin" || value === "abandon" || value === "finish"
+    ? value
+    : null;
+
+const sourceIdentity = (req: Request) => {
+  const cloudflareAddress = req.headers.get("cf-connecting-ip")?.trim();
+  const realAddress = req.headers.get("x-real-ip")?.trim();
+  const forwardedAddress = (req.headers.get("x-forwarded-for") || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .pop();
+  return (cloudflareAddress || realAddress || forwardedAddress || "unknown").slice(0, 256);
+};
+
+const valueOrFallback = (value: unknown, fallback: string) =>
+  typeof value === "string" && value.trim() ? value.trim().slice(0, 256) : fallback;
+
+async function requestIdentityHash(scope: string, value: string) {
+  const secret = secretKey();
+  if (!secret) throw new Error("server_configuration_missing");
+  const bytes = new TextEncoder().encode(`${secret}\u0000${scope}\u0000${value}`);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function checkRequestLimit(
+  req: Request,
+  action: RateLimitAction,
+  playerName: unknown,
+  clientInstanceId: unknown,
+) {
+  const [sourceKey, deviceKey, nameKey] = await Promise.all([
+    requestIdentityHash("source", sourceIdentity(req)),
+    requestIdentityHash("device", valueOrFallback(clientInstanceId, "missing")),
+    requestIdentityHash("name", valueOrFallback(playerName, "missing")),
+  ]);
+  const result = await callInternalRpc("akerun_request_gate_internal", {
+    p_action: action,
+    p_source_key: `source:${sourceKey}`,
+    p_device_key: `device:${deviceKey}`,
+    p_name_key: `name:${nameKey}`,
+  }) as Record<string, unknown> | null;
+  const retryAfterSeconds = Number(result?.retry_after_seconds);
+  return {
+    allowed: result?.allowed === true,
+    retryAfterSeconds: Number.isInteger(retryAfterSeconds) && retryAfterSeconds > 0
+      ? retryAfterSeconds
+      : 1,
+  };
 }
 
 async function readJsonObject(req: Request) {
@@ -161,6 +223,24 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    const action = rateLimitAction(body.action);
+    if (action) {
+      const rate = await checkRequestLimit(
+        req,
+        action,
+        body.playerName,
+        body.clientInstanceId,
+      );
+      if (!rate.allowed) {
+        return json(
+          req,
+          429,
+          { accepted: false, reason: "rate_limited" },
+          { "Retry-After": String(rate.retryAfterSeconds) },
+        );
+      }
+    }
+
     if (body.action === "prepare") {
       const result = await callInternalRpc("akerun_prepare_run_internal", {
         p_display_name: requiredString(body, "playerName"),
