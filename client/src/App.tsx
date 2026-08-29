@@ -15,6 +15,7 @@ import { ProgressStore, normalizePlayerName } from "./game/ProgressStore";
 import { RankingClient, type RankingRow } from "./game/RankingClient";
 import { isCoherentLockMechanismSnapshot } from "./game/LockMechanism";
 import type { RunCheckpoint } from "./game/RunSession";
+import { isCompleteRunTrace } from "./game/RunTrace";
 
 type Screen = "title" | "tutorial" | "training" | "play" | "pause" | "result" | "ranking" | "archive" | "settings" | "sound-lab" | "help";
 type RunMode = "official" | "training" | "demo" | "retired";
@@ -311,10 +312,16 @@ export default function App() {
       if (interruptedRun?.checkpoint) {
         try {
           const candidate = createOfficialPuzzle(interruptedRun.problemId);
-          const compatible = candidate.problemVersion === interruptedRun.problemVersion
+          const structurallyCompatible = candidate.problemVersion === interruptedRun.problemVersion
             && isCoherentLockMechanismSnapshot(interruptedRun.checkpoint.mechanism, candidate)
             && interruptedRun.checkpoint.mechanism.tumblerValues.length === candidate.vault.wheelCount
             && interruptedRun.checkpoint.mechanism.locked.length === candidate.stages.length;
+          // A server-issued run can only resume when its complete trace is
+          // present. Old token checkpoints are abandoned instead of being
+          // allowed to finish without replay evidence.
+          const traceReady = isCompleteRunTrace(interruptedRun.checkpoint.session.operationTrace);
+          const compatible = structurallyCompatible
+            && (!interruptedRun.rankingRunToken || traceReady);
           if (compatible) {
             if (interruptedRun.rankingRunToken) {
               const begun = await rankingClient.beginOfficialRun(interruptedRun.rankingRunToken);

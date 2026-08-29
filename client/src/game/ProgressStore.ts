@@ -121,7 +121,10 @@ export class ProgressStore {
     const previous = records[key];
     const improved = !previous || isBetterResult(result, previous);
     if (improved) {
-      records[key] = result;
+      // The browser only needs the best score locally. Keep the full trace in
+      // the retry queue, but do not duplicate it in the self-best record.
+      const { operationTrace: _operationTrace, ...localResult } = result;
+      records[key] = localResult;
       writeJson(BEST_KEY, records);
     }
     return { improved, best: records[key] ?? result };

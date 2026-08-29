@@ -14,6 +14,7 @@ const result: RunResult = {
   problemId: "AKERUN-01-V1",
   problemVersion: "V1",
   difficulty: "beginner",
+  operationTrace: { version: 1, events: [[0, "rotate", 1]], truncated: false },
 };
 
 describe("RankingClient", () => {
@@ -26,6 +27,7 @@ describe("RankingClient", () => {
       expect(body.runToken).toBe("run-token-1");
       expect(body.elapsedTimeMs).toBe(31250);
       expect(body.falseGateContacts).toBe(2);
+      expect(body.operationTrace).toEqual({ version: 1, events: [[0, "rotate", 1]], truncated: false });
       return new Response(JSON.stringify({ accepted: true, score: result.score }), { status: 200 });
     });
     const client = new RankingClient({ fetch });

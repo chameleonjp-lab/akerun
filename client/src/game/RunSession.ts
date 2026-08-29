@@ -1,5 +1,6 @@
 import type { PuzzleDefinition } from "./GameDefinitions";
 import { isLockMechanismSnapshot, type LockMechanismSnapshot } from "./LockMechanism";
+import { isRunTrace, RunTraceRecorder, type RunTrace, type RunTraceKind } from "./RunTrace";
 
 export type RunResult = {
   readonly elapsedTime: number;
@@ -15,6 +16,8 @@ export type RunResult = {
   readonly problemId: string;
   readonly problemVersion: string;
   readonly difficulty: string;
+  /** サーバーで再生する、順序付きの操作履歴。旧保存結果では未設定。 */
+  readonly operationTrace?: RunTrace;
 };
 
 export type RunSessionSnapshot = {
@@ -27,6 +30,7 @@ export type RunSessionSnapshot = {
   readonly observationAccuracy: number;
   readonly score: number;
   readonly finished: boolean;
+  readonly operationTrace?: RunTrace;
 };
 
 export type RunCheckpoint = {
@@ -60,7 +64,8 @@ const isRunSessionSnapshot = (value: unknown): value is RunSessionSnapshot => {
     && value.observationAccuracy >= 0
     && value.observationAccuracy <= 100
     && isNonNegativeInteger(value.score)
-    && value.finished === false;
+    && value.finished === false
+    && (value.operationTrace === undefined || isRunTrace(value.operationTrace));
 };
 
 export const isRunCheckpoint = (value: unknown): value is RunCheckpoint => {
@@ -120,6 +125,7 @@ export class RunSession {
   private falseGateContacts = 0;
   private finished = false;
   private result: RunResult | null = null;
+  private readonly trace = new RunTraceRecorder();
 
   constructor(problem: PuzzleDefinition) {
     this.problem = problem;
@@ -130,9 +136,21 @@ export class RunSession {
     this.elapsedTime += seconds;
   }
 
-  recordDial(steps: number) {
+  recordRotation(steps: number) {
     if (this.finished) return;
-    this.totalDialSteps += Math.max(0, Math.round(Math.abs(steps)));
+    const count = Math.max(0, Math.round(Math.abs(steps)));
+    this.totalDialSteps += count;
+    if (count > 0) this.trace.recordRotation(this.elapsedTime, steps);
+  }
+
+  /** 旧呼び出し元との互換を保ちながら、符号付き回転を記録する。 */
+  recordDial(steps: number) {
+    this.recordRotation(steps);
+  }
+
+  recordActuator(kind: Exclude<RunTraceKind, "rotate">, value: number) {
+    if (this.finished) return;
+    this.trace.recordActuator(this.elapsedTime, kind, value);
   }
 
   recordFalseGate() {
@@ -153,6 +171,7 @@ export class RunSession {
     this.falseGateContacts = snapshot.falseGateContacts;
     this.finished = false;
     this.result = null;
+    this.trace.restore(snapshot.operationTrace);
     return true;
   }
 
@@ -190,6 +209,7 @@ export class RunSession {
       problemId: this.problem.problemId ?? this.problem.id,
       problemVersion: this.problem.problemVersion ?? "DEV",
       difficulty: this.problem.problemTier ?? this.problem.difficulty.id,
+      operationTrace: this.trace.snapshot,
     };
     this.finished = true;
     return this.result;
@@ -221,6 +241,7 @@ export class RunSession {
         Math.max(0, 100 - avoidableContacts * 4 - this.faultCount * 8),
       score,
       finished: this.finished,
+      operationTrace: this.trace.snapshot,
     };
   }
 

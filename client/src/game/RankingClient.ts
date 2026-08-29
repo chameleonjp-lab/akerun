@@ -1,5 +1,6 @@
 import { createOfficialPuzzle } from "./GameDefinitions";
 import { avoidableFalseGateContacts, type RunResult } from "./RunSession";
+import { isCompleteRunTrace } from "./RunTrace";
 
 export type RankingRow = {
   readonly rank?: number;
@@ -205,6 +206,9 @@ export class RankingClient {
   async submit(playerName: string, result: RunResult, rankingRunToken?: string | null): Promise<RankingSubmission> {
     const runToken = stringOrNull(rankingRunToken);
     if (!runToken) throw new Error("verified ranking run is unavailable");
+    if (!isCompleteRunTrace(result.operationTrace)) {
+      throw new Error("verified operation trace is unavailable");
+    }
     const existing = this.submissionByRunToken.get(runToken);
     if (existing) return existing;
 
@@ -224,6 +228,7 @@ export class RankingClient {
       ),
       observationAccuracy: Math.max(0, Math.min(100, Math.round(result.observationAccuracy))),
       score: Math.trunc(result.score),
+      operationTrace: result.operationTrace,
     }).then((raw) => {
       if (raw.accepted !== true) throw new Error("score was not accepted");
       return { accepted: true, message: "ランキングへ送信しました。", raw };

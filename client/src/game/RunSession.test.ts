@@ -18,6 +18,7 @@ describe("RunSession", () => {
     expect(result.faultCount).toBe(1);
     expect(result.excessDialSteps).toBe(0);
     expect(result.score).toBeGreaterThan(0);
+    expect(result.operationTrace?.events).toEqual([[12500, "rotate", 4], [12500, "rotate", -3]]);
   });
 
   it("restores an unfinished session without accepting the derived score as input", () => {
