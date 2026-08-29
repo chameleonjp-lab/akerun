@@ -127,6 +127,7 @@ export class VaultWorld {
   private inspectionStep = 0;
   private trainingContract = false;
   private lastRunRecordable = false;
+  private runRecordableOverride: boolean | null = null;
 
   constructor(
     private readonly texture: DynamicTexture,
@@ -218,11 +219,12 @@ export class VaultWorld {
     this.emitSnapshot();
   }
 
-  startPuzzle(puzzle: PuzzleDefinition, options?: { training?: boolean; postDial?: boolean; resume?: RunCheckpoint }) {
+  startPuzzle(puzzle: PuzzleDefinition, options?: { training?: boolean; postDial?: boolean; resume?: RunCheckpoint; recordable?: boolean }) {
     this.releasePhysicalInput();
     this.demoMode = false;
     this.mechanism = new LockMechanism(puzzle);
     this.trainingContract = Boolean(options?.training);
+    this.runRecordableOverride = typeof options?.recordable === "boolean" ? options.recordable : null;
     this.sessionActive = true;
     this.sessionPaused = false;
     this.retired = false;
@@ -536,6 +538,7 @@ export class VaultWorld {
         demoMode: this.demoMode,
         trainingContract: this.trainingContract,
         developmentSeed: this.developmentSeed,
+        recordable: this.runRecordableOverride ?? undefined,
         problemId,
         problemVersion,
       })) {
@@ -575,6 +578,7 @@ export class VaultWorld {
       this.sessionPaused = false;
       this.runSession = new RunSession(this.mechanism.puzzle);
       this.lastRunRecordable = false;
+      this.runRecordableOverride = false;
       this.demoMode = true;
       this.demoElapsed = 0;
       this.runElapsed = 0;
@@ -625,6 +629,7 @@ export class VaultWorld {
     this.resultSummary = null;
     this.runSession = null;
     this.lastRunRecordable = false;
+    this.runRecordableOverride = null;
     this.trainingContract = false;
     this.blindAssist = false;
     this.blindSignal = null;
@@ -646,6 +651,7 @@ export class VaultWorld {
     this.runSession = new RunSession(puzzle);
     this.developmentSeed = false;
     this.lastRunRecordable = false;
+    this.runRecordableOverride = false;
     this.mechanism = new LockMechanism(puzzle);
     this.lastPhysicalPhase = this.mechanism.phase;
     this.newlyUnlockedRewards = [];
@@ -789,6 +795,7 @@ export class VaultWorld {
       && !this.demoMode
       && !this.trainingContract
       && !this.developmentSeed
+      && this.runRecordableOverride !== false
       && this.isOfficialPuzzle();
   }
 

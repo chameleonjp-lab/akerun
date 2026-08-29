@@ -26,6 +26,7 @@ describe("RunLifecycle", () => {
     ["demo", { demoMode: true }],
     ["training", { trainingContract: true }],
     ["development seed", { developmentSeed: true }],
+    ["free practice", { recordable: false }],
     ["non-official puzzle", { problemId: "DEV-01", problemVersion: "DEV" }],
   ])("allows ordinary reset for %s", (_label, override) => {
     expect(shouldForfeitOfficialReset({ ...context, ...override })).toBe(false);
