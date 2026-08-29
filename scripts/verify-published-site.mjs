@@ -38,7 +38,6 @@ if (!rawBaseUrl) {
       const url = reference.startsWith("http") ? new URL(reference) : new URL(reference, baseUrl);
       try {
         const result = await fetchTextWithRetry(url);
-        await result.response.arrayBuffer();
         console.log(`OK ${result.response.status} ${url.pathname}`);
       } catch (error) {
         failures.push(error instanceof Error ? error.message : String(error));
