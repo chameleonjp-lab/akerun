@@ -969,16 +969,17 @@ export class VaultWorld {
         height,
         compact,
         dial: (() => {
-          const radius = Math.min(width * 0.27, height * 0.155);
+          // 縦画面では説明カードを下部へ置くため、ダイヤルを常に上半分へ確保する。
+          const radius = Math.min(width * 0.29, height * 0.145);
           return {
             x: width * 0.5,
-            y: height * 0.245,
+            y: height * 0.235,
             radius,
             deadZoneRadius: radius * 0.42,
           };
         })(),
-        internal: { x: width * 0.06, y: height * 0.475, width: width * 0.88, height: height * 0.19 },
-        footerY: height * 0.695,
+        internal: { x: width * 0.06, y: height * 0.49, width: width * 0.88, height: height * 0.18 },
+        footerY: height * 0.72,
       };
     }
     return {
@@ -1066,11 +1067,13 @@ export class VaultWorld {
     ctx.font = `500 ${unit * 0.78}px "Noto Sans JP", sans-serif`;
     ctx.fillText(this.mechanism.puzzle.vault.title, x + markSize + unit * 1.45, y + markSize * 0.82);
 
-    ctx.fillStyle = "#7c9397";
-    ctx.font = `500 ${unit * 0.54}px "DM Mono", monospace`;
-    ctx.fillText("TOUCH DIAL / OBSERVE SOUND + RESISTANCE / Q TRAIN / J NOTE / O NOTES / V ASSIST / S SOUND / K HAPTIC / L ARCHIVE / I INSPECT / H CONTRAST / M MOTION / P PRECISE", x + markSize + unit * 1.45, y + markSize * 1.13);
+    if (!layout.compact) {
+      ctx.fillStyle = "#7c9397";
+      ctx.font = `500 ${unit * 0.54}px "DM Mono", monospace`;
+      ctx.fillText("TOUCH DIAL / OBSERVE SOUND + RESISTANCE / Q TRAIN / J NOTE / O NOTES / V ASSIST / S SOUND / K HAPTIC / L ARCHIVE / I INSPECT / H CONTRAST / M MOTION / P PRECISE", x + markSize + unit * 1.45, y + markSize * 1.13);
+    }
 
-    if (this.trainingContract) {
+    if (this.trainingContract && !layout.compact) {
       ctx.fillStyle = "#d39566";
       ctx.font = `700 ${unit * 0.56}px "DM Mono", monospace`;
       ctx.fillText("TRAINING CONTRACT / FALSE GATE PRACTICUM", x + markSize + unit * 1.45, y + markSize * 1.43);
