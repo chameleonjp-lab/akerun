@@ -1,8 +1,7 @@
 /**
- * Vault Tumbler Lab — Babylonキャンバスを保持し、画面遷移はReactへ返す。
+ * Vault Tumbler Lab — 2Dキャンバスを保持し、画面遷移はReactへ返す。
  */
 import { useEffect, useRef, useState } from "react";
-import { Engine } from "@babylonjs/core/Engines/engine";
 import { createGameScene, type GameHandle } from "@/game/scene";
 import type { GameSnapshot } from "@/game/VaultWorld";
 import { createRenderLoopController } from "@/game/RenderLoopController";
@@ -26,19 +25,27 @@ export default function GameCanvas({ onReady, onSnapshot, onVisibilityPause }: G
     if (!canvas || startedRef.current) return;
     startedRef.current = true;
 
-    const engine = new Engine(canvas, true, {
-      preserveDrawingBuffer: true,
-      stencil: true,
-      adaptToDeviceRatio: true,
+    const context = canvas.getContext("2d", {
+      alpha: false,
+      desynchronized: true,
     });
+    if (!context) {
+      console.error("Vault Tumbler Labの2D描画コンテキストを作成できませんでした。");
+      return;
+    }
 
     let handle: GameHandle | null = null;
     let disposed = false;
     let renderLoop: ReturnType<typeof createRenderLoopController> | null = null;
 
+    const animationFrameTarget = {
+      requestAnimationFrame: (callback: (timestamp: number) => void) => window.requestAnimationFrame(callback),
+      cancelAnimationFrame: (frameId: number) => window.cancelAnimationFrame(frameId),
+    };
+
     createGameScene(
-      engine,
       canvas,
+      context,
       setLiveStatus,
       (snapshot) => callbacksRef.current.onSnapshot?.(snapshot),
     )
@@ -49,14 +56,17 @@ export default function GameCanvas({ onReady, onSnapshot, onVisibilityPause }: G
         }
         handle = nextHandle;
         callbacksRef.current.onReady?.(nextHandle);
-        renderLoop = createRenderLoopController(engine, () => nextHandle.scene.render());
+        renderLoop = createRenderLoopController(
+          animationFrameTarget,
+          (delta) => nextHandle.update(delta),
+        );
         renderLoop.start();
       })
       .catch((error: unknown) => {
         console.error("Vault Tumbler Labの初期化に失敗しました。", error);
       });
 
-    const onResize = () => engine.resize();
+    const onResize = () => handle?.update(0);
     const onVisibilityChange = () => {
       if (document.hidden) {
         if (!handle) return;
@@ -77,7 +87,6 @@ export default function GameCanvas({ onReady, onSnapshot, onVisibilityPause }: G
       callbacksRef.current.onReady?.(null);
       renderLoop?.dispose();
       handle?.dispose();
-      engine.dispose();
       startedRef.current = false;
     };
   }, []);
@@ -90,7 +99,6 @@ export default function GameCanvas({ onReady, onSnapshot, onVisibilityPause }: G
         role="application"
         aria-label="Vault Tumbler Lab: ダイヤル式金庫の内部機構を観察する開錠ゲーム"
         aria-description="公式20問から一問が固定されます。ダイヤルを回し、音と画面の反応を観察し、テンション、フェンス、ロックボルト、扉ハンドルの順に開錠します。音・振動・高コントラスト・低モーションは補助であり、使わなくてもプレイできます。"
-        style={{ backgroundColor: "#0B1118", backgroundImage: "url('/manus-storage/vault-tumbler-reference_35720048.png')", backgroundPosition: "center", backgroundSize: "cover" }}
         className="fixed inset-0 h-full w-full touch-none outline-none"
       />
       <p className="sr-only" aria-live="polite" aria-atomic="true">{liveStatus}</p>
