@@ -46,6 +46,28 @@ export const CLIENT_VERSION = "akerun-web-verified-v2";
 export const CONTRACT_VERSION = "akerun-play-v2";
 export const COMPETITION_FUNCTION = "akerun-competition";
 const REQUEST_TIMEOUT_MS = 8000;
+const CLIENT_INSTANCE_STORAGE_KEY = "akerun-client-instance-v1";
+
+let ephemeralClientInstanceId: string | null = null;
+
+const createClientInstanceId = () => {
+  const cryptoApi = globalThis.crypto as Crypto & { randomUUID?: () => string } | undefined;
+  const uuid = cryptoApi?.randomUUID?.();
+  return uuid || `akerun-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+};
+
+const getClientInstanceId = () => {
+  try {
+    const stored = globalThis.localStorage?.getItem(CLIENT_INSTANCE_STORAGE_KEY);
+    if (stored && stored.length <= 128) return stored;
+    const next = createClientInstanceId();
+    globalThis.localStorage?.setItem(CLIENT_INSTANCE_STORAGE_KEY, next);
+    return next;
+  } catch {
+    if (!ephemeralClientInstanceId) ephemeralClientInstanceId = createClientInstanceId();
+    return ephemeralClientInstanceId;
+  }
+};
 
 type RpcClient = {
   rpc: (name: string, params: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>;
@@ -122,6 +144,7 @@ export class RankingClient {
             clientVersion: CLIENT_VERSION,
             contractVersion: CONTRACT_VERSION,
             ...body,
+            clientInstanceId: getClientInstanceId(),
           }),
           signal: controller.signal,
         },
