@@ -25,6 +25,8 @@ export type ActiveRunRecord = {
   readonly problemId: string;
   readonly problemVersion: string;
   readonly playerName: string;
+  readonly runMode: "official" | "competition";
+  readonly competitionDay?: string;
   /** 現在のプレイを同じ検証済み実行へ戻すためのID。 */
   readonly rankingRunToken?: string;
   /** 再読込後に計測を初期化せず、同じ機構状態から復帰するためのチェックポイント。 */
@@ -72,6 +74,10 @@ const isBetterResult = (candidate: RunResult, previous: RunResult) => {
   if (candidate.elapsedTime !== previous.elapsedTime) return candidate.elapsedTime < previous.elapsedTime;
   return candidate.excessDialSteps < previous.excessDialSteps;
 };
+
+
+const isCompetitionDay = (value: unknown): value is string =>
+  typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
 
 const submittedFalseGateContacts = (result: RunResult) =>
   result.avoidableFalseGateContacts ?? result.falseGateContacts;
@@ -216,11 +222,18 @@ export class ProgressStore {
     playerName: string,
     rankingRunToken?: string | null,
     checkpoint?: RunCheckpoint | null,
+    runMode: "official" | "competition" = "official",
+    competitionDay?: string | null,
   ) {
+    const normalizedRunMode = runMode === "competition" ? "competition" : "official";
     const record: ActiveRunRecord = {
       problemId: String(problemId),
       problemVersion: String(problemVersion),
       playerName: normalizePlayerName(playerName),
+      runMode: normalizedRunMode,
+      ...(normalizedRunMode === "competition" && isCompetitionDay(competitionDay)
+        ? { competitionDay }
+        : {}),
       ...(rankingRunToken ? { rankingRunToken: String(rankingRunToken) } : {}),
       ...(checkpoint && isRunCheckpoint(checkpoint) ? { checkpoint } : {}),
     };
@@ -231,10 +244,15 @@ export class ProgressStore {
   getActiveRun(): ActiveRunRecord | null {
     const record = readJson<Partial<ActiveRunRecord> | null>(ACTIVE_RUN_KEY, null);
     if (!record?.problemId || !record.problemVersion || !record.playerName) return null;
+    const runMode = record.runMode === "competition" && isCompetitionDay(record.competitionDay)
+      ? "competition"
+      : "official";
     return {
       problemId: String(record.problemId),
       problemVersion: String(record.problemVersion),
       playerName: normalizePlayerName(String(record.playerName)),
+      runMode,
+      ...(runMode === "competition" ? { competitionDay: String(record.competitionDay) } : {}),
       ...(record.rankingRunToken ? { rankingRunToken: String(record.rankingRunToken) } : {}),
       ...(isRunCheckpoint(record.checkpoint) ? { checkpoint: record.checkpoint } : {}),
     };
