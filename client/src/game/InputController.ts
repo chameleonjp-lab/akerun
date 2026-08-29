@@ -17,6 +17,8 @@ export type InputDialLayout = {
   readonly x: number;
   readonly y: number;
   readonly radius: number;
+  /** ダイヤル中心のハブ。ここからの回し始めは誤操作防止のため無効にする。 */
+  readonly deadZoneRadius?: number;
 };
 
 export type PhysicalInput = "tension" | "fence" | "bolt" | "handle";
@@ -106,7 +108,12 @@ export class InputController {
         return;
       }
 
-      if (Math.hypot(dx, dy) <= layout.radius * 1.08) {
+      const distanceFromCenter = Math.hypot(dx, dy);
+      const deadZoneRadius = Math.max(
+        0,
+        Math.min(layout.radius * 0.86, layout.deadZoneRadius ?? 0),
+      );
+      if (distanceFromCenter >= deadZoneRadius && distanceFromCenter <= layout.radius * 1.08) {
         this.lastPointerAngle = Math.atan2(dy, dx);
         this.pointerCarry = 0;
         this.activePointerId = event.pointerId;
@@ -119,7 +126,8 @@ export class InputController {
       if (this.activePointerId !== null && event.pointerId !== this.activePointerId) return;
       const point = this.mapPointer(event);
       if (this.options.isBlindMode() && this.blindPointerX !== null) {
-        const steps = Math.trunc((point.x - this.blindPointerX) / 7);
+        const requestedSteps = Math.trunc((point.x - this.blindPointerX) / 7);
+        const steps = Math.max(-8, Math.min(8, requestedSteps));
         if (steps !== 0) {
           this.options.onRotateDial(steps);
           this.blindPointerX += steps * 7;
@@ -137,11 +145,14 @@ export class InputController {
       if (delta > Math.PI) delta -= Math.PI * 2;
       if (delta < -Math.PI) delta += Math.PI * 2;
       this.pointerCarry += (delta / (Math.PI * 2)) * 100;
-      const steps = this.pointerCarry > 0 ? Math.floor(this.pointerCarry) : Math.ceil(this.pointerCarry);
+      const requestedSteps = this.pointerCarry > 0 ? Math.floor(this.pointerCarry) : Math.ceil(this.pointerCarry);
+      const steps = Math.max(-8, Math.min(8, requestedSteps));
       if (steps !== 0) {
         this.options.onRotateDial(steps);
         this.pointerCarry -= steps;
       }
+      // 大きな座標ジャンプでも、1つの入力通知で機構を急加速させない。
+      this.pointerCarry = Math.max(-8, Math.min(8, this.pointerCarry));
       this.lastPointerAngle = nextAngle;
     };
 
@@ -154,7 +165,7 @@ export class InputController {
       if (!this.options.isInputEnabled()) return;
       event.preventDefault();
       this.options.onGesture();
-      const magnitude = Math.max(1, Math.round(Math.abs(event.deltaY) / 42));
+      const magnitude = Math.min(8, Math.max(1, Math.round(Math.abs(event.deltaY) / 42)));
       this.options.onRotateDial(event.deltaY > 0 ? magnitude : -magnitude);
     };
 
