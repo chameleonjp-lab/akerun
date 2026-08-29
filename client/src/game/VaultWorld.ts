@@ -20,6 +20,10 @@ import {
 const ASSET_BASE_URL = import.meta.env.BASE_URL;
 const ASSETS = {
   mark: `${ASSET_BASE_URL}assets/vault-tumbler-mark.svg`,
+  // 静止している金属面はローカルWebP、可動部と状態表示はCanvasで重ねる。
+  realDoor: `${ASSET_BASE_URL}assets/vault-door.webp`,
+  realDial: `${ASSET_BASE_URL}assets/vault-dial.webp`,
+  realLock: `${ASSET_BASE_URL}assets/lock-cutaway.webp`,
 } as const;
 
 type Rect = { x: number; y: number; width: number; height: number };
