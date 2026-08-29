@@ -923,7 +923,7 @@ export default function App() {
     const card = tutorialCards[tutorialStep - 1];
     return (
       <div className="akerun-training-layer">
-        <div className="akerun-training-card akerun-training-active">
+        <div className={`akerun-training-card akerun-training-active akerun-training-step-${tutorialStep}`}>
           <p className="akerun-kicker">TRAINING / STEP {tutorialStep}</p>
           <h2>{card.title}</h2>
           <p>{card.text}</p>
