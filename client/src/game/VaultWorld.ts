@@ -1085,8 +1085,6 @@ export class VaultWorld {
     }
 
     const markSize = unit * 4.9;
-    const x = unit * 3;
-    const y = unit * 2.6;
     const mark = this.images.mark;
     if (mark) ctx.drawImage(mark, x, y, markSize, markSize);
     else this.drawFallbackMark(x, y, markSize);
