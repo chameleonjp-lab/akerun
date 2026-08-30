@@ -1049,3 +1049,19 @@
     align-items: center;
   }
 }
+
+
+@media (max-width: 680px) {
+  .akerun-modal-card .akerun-title-actions,
+  .akerun-result-card .akerun-title-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .akerun-modal-card .akerun-title-actions > .akerun-button,
+  .akerun-result-card .akerun-title-actions > .akerun-button {
+    width: 100%;
+    min-height: 48px;
+  }
+}
