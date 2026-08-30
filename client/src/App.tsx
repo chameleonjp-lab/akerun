@@ -942,7 +942,7 @@ export default function App() {
             ? "前回の競技は再開せず、ランキング対象外として破棄します。"
             : activeRun.checkpoint
               ? "前回の " + activeRun.problemId + " は中断されています。保存済みの状態から再開します。"
-              : "前回の " + activeRun.problemId + " は旧形式の中断記録です。新しい問題を準備します."}
+              : "前回の " + activeRun.problemId + " は旧形式の中断記録です。新しい問題を準備します。"}
         </p> : null}
         <p className="akerun-small">次の進行問題：{nextProgressionProblem.problemId}（{problemTierLabel[nextProgressionProblem.problemTier ?? "standard"]}）。初級から順番に進みます。</p>
         <div className="akerun-title-primary-actions">
