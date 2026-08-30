@@ -1031,3 +1031,21 @@
     padding-inline: 13px;
   }
 }
+
+
+@media (orientation: portrait) and (max-width: 600px) {
+  /* HUDはダイヤルの上に情報を置くだけにし、説明文は下部の操作盤へ任せる。 */
+  .akerun-live-panel {
+    max-height: 44px;
+    overflow: hidden;
+  }
+
+  .akerun-live-panel p {
+    display: none;
+  }
+
+  .akerun-live-stats {
+    height: 100%;
+    align-items: center;
+  }
+}
