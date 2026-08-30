@@ -41,6 +41,7 @@ const PENDING_KEY = "akerun-pending-rankings";
 const PENDING_ABANDON_KEY = "akerun-pending-abandonments";
 const ACTIVE_RUN_KEY = "akerun-active-run";
 const ARCHIVE_KEY = "vault-tumbler-lab-archive";
+const PLAY_COUNT_KEY = "akerun-play-start-count-v1";
 
 const storage = () => {
   if (typeof window === "undefined") return null;
@@ -87,6 +88,7 @@ export const normalizePlayerName = (value: string) =>
 
 export class ProgressStore {
   private sessionTrainingComplete = false;
+  private sessionPlayCount = 0;
   private readonly sessionOfficialClearKeys = new Set<string>();
 
   getPlayerName() {
@@ -105,6 +107,21 @@ export class ProgressStore {
       // 名前保存に失敗しても、開始時に確定した値は画面状態で保持する。
     }
     return name;
+  }
+
+  getPlayCount() {
+    const stored = readJson<unknown>(PLAY_COUNT_KEY, 0);
+    const persisted = typeof stored === "number" && Number.isInteger(stored) && stored >= 0
+      ? stored
+      : 0;
+    return Math.max(this.sessionPlayCount, persisted);
+  }
+
+  recordPlayStart() {
+    const next = this.getPlayCount() + 1;
+    this.sessionPlayCount = next;
+    writeJson(PLAY_COUNT_KEY, next);
+    return next;
   }
 
   get trainingComplete() {
