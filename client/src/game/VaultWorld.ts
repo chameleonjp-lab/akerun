@@ -981,7 +981,7 @@ export class VaultWorld {
         ? Math.min(width * 0.27, contentHeight * 0.2)
         : Math.min(width * 0.255, contentHeight * 0.15);
       const dialY = this.trainingContract
-        ? Math.max(unit * 12, contentHeight * 0.23)
+        ? Math.max(unit * 5.0 + radius * 1.12, contentHeight * 0.34)
         : Math.max(unit * 18, height * 0.3);
       const internalY = dialY + radius * 1.55;
       const internalHeight = Math.min(156, Math.max(unit * 11.5, contentHeight * 0.21));
@@ -1070,6 +1070,20 @@ export class VaultWorld {
   private drawHeader(layout: ScreenLayout) {
     const ctx = this.context;
     const unit = Math.max(10, Math.min(layout.width, layout.height) / 85);
+    const x = unit * 3;
+    const y = unit * 2.6;
+
+    if (layout.compact) {
+      ctx.fillStyle = "#e8dfc4";
+      ctx.font = `700 ${unit * 1.05}px "DM Mono", monospace`;
+      ctx.letterSpacing = `${unit * 0.1}px`;
+      ctx.fillText("AKERUN / アケルン", x, y + unit * 0.8);
+      ctx.fillStyle = "#7c9397";
+      ctx.font = `500 ${unit * 0.58}px "Noto Sans JP", sans-serif`;
+      ctx.fillText(this.mechanism.puzzle.vault.title, x, y + unit * 2.05);
+      return;
+    }
+
     const markSize = unit * 4.9;
     const x = unit * 3;
     const y = unit * 2.6;
