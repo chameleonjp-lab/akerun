@@ -509,7 +509,6 @@ export default function App() {
       const problemVersion = chosen.problemVersion ?? "V1";
       const countdownReady = await countdownPromise;
       if (!countdownReady) return;
-      if (!resumeCheckpoint) setPlayCount(store.recordPlayStart());
       store.saveActiveRun(problemId, problemVersion, savedName, nextRankingRunToken, resumeCheckpoint, "official");
       activeRunContextRef.current = {
         playerName: savedName,
@@ -528,6 +527,7 @@ export default function App() {
       submittedKeyRef.current = "";
       setRetryNonce(0);
       handle.startPuzzle(chosen, resumeCheckpoint ? { resume: resumeCheckpoint } : undefined);
+      if (!resumeCheckpoint) setPlayCount(store.recordPlayStart());
       setSnapshot(handle.getSnapshot());
       setCountdownValue(null);
       setCountdownMessage("");
@@ -659,7 +659,6 @@ export default function App() {
       const problemId = chosen.problemId ?? chosen.id;
       const countdownReady = await countdownPromise;
       if (!countdownReady) return;
-      setPlayCount(store.recordPlayStart());
       store.saveActiveRun(
         problemId,
         chosen.problemVersion ?? "V1",
@@ -684,6 +683,7 @@ export default function App() {
       submittedKeyRef.current = "";
       setRetryNonce(0);
       handle.startPuzzle(chosen, { recordable: true });
+      setPlayCount(store.recordPlayStart());
       setSnapshot(handle.getSnapshot());
       setCountdownValue(null);
       setCountdownMessage("");
@@ -781,19 +781,19 @@ export default function App() {
   };
 
   const shareHome = async () => {
+    const shareUrl = window.location.href;
     const text = "アケルン — 音と反応を観察して開ける、ダイヤル式金庫ゲーム。"
-      + " 初級から順番に挑戦できます。"
-      + " / " + window.location.href;
+      + " 初級から順番に挑戦できます。";
     try {
       if (navigator.share) {
-        await navigator.share({ title: "アケルン / Vault Tumbler Lab", text, url: window.location.href });
+        await navigator.share({ title: "アケルン / Vault Tumbler Lab", text, url: shareUrl });
         return;
       }
       if (!navigator.clipboard) {
         setSubmitStatus("この端末では共有機能を利用できません。");
         return;
       }
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(text + "\n" + shareUrl);
       setSubmitStatus("ゲーム紹介をコピーしました。");
     } catch {
       setSubmitStatus("共有をキャンセルしました。");
@@ -802,22 +802,32 @@ export default function App() {
 
   const shareResult = async () => {
     if (!snapshot) return;
+    const shareUrl = window.location.href;
     const result = snapshot.runResult;
-    const text = "アケルンで " + snapshot.problemId + " を開錠しました。"
-      + " " + String(result?.score ?? snapshot.score) + "点 / "
-      + formatTime(result?.elapsedTime ?? snapshot.elapsedTime)
-      + "。挑戦記録を見てください。 / " + window.location.href;
+    const isRetired = mode === "retired" || snapshot.status === "retired";
+    const isPractice = mode === "practice";
+    const text = isRetired
+      ? "アケルンでのプレイを中断しました。次は金庫の開錠に挑戦します。"
+      : isPractice
+        ? "アケルンの自由練習で " + snapshot.problemId + " を確認しました。"
+        : "アケルンで " + snapshot.problemId + " を開錠しました。"
+          + " " + String(result?.score ?? snapshot.score) + "点 / "
+          + formatTime(result?.elapsedTime ?? snapshot.elapsedTime) + "。";
     try {
       if (navigator.share) {
-        await navigator.share({ title: "アケルン / 開錠記録", text, url: window.location.href });
+        await navigator.share({
+          title: isRetired ? "アケルン / プレイ記録" : isPractice ? "アケルン / 練習記録" : "アケルン / 開錠記録",
+          text,
+          url: shareUrl,
+        });
         return;
       }
       if (!navigator.clipboard) {
         setSubmitStatus("この端末では共有機能を利用できません。");
         return;
       }
-      await navigator.clipboard.writeText(text);
-      setSubmitStatus("開錠記録をコピーしました。");
+      await navigator.clipboard.writeText(text + "\n" + shareUrl);
+      setSubmitStatus(isRetired ? "プレイ記録をコピーしました。" : "開錠記録をコピーしました。");
     } catch {
       setSubmitStatus("共有をキャンセルしました。");
     }
