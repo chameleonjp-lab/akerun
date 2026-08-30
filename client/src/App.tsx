@@ -18,12 +18,14 @@ import { competitionDayForDate } from "./game/CompetitionSchedule";
 import { isCoherentLockMechanismSnapshot } from "./game/LockMechanism";
 import type { RunCheckpoint } from "./game/RunSession";
 import { isCompleteRunTrace } from "./game/RunTrace";
+import { getStartCountdownSteps } from "./game/StartCountdown";
 
-type Screen = "title" | "tutorial" | "training" | "play" | "practice" | "pause" | "result" | "ranking" | "competition-ranking" | "archive" | "settings" | "sound-lab" | "help";
+type Screen = "title" | "tutorial" | "training" | "countdown" | "play" | "practice" | "pause" | "result" | "ranking" | "competition-ranking" | "archive" | "settings" | "sound-lab" | "help";
 type RunMode = "official" | "practice" | "competition" | "training" | "demo" | "retired";
 
 const BUILD_COMMIT = (import.meta.env.VITE_BUILD_COMMIT ?? "local").trim() || "local";
 const BUILD_LABEL = BUILD_COMMIT === "local" ? "LOCAL" : BUILD_COMMIT.slice(0, 12);
+const EXPERIMENT_LAB_URL = "https://chameleonjp-lab.github.io/chameleonjp_lab/";
 
 const formatTime = (seconds: number) => {
   const safe = Math.max(0, Math.floor(seconds));
@@ -73,6 +75,18 @@ function Button(props: React.ButtonHTMLAttributes<HTMLButtonElement> & { tone?: 
   return <button {...props} className={className} />;
 }
 
+function LinkButton(
+  props: React.AnchorHTMLAttributes<HTMLAnchorElement> & { tone?: "primary" | "secondary" | "danger" },
+) {
+  const { tone = "secondary", className, ...anchorProps } = props;
+  return (
+    <a
+      {...anchorProps}
+      className={["akerun-button", "akerun-button-" + tone, "akerun-link-button", className ?? ""].join(" ")}
+    />
+  );
+}
+
 function Stat({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="akerun-stat">
@@ -95,6 +109,9 @@ export default function App() {
   const [problem, setProblem] = useState<PuzzleDefinition | null>(null);
   const [rankingRunToken, setRankingRunToken] = useState<string | null>(null);
   const [startingOfficial, setStartingOfficial] = useState(false);
+  const [countdownValue, setCountdownValue] = useState<number | null>(null);
+  const [countdownMessage, setCountdownMessage] = useState("");
+  const [playCount, setPlayCount] = useState(() => store.getPlayCount());
   const [tutorialStep, setTutorialStep] = useState(1);
   const [submitStatus, setSubmitStatus] = useState("未送信");
   const [retryAvailable, setRetryAvailable] = useState(false);
@@ -113,6 +130,7 @@ export default function App() {
   const submittedKeyRef = useRef("");
   const submittingKeyRef = useRef("");
   const startingOfficialRef = useRef(false);
+  const countdownRunRef = useRef(0);
   const retryingPendingRef = useRef(false);
   const gameHandleRef = useRef<GameHandle | null>(null);
   const activeRunContextRef = useRef<{
@@ -337,6 +355,32 @@ export default function App() {
     return saved;
   };
 
+  const startGameCountdown = useCallback(() => {
+    const runId = countdownRunRef.current + 1;
+    countdownRunRef.current = runId;
+    setCountdownMessage("問題と開始情報を読み込んでいます…");
+    setCountdownValue(3);
+    setScreen("countdown");
+
+    return (async () => {
+      for (const value of getStartCountdownSteps()) {
+        if (countdownRunRef.current !== runId) return false;
+        setCountdownValue(value);
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 1000));
+      }
+      if (countdownRunRef.current !== runId) return false;
+      setCountdownValue(null);
+      setCountdownMessage("ロード完了を待っています…");
+      return true;
+    })();
+  }, []);
+
+  const cancelGameCountdown = useCallback(() => {
+    countdownRunRef.current += 1;
+    setCountdownValue(null);
+    setCountdownMessage("");
+  }, []);
+
   const startOfficial = async (requestedProblemId?: string, replayRunToken?: string | null) => {
     if (!store.trainingComplete) {
       setTutorialStep(1);
@@ -359,6 +403,7 @@ export default function App() {
     startingOfficialRef.current = true;
     setStartingOfficial(true);
     setSubmitStatus("問題を準備中…");
+    const countdownPromise = startGameCountdown();
     try {
       // 前回の通信断で残った破棄要求を先に再送し、同じ名前の
       // active run 上限を不要に消費しない。
@@ -462,6 +507,9 @@ export default function App() {
 
       const problemId = chosen.problemId ?? chosen.id;
       const problemVersion = chosen.problemVersion ?? "V1";
+      const countdownReady = await countdownPromise;
+      if (!countdownReady) return;
+      if (!resumeCheckpoint) setPlayCount(store.recordPlayStart());
       store.saveActiveRun(problemId, problemVersion, savedName, nextRankingRunToken, resumeCheckpoint, "official");
       activeRunContextRef.current = {
         playerName: savedName,
@@ -481,7 +529,13 @@ export default function App() {
       setRetryNonce(0);
       handle.startPuzzle(chosen, resumeCheckpoint ? { resume: resumeCheckpoint } : undefined);
       setSnapshot(handle.getSnapshot());
+      setCountdownValue(null);
+      setCountdownMessage("");
       setScreen("play");
+    } catch {
+      cancelGameCountdown();
+      setScreen("title");
+      setSubmitStatus("問題の準備に失敗しました。もう一度お試しください。");
     } finally {
       startingOfficialRef.current = false;
       setStartingOfficial(false);
@@ -550,6 +604,12 @@ export default function App() {
     setStartingOfficial(true);
     setSubmitStatus("本日の競技を準備中…");
     setRetiredNotice("");
+    const countdownPromise = startGameCountdown();
+    const abortCompetitionStart = (message: string) => {
+      cancelGameCountdown();
+      setSubmitStatus(message);
+      setScreen("title");
+    };
     try {
       await flushPendingRunAbandonments();
       const preparation = await rankingClient.prepareCompetitionRun(savedName);
@@ -561,7 +621,7 @@ export default function App() {
         || !preparation.competitionDay
       ) {
         setCompetitionDay(preparation.competitionDay ?? competitionDayForDate());
-        setSubmitStatus(
+        abortCompetitionStart(
           preparation.status === "disabled"
             ? "本日の競技は現在停止中です。"
             : "本日の競技を開始できませんでした。ランキング受付は停止中の可能性があります。",
@@ -578,7 +638,7 @@ export default function App() {
         || begun.problemVersion !== preparation.problemVersion
       ) {
         void requestOfficialRunAbandonment(preparation.runToken);
-        setSubmitStatus("本日の競技の開始確認に失敗しました。今回は対象外です。");
+        abortCompetitionStart("本日の競技の開始確認に失敗しました。今回は対象外です。");
         return;
       }
 
@@ -587,16 +647,19 @@ export default function App() {
         chosen = createOfficialPuzzle(begun.problemId);
       } catch {
         void requestOfficialRunAbandonment(preparation.runToken);
-        setSubmitStatus("本日の競技問題を読み込めませんでした。今回は対象外です。");
+        abortCompetitionStart("本日の競技問題を読み込めませんでした。今回は対象外です。");
         return;
       }
       if (chosen.problemVersion !== begun.problemVersion) {
         void requestOfficialRunAbandonment(preparation.runToken);
-        setSubmitStatus("本日の競技問題の版を確認できませんでした。今回は対象外です。");
+        abortCompetitionStart("本日の競技問題の版を確認できませんでした。今回は対象外です。");
         return;
       }
 
       const problemId = chosen.problemId ?? chosen.id;
+      const countdownReady = await countdownPromise;
+      if (!countdownReady) return;
+      setPlayCount(store.recordPlayStart());
       store.saveActiveRun(
         problemId,
         chosen.problemVersion ?? "V1",
@@ -622,7 +685,13 @@ export default function App() {
       setRetryNonce(0);
       handle.startPuzzle(chosen, { recordable: true });
       setSnapshot(handle.getSnapshot());
+      setCountdownValue(null);
+      setCountdownMessage("");
       setScreen("play");
+    } catch {
+      cancelGameCountdown();
+      setScreen("title");
+      setSubmitStatus("本日の競技の準備に失敗しました。もう一度お試しください。");
     } finally {
       startingOfficialRef.current = false;
       setStartingOfficial(false);
@@ -711,18 +780,44 @@ export default function App() {
     handle?.performAction("audio-preview:" + sampleId);
   };
 
-  const shareResult = async () => {
-    if (!snapshot) return;
-    const text = "Vault Tumbler Lab " + snapshot.problemId
-      + " / " + String(snapshot.score) + "点 / " + formatTime(snapshot.elapsedTime)
+  const shareHome = async () => {
+    const text = "アケルン — 音と反応を観察して開ける、ダイヤル式金庫ゲーム。"
+      + " 初級から順番に挑戦できます。"
       + " / " + window.location.href;
     try {
       if (navigator.share) {
-        await navigator.share({ title: "Vault Tumbler Lab", text });
+        await navigator.share({ title: "アケルン / Vault Tumbler Lab", text, url: window.location.href });
+        return;
+      }
+      if (!navigator.clipboard) {
+        setSubmitStatus("この端末では共有機能を利用できません。");
         return;
       }
       await navigator.clipboard.writeText(text);
-      setSubmitStatus("共有文をコピーしました。");
+      setSubmitStatus("ゲーム紹介をコピーしました。");
+    } catch {
+      setSubmitStatus("共有をキャンセルしました。");
+    }
+  };
+
+  const shareResult = async () => {
+    if (!snapshot) return;
+    const result = snapshot.runResult;
+    const text = "アケルンで " + snapshot.problemId + " を開錠しました。"
+      + " " + String(result?.score ?? snapshot.score) + "点 / "
+      + formatTime(result?.elapsedTime ?? snapshot.elapsedTime)
+      + "。挑戦記録を見てください。 / " + window.location.href;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "アケルン / 開錠記録", text, url: window.location.href });
+        return;
+      }
+      if (!navigator.clipboard) {
+        setSubmitStatus("この端末では共有機能を利用できません。");
+        return;
+      }
+      await navigator.clipboard.writeText(text);
+      setSubmitStatus("開錠記録をコピーしました。");
     } catch {
       setSubmitStatus("共有をキャンセルしました。");
     }
@@ -817,10 +912,17 @@ export default function App() {
   const renderTitle = () => (
     <div className="akerun-screen akerun-title-screen">
       <div className="akerun-title-card">
-        <p className="akerun-kicker">VAULT TUMBLER LAB / AKERUN</p>
+        <div className="akerun-title-brand">
+          <p className="akerun-kicker">アケルン / AKERUN</p>
+          <p className="akerun-brand-subtitle">VAULT TUMBLER LAB</p>
+        </div>
         <p className="akerun-build-id" data-build-commit={BUILD_COMMIT}>BUILD / {BUILD_LABEL}</p>
         <h1>金庫を、観察で開ける。</h1>
-        <p className="akerun-lead">音や反応を確かめながら、金庫の内部機構を読み解きます。進行ゲームは初級から順番に進み、自由練習では問題を選べます。本日の競技は日本時間の日付ごとに全員が同じ問題へ挑戦します。</p>
+        <p className="akerun-lead">音と反応を観察しながら、ダイヤル式金庫を開けるゲームです。まずは初級から、1問ずつ進みます。</p>
+        <div className="akerun-progress-strip" aria-label="プレイ状況">
+          <span>公式クリア <strong>{clearedOfficialCount}/{OFFICIAL_PROBLEM_CATALOG.length}</strong></span>
+          <span>プレイ開始 <strong>{playCount}</strong></span>
+        </div>
         <label className="akerun-field">
           <span>プレイヤー名（ランキング登録名）</span>
           <input
@@ -839,15 +941,17 @@ export default function App() {
           {activeRun.runMode === "competition"
             ? "前回の競技は再開せず、ランキング対象外として破棄します。"
             : activeRun.checkpoint
-              ? `前回の ${activeRun.problemId} は中断されています。保存済みの状態から再開します。`
-              : `前回の ${activeRun.problemId} は旧形式の中断記録です。新しい問題を準備します。`}
+              ? "前回の " + activeRun.problemId + " は中断されています。保存済みの状態から再開します。"
+              : "前回の " + activeRun.problemId + " は旧形式の中断記録です。新しい問題を準備します."}
         </p> : null}
-        <p className="akerun-small">進行状況：公式問題 ${clearedOfficialCount} / ${OFFICIAL_PROBLEM_CATALOG.length} 問クリア。次は ${nextProgressionProblem.problemId}（${problemTierLabel[nextProgressionProblem.problemTier ?? "standard"]}）です。</p>
-        <div className="akerun-title-actions">
+        <p className="akerun-small">次の進行問題：{nextProgressionProblem.problemId}（{problemTierLabel[nextProgressionProblem.problemTier ?? "standard"]}）。初級から順番に進みます。</p>
+        <div className="akerun-title-primary-actions">
           <Button tone="primary" onClick={() => void startOfficial()} disabled={!handle || startingOfficial}>{startingOfficial ? "問題を準備中…" : "進行ゲームを開始"}</Button>
-          <Button onClick={() => void startCompetition()} disabled={!handle || startingOfficial}>{startingOfficial ? "競技を準備中…" : "本日の競技（" + competitionDayForDate() + "）"}</Button>
           <Button onClick={() => { setTutorialStep(1); setScreen("tutorial"); }}>初めて遊ぶ</Button>
+        </div>
+        <div className="akerun-title-feature-actions">
           <Button onClick={startDemo} disabled={!handle}>お手本を見る</Button>
+          <Button onClick={() => void startCompetition()} disabled={!handle || startingOfficial}>{startingOfficial ? "競技を準備中…" : "本日の競技（" + competitionDayForDate() + "）"}</Button>
         </div>
         {pendingCount ? (
           <div className="akerun-pending-box">
@@ -856,15 +960,20 @@ export default function App() {
             <Button onClick={() => void retryPending()}>記録を再送する</Button>
           </div>
         ) : null}
-        <div className="akerun-link-row">
+        <div className="akerun-title-secondary-actions">
+          <Button onClick={() => setScreen("practice")}>自由練習</Button>
           <Button onClick={openRanking}>公式ランキング</Button>
           <Button onClick={openDailyRanking}>本日の競技ランキング</Button>
-          <Button onClick={() => setScreen("practice")}>自由練習</Button>
           <Button onClick={() => setScreen("archive")}>収蔵品</Button>
+          <Button onClick={() => setScreen("help")}>遊び方</Button>
           <Button onClick={() => setScreen("settings")}>設定</Button>
           <Button onClick={() => { setReturnScreen("title"); setScreen("sound-lab"); }}>音の試験室</Button>
-          <Button onClick={() => setScreen("help")}>遊び方</Button>
         </div>
+        <div className="akerun-title-utilities">
+          <Button onClick={() => void shareHome()}>ゲームを共有</Button>
+          <LinkButton href={EXPERIMENT_LAB_URL} target="_blank" rel="noopener noreferrer">カメレオンJPの実験場</LinkButton>
+        </div>
+        <p className="akerun-submit-status">{submitStatus === "未送信" ? "ランキング受付は現在停止中です。プレイ結果は端末内へ保存されます。" : submitStatus}</p>
         <p className="akerun-footnote">{store.trainingComplete ? "訓練完了済み。いつでも通常ゲームを開始できます。" : "初回は4段階の短い訓練から始めると理解しやすくなります。"}</p>
       </div>
     </div>
@@ -887,6 +996,20 @@ export default function App() {
           ))}
         </div>
         <Button tone="primary" onClick={() => setScreen("title")}>タイトルへ戻る</Button>
+      </div>
+    </div>
+  );
+
+  const renderCountdown = () => (
+    <div className="akerun-screen akerun-countdown-screen" role="status" aria-live="polite">
+      <div className="akerun-countdown-card">
+        <p className="akerun-kicker">READY / アケルン</p>
+        <p className="akerun-countdown-label">プレイ開始まで</p>
+        <div className="akerun-countdown-number" aria-label={countdownValue ? String(countdownValue) + "秒" : "ロード完了待ち"}>
+          {countdownValue ?? "…"}
+        </div>
+        <p className="akerun-countdown-message">{countdownMessage}</p>
+        <p className="akerun-small">問題・開始情報を準備しています。カウントが終わり、ロード完了後に操作を開始します。</p>
       </div>
     </div>
   );
@@ -997,6 +1120,7 @@ export default function App() {
           <p className="akerun-kicker">{isRetired ? "RETIRED / リタイア" : mode === "demo" ? "EXAMPLE RESULT / お手本" : isPractice ? "FREE PRACTICE / 自由練習" : isCompetition ? "DAILY COMPETITION / 本日の競技" : "UNLOCK COMPLETE / 開錠完了"}</p>
           <h2>{isRetired ? "今回は記録しません。" : isPractice ? "練習を完了しました。" : isCompetition ? "競技を完了しました。" : snapshot?.rewardTitle ?? "開錠しました。"}</h2>
           <p className="akerun-result-subtitle">{snapshot?.problemId} / {snapshot?.problemVersion} / {snapshot?.vaultTitle}</p>
+          {isRankedMode ? <p className="akerun-small">プレイ開始回数：{playCount}</p> : null}
           {isCompetition ? <p className="akerun-small">競技日（日本時間）：{competitionDay ?? competitionDayForDate()}。一時停止・画面離脱をしたプレイは対象外です。</p> : null}
           {mode === "official" && !isRetired ? <p className="akerun-small">獲得収蔵品：{snapshot?.rewardTitle ?? "—"}</p> : null}
           {mode === "official" && !isRetired && snapshot?.newlyUnlockedRewards.length ? (
@@ -1036,7 +1160,8 @@ export default function App() {
             {canReplay ? <Button tone="primary" onClick={startSameProblem} disabled={!problem || startingOfficial}>同じ問題でもう一度</Button> : null}
             {canReplay ? <Button onClick={startDifferentProblem} disabled={startingOfficial}>{isPractice ? "別の練習問題" : "次の進行問題"}</Button> : null}
             {isCompetition && !isRetired ? <Button onClick={openDailyRanking}>本日の競技ランキング</Button> : <Button onClick={openRanking}>ランキング</Button>}
-            <Button onClick={() => void shareResult()}>結果を共有</Button>
+            <Button onClick={() => void shareResult()}>この開錠記録を共有</Button>
+            <LinkButton href={EXPERIMENT_LAB_URL} target="_blank" rel="noopener noreferrer">カメレオンJPの実験場</LinkButton>
             <Button onClick={() => setScreen("title")}>タイトルへ戻る</Button>
           </div>
         </div>
@@ -1182,6 +1307,7 @@ export default function App() {
     if (screen === "title") return renderTitle();
     if (screen === "tutorial") return renderTutorial();
     if (screen === "practice") return renderPractice();
+    if (screen === "countdown") return renderCountdown();
     if (screen === "training") return renderTraining();
     if (screen === "play") return renderPlayHud();
     if (screen === "pause") return renderPause();
