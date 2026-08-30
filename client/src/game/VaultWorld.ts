@@ -911,7 +911,9 @@ export class VaultWorld {
     this.drawBackground(layout);
     this.drawHeader(layout);
     this.drawDialPanel(layout);
-    this.drawInternalPanel(layout);
+    if (!layout.compact) {
+      this.drawInternalPanel(layout);
+    }
     this.drawCausalLink(layout);
     this.drawFooter(layout);
     if (this.isBlindMode) {
@@ -968,22 +970,34 @@ export class VaultWorld {
     const height = size.height;
     const compact = width / height < 1.12;
     if (compact) {
+      // 縦画面では、ダイヤル・操作部品・HTMLの説明カードを別々の帯へ置く。
+      // 写真素材を無理に全面へ広げず、操作可能な領域を先に確保する。
+      const unit = Math.max(10, Math.min(width, height) / 85);
+      const bottomReserve = this.trainingContract
+        ? Math.min(300, Math.max(230, height * 0.33))
+        : Math.min(175, Math.max(120, height * 0.18));
+      const contentHeight = Math.max(unit * 30, height - bottomReserve);
+      const radius = this.trainingContract
+        ? Math.min(width * 0.27, contentHeight * 0.2)
+        : Math.min(width * 0.255, contentHeight * 0.15);
+      const dialY = this.trainingContract
+        ? Math.max(unit * 5.0 + radius * 1.12, contentHeight * 0.34)
+        : Math.max(unit * 18, height * 0.3);
+      const internalY = dialY + radius * 1.55;
+      const internalHeight = Math.min(156, Math.max(unit * 11.5, contentHeight * 0.21));
+
       return {
         width,
         height,
         compact,
-        dial: (() => {
-          // 縦画面では説明カードを下部へ置くため、ダイヤルを常に上半分へ確保する。
-          const radius = Math.min(width * 0.29, height * 0.145);
-          return {
-            x: width * 0.5,
-            y: height * 0.235,
-            radius,
-            deadZoneRadius: radius * 0.42,
-          };
-        })(),
-        internal: { x: width * 0.06, y: height * 0.49, width: width * 0.88, height: height * 0.18 },
-        footerY: height * 0.72,
+        dial: {
+          x: width * 0.5,
+          y: dialY,
+          radius,
+          deadZoneRadius: radius * 0.42,
+        },
+        internal: { x: width * 0.05, y: internalY, width: width * 0.9, height: internalHeight },
+        footerY: this.trainingContract ? height * 0.49 : height * 0.5,
       };
     }
     return {
@@ -1056,9 +1070,21 @@ export class VaultWorld {
   private drawHeader(layout: ScreenLayout) {
     const ctx = this.context;
     const unit = Math.max(10, Math.min(layout.width, layout.height) / 85);
-    const markSize = unit * 4.9;
     const x = unit * 3;
     const y = unit * 2.6;
+
+    if (layout.compact) {
+      ctx.fillStyle = "#e8dfc4";
+      ctx.font = `700 ${unit * 1.05}px "DM Mono", monospace`;
+      ctx.letterSpacing = `${unit * 0.1}px`;
+      ctx.fillText("AKERUN / アケルン", x, y + unit * 0.8);
+      ctx.fillStyle = "#7c9397";
+      ctx.font = `500 ${unit * 0.58}px "Noto Sans JP", sans-serif`;
+      ctx.fillText(this.mechanism.puzzle.vault.title, x, y + unit * 2.05);
+      return;
+    }
+
+    const markSize = unit * 4.9;
     const mark = this.images.mark;
     if (mark) ctx.drawImage(mark, x, y, markSize, markSize);
     else this.drawFallbackMark(x, y, markSize);
@@ -1066,7 +1092,7 @@ export class VaultWorld {
     ctx.fillStyle = "#e8dfc4";
     ctx.font = `600 ${unit * 1.45}px "DM Mono", monospace`;
     ctx.letterSpacing = `${unit * 0.16}px`;
-    ctx.fillText("VAULT TUMBLER LAB", x + markSize + unit * 1.4, y + markSize * 0.42);
+    ctx.fillText(layout.compact ? "AKERUN / アケルン" : "VAULT TUMBLER LAB", x + markSize + unit * 1.4, y + markSize * 0.42);
     ctx.fillStyle = "#7c9397";
     ctx.font = `500 ${unit * 0.78}px "Noto Sans JP", sans-serif`;
     ctx.fillText(this.mechanism.puzzle.vault.title, x + markSize + unit * 1.45, y + markSize * 0.82);
@@ -1112,11 +1138,12 @@ export class VaultWorld {
     const unit = Math.max(10, Math.min(layout.width, layout.height) / 85);
     const plate = this.images.realDoor ?? this.images.door;
     const opening = easeOut(this.openingProgress);
+    const doorScale = layout.compact ? 1.12 : 1.42;
 
-    if (opening > 0.008) this.drawVaultInterior(dial, opening);
+    if (opening > 0.008) this.drawVaultInterior(dial, opening, layout.compact);
     ctx.save();
     if (opening > 0.008) {
-      const hingeX = dial.x - dial.radius * 1.42;
+      const hingeX = dial.x - dial.radius * doorScale;
       ctx.translate(hingeX, dial.y);
       ctx.scale(1 - opening * 0.76, 1);
       ctx.translate(-hingeX, -dial.y);
@@ -1126,7 +1153,7 @@ export class VaultWorld {
     if (plate) {
       ctx.save();
       ctx.globalAlpha = this.images.realDoor ? 0.94 : 0.5;
-      ctx.drawImage(plate, dial.x - dial.radius * 1.42, dial.y - dial.radius * 1.42, dial.radius * 2.84, dial.radius * 2.84);
+      ctx.drawImage(plate, dial.x - dial.radius * doorScale, dial.y - dial.radius * doorScale, dial.radius * 2 * doorScale, dial.radius * 2 * doorScale);
       ctx.restore();
     }
 
@@ -1183,7 +1210,7 @@ export class VaultWorld {
     ctx.fillText(this.mechanism.lastDirection === "cw" ? "CLOCKWISE" : "COUNTER-CLOCKWISE", dial.x, dial.y + dial.radius * 0.22);
     ctx.textAlign = "left";
     ctx.restore();
-    if (opening > 0.008) this.drawOpenDoorEdge(dial, opening);
+    if (opening > 0.008) this.drawOpenDoorEdge(dial, opening, layout.compact);
 
     ctx.fillStyle = "#e9dfc8";
     ctx.beginPath();
@@ -1205,13 +1232,14 @@ export class VaultWorld {
     this.drawControlButton("plus", { x: dial.x + dial.radius * 0.39, y: controlY, width: dial.radius * 0.34, height: unit * 2.35 }, "+  1");
   }
 
-  private drawVaultInterior(dial: ScreenLayout["dial"], opening: number) {
+  private drawVaultInterior(dial: ScreenLayout["dial"], opening: number, compact = false) {
     const ctx = this.context;
     const unit = Math.max(10, Math.min(this.getCanvasResolution().width, this.getCanvasResolution().height) / 85);
-    const left = dial.x - dial.radius * 1.34;
-    const top = dial.y - dial.radius * 1.34;
-    const width = dial.radius * 2.68;
-    const height = dial.radius * 2.68;
+    const scale = compact ? 1.08 : 1.34;
+    const left = dial.x - dial.radius * scale;
+    const top = dial.y - dial.radius * scale;
+    const width = dial.radius * 2 * scale;
+    const height = dial.radius * 2 * scale;
     const cavity = ctx.createLinearGradient(left, top, left + width, top + height);
     cavity.addColorStop(0, "#020508");
     cavity.addColorStop(0.5, "#111d23");
@@ -1322,14 +1350,15 @@ export class VaultWorld {
     ctx.restore();
   }
 
-  private drawOpenDoorEdge(dial: ScreenLayout["dial"], opening: number) {
+  private drawOpenDoorEdge(dial: ScreenLayout["dial"], opening: number, compact = false) {
     const ctx = this.context;
     const unit = Math.max(10, Math.min(this.getCanvasResolution().width, this.getCanvasResolution().height) / 85);
-    const hingeX = dial.x - dial.radius * 1.42;
-    const doorWidth = dial.radius * 2.84;
+    const scale = compact ? 1.12 : 1.42;
+    const hingeX = dial.x - dial.radius * scale;
+    const doorWidth = dial.radius * 2 * scale;
     const edgeX = hingeX + doorWidth * (1 - opening * 0.76);
-    const top = dial.y - dial.radius * 1.42;
-    const height = dial.radius * 2.84;
+    const top = dial.y - dial.radius * scale;
+    const height = dial.radius * 2 * scale;
     const thickness = Math.max(unit * 0.65, dial.radius * opening * 0.27);
     const edge = ctx.createLinearGradient(edgeX, top, edgeX + thickness, top);
     edge.addColorStop(0, "#0a0f11");
@@ -1391,29 +1420,29 @@ export class VaultWorld {
     const { internal } = layout;
     const unit = Math.max(10, Math.min(layout.width, layout.height) / 85);
     this.drawFrame(internal, "#0d171e", "rgba(187, 150, 77, 0.54)");
-    const realLock = this.images.realLock;
-    if (realLock) {
-      ctx.save();
-      this.roundRect(internal.x + unit * 0.8, internal.y + unit * 4.8, internal.width - unit * 1.6, internal.height - unit * 6.3, unit * 0.35);
-      ctx.clip();
-      ctx.globalAlpha = 0.74;
-      ctx.drawImage(realLock, internal.x + unit * 0.8, internal.y + unit * 4.8, internal.width - unit * 1.6, internal.height - unit * 6.3);
-      ctx.restore();
-    }
+    // 実写の内部機構は合成図形と座標系が異なるため、現行の操作盤には重ねない。
+    // 写真は素材として保持し、別の資料・拡大表示でのみ使えるようにする。
     ctx.fillStyle = "#d9c28a";
     ctx.font = `600 ${unit * 0.86}px "DM Mono", monospace`;
-    ctx.fillText("LOCK CUTAWAY  /  SIDE VIEW", internal.x + unit * 1.5, internal.y + unit * 2.2);
+    ctx.fillText(layout.compact ? "LOCK MECHANISM / 内部機構" : "LOCK CUTAWAY  /  SIDE VIEW", internal.x + unit * 1.5, internal.y + unit * 2.2);
     ctx.fillStyle = "#708a90";
     ctx.font = `500 ${unit * 0.72}px "Noto Sans JP", sans-serif`;
-    ctx.fillText(`${this.mechanism.puzzle.vault.wheelCount === 2 ? "TWO" : "SIX"} WHEEL PACK  /  CAM・FLY・FENCE を観察`, internal.x + unit * 1.5, internal.y + unit * 3.7);
+    ctx.fillText(
+      layout.compact
+        ? `${this.mechanism.puzzle.vault.wheelCount} WHEELS  /  CAM・FLY・FENCE`
+        : `${this.mechanism.puzzle.vault.wheelCount === 2 ? "TWO" : "SIX"} WHEEL PACK  /  CAM・FLY・FENCE を観察`,
+      internal.x + unit * 1.5,
+      internal.y + unit * 3.7,
+    );
     ctx.fillStyle = "#c9a963";
     ctx.font = `600 ${unit * 0.48}px "DM Mono", monospace`;
     ctx.fillText(`PACK PRELOAD / ${this.mechanism.puzzle.vault.preload.label}`, internal.x + unit * 1.5, internal.y + unit * 4.65);
 
     const shaftX = internal.x + internal.width * 0.52;
     const wheelCount = this.mechanism.puzzle.vault.wheelCount;
-    const contentTop = internal.y + internal.height * 0.22;
-    const contentBottom = internal.y + internal.height * 0.79;
+    const headerHeight = layout.compact ? unit * 5.0 : internal.height * 0.22;
+    const contentTop = internal.y + headerHeight;
+    const contentBottom = internal.y + internal.height * (layout.compact ? 0.85 : 0.79);
     const rowGap = (contentBottom - contentTop) / wheelCount;
     const wheelWidth = internal.width * (layout.compact ? 0.72 : 0.78);
     const wheelHeight = Math.min(rowGap * 0.62, internal.width * 0.082);
@@ -1666,6 +1695,7 @@ export class VaultWorld {
     const unit = Math.max(10, Math.min(layout.width, layout.height) / 85);
     const y = layout.footerY;
     const pad = unit * 2.2;
+
     const messageWidth = layout.compact ? layout.width - pad * 2 : layout.width * 0.57;
     const active = this.mechanism.activeStage;
     const nextAction = active
@@ -1675,6 +1705,35 @@ export class VaultWorld {
       : this.mechanism.protocolInstruction;
     const hint = `NEXT  /  ${nextAction}`;
     const guide = this.getGuideText();
+
+    if (layout.compact && this.trainingContract) {
+      const workbenchHeight = Math.min(unit * 10.0, layout.height * 0.115);
+      const bench = { x: pad, y, width: layout.width - pad * 2, height: workbenchHeight };
+      this.drawPhysicalWorkbench(bench, layout);
+      return;
+    }
+
+    if (layout.compact) {
+      this.drawFrame({ x: pad, y, width: messageWidth, height: unit * 4.2 }, "rgba(11, 20, 26, 0.9)", "rgba(146, 181, 177, 0.3)");
+      ctx.fillStyle = "#4de0c0";
+      ctx.font = `700 ${unit * 0.66}px "DM Mono", monospace`;
+      ctx.fillText(hint, pad + unit * 1.1, y + unit * 1.42);
+      ctx.fillStyle = "#d9c28a";
+      ctx.font = `600 ${unit * 0.5}px "DM Mono", monospace`;
+      ctx.fillText(`PHASE / ${this.mechanism.phase.toUpperCase()}  ·  ${this.mechanism.faultCount}/${this.mechanism.puzzle.difficulty.maxFaults}`, pad + unit * 1.1, y + unit * 2.28);
+      ctx.fillStyle = "#d5d9cc";
+      ctx.font = `500 ${unit * 0.64}px "Noto Sans JP", sans-serif`;
+      this.drawWrappedText(this.mechanism.lastMessage, pad + unit * 1.1, y + unit * 3.12, messageWidth - unit * 2.2, unit * 0.82);
+      const bench = {
+        x: pad,
+        y: y + unit * 4.85,
+        width: layout.width - pad * 2,
+        height: Math.min(unit * 9.0, layout.height * 0.11),
+      };
+      this.drawPhysicalWorkbench(bench, layout);
+      // ポートレートではHTMLのモバイルメニューを使うため、補助レールは描かない。
+      return;
+    }
 
     this.drawFrame({ x: pad, y, width: messageWidth, height: unit * 5.35 }, "rgba(11, 20, 26, 0.9)", "rgba(146, 181, 177, 0.3)");
     ctx.fillStyle = "#4de0c0";
