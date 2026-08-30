@@ -911,7 +911,7 @@ export class VaultWorld {
     this.drawBackground(layout);
     this.drawHeader(layout);
     this.drawDialPanel(layout);
-    if (!(layout.compact && this.trainingContract)) {
+    if (!layout.compact) {
       this.drawInternalPanel(layout);
     }
     this.drawCausalLink(layout);
@@ -982,7 +982,7 @@ export class VaultWorld {
         : Math.min(width * 0.255, contentHeight * 0.15);
       const dialY = this.trainingContract
         ? Math.max(unit * 12, contentHeight * 0.23)
-        : Math.max(unit * 18, contentHeight * 0.31);
+        : Math.max(unit * 18, height * 0.3);
       const internalY = dialY + radius * 1.55;
       const internalHeight = Math.min(156, Math.max(unit * 11.5, contentHeight * 0.21));
 
@@ -997,7 +997,7 @@ export class VaultWorld {
           deadZoneRadius: radius * 0.42,
         },
         internal: { x: width * 0.05, y: internalY, width: width * 0.9, height: internalHeight },
-        footerY: this.trainingContract ? height * 0.58 : internalY + internalHeight + unit * 1.1,
+        footerY: this.trainingContract ? height * 0.49 : height * 0.5,
       };
     }
     return {
@@ -1684,13 +1684,6 @@ export class VaultWorld {
     const y = layout.footerY;
     const pad = unit * 2.2;
 
-    if (layout.compact && this.trainingContract) {
-      const workbenchHeight = Math.min(unit * 10.0, layout.height * 0.115);
-      const bench = { x: pad, y, width: layout.width - pad * 2, height: workbenchHeight };
-      this.drawPhysicalWorkbench(bench, layout);
-      return;
-    }
-
     const messageWidth = layout.compact ? layout.width - pad * 2 : layout.width * 0.57;
     const active = this.mechanism.activeStage;
     const nextAction = active
@@ -1700,6 +1693,35 @@ export class VaultWorld {
       : this.mechanism.protocolInstruction;
     const hint = `NEXT  /  ${nextAction}`;
     const guide = this.getGuideText();
+
+    if (layout.compact && this.trainingContract) {
+      const workbenchHeight = Math.min(unit * 10.0, layout.height * 0.115);
+      const bench = { x: pad, y, width: layout.width - pad * 2, height: workbenchHeight };
+      this.drawPhysicalWorkbench(bench, layout);
+      return;
+    }
+
+    if (layout.compact) {
+      this.drawFrame({ x: pad, y, width: messageWidth, height: unit * 4.2 }, "rgba(11, 20, 26, 0.9)", "rgba(146, 181, 177, 0.3)");
+      ctx.fillStyle = "#4de0c0";
+      ctx.font = `700 ${unit * 0.66}px "DM Mono", monospace`;
+      ctx.fillText(hint, pad + unit * 1.1, y + unit * 1.42);
+      ctx.fillStyle = "#d9c28a";
+      ctx.font = `600 ${unit * 0.5}px "DM Mono", monospace`;
+      ctx.fillText(`PHASE / ${this.mechanism.phase.toUpperCase()}  ·  ${this.mechanism.faultCount}/${this.mechanism.puzzle.difficulty.maxFaults}`, pad + unit * 1.1, y + unit * 2.28);
+      ctx.fillStyle = "#d5d9cc";
+      ctx.font = `500 ${unit * 0.64}px "Noto Sans JP", sans-serif`;
+      this.drawWrappedText(this.mechanism.lastMessage, pad + unit * 1.1, y + unit * 3.12, messageWidth - unit * 2.2, unit * 0.82);
+      const bench = {
+        x: pad,
+        y: y + unit * 4.85,
+        width: layout.width - pad * 2,
+        height: Math.min(unit * 9.0, layout.height * 0.11),
+      };
+      this.drawPhysicalWorkbench(bench, layout);
+      // ポートレートではHTMLのモバイルメニューを使うため、補助レールは描かない。
+      return;
+    }
 
     this.drawFrame({ x: pad, y, width: messageWidth, height: unit * 5.35 }, "rgba(11, 20, 26, 0.9)", "rgba(146, 181, 177, 0.3)");
     ctx.fillStyle = "#4de0c0";
