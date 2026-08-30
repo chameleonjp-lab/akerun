@@ -97,7 +97,7 @@ export default function GameCanvas({ onReady, onSnapshot, onVisibilityPause }: G
         ref={canvasRef}
         tabIndex={0}
         role="application"
-        aria-label="Vault Tumbler Lab: ダイヤル式金庫の内部機構を観察する開錠ゲーム"
+        aria-label="アケルン / Vault Tumbler Lab: ダイヤル式金庫の内部機構を観察する開錠ゲーム"
         aria-description="公式20問から一問が固定されます。ダイヤルを回し、音と画面の反応を観察し、テンション、フェンス、ロックボルト、扉ハンドルの順に開錠します。音・振動・高コントラスト・低モーションは補助であり、使わなくてもプレイできます。"
         className="fixed inset-0 h-full w-full touch-none outline-none"
       />
