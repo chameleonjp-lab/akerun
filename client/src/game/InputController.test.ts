@@ -3,12 +3,14 @@ import { InputController, containsInputRect, type InputRect } from "./InputContr
 
 class TestCanvas extends EventTarget {
   captured = new Set<number>();
+  throwOnCapture = false;
 
   getBoundingClientRect() {
     return { left: 0, top: 0, width: 100, height: 100 };
   }
 
   setPointerCapture(pointerId: number) {
+    if (this.throwOnCapture) throw new Error("pointer capture unavailable");
     this.captured.add(pointerId);
   }
 
@@ -60,6 +62,22 @@ describe("InputController", () => {
     expect(options.onRotateDial).toHaveBeenCalled();
   });
 
+  it("accepts both rotation directions and a drag that starts at the hub", () => {
+    const canvas = new TestCanvas();
+    const windowTarget = new EventTarget();
+    const options = baseOptions(canvas, windowTarget, new Map());
+    new InputController(options);
+
+    canvas.dispatchEvent(pointerEvent("pointerdown", 1, 50, 50));
+    canvas.dispatchEvent(pointerEvent("pointermove", 1, 70, 50));
+    canvas.dispatchEvent(pointerEvent("pointermove", 1, 50, 70));
+    canvas.dispatchEvent(pointerEvent("pointermove", 1, 70, 50));
+
+    const rotations = options.onRotateDial.mock.calls.map(([steps]) => steps as number);
+    expect(rotations.some((steps) => steps > 0)).toBe(true);
+    expect(rotations.some((steps) => steps < 0)).toBe(true);
+  });
+
   it("ignores a second pointer while a dial gesture is active", () => {
     const canvas = new TestCanvas();
     const windowTarget = new EventTarget();
@@ -74,7 +92,7 @@ describe("InputController", () => {
     expect(options.onRotateDial).toHaveBeenCalled();
   });
 
-  it("does not begin a dial gesture inside the center dead zone", () => {
+  it("uses the first move from the center as the dial angle baseline", () => {
     const canvas = new TestCanvas();
     const windowTarget = new EventTarget();
     const options = {
@@ -85,8 +103,54 @@ describe("InputController", () => {
 
     canvas.dispatchEvent(pointerEvent("pointerdown", 1, 50, 50));
     canvas.dispatchEvent(pointerEvent("pointermove", 1, 60, 50));
-
     expect(options.onRotateDial).not.toHaveBeenCalled();
+
+    canvas.dispatchEvent(pointerEvent("pointermove", 1, 50, 60));
+
+    expect(options.onRotateDial).toHaveBeenCalled();
+  });
+
+  it("continues an active gesture when pointer capture is unavailable", () => {
+    const canvas = new TestCanvas();
+    canvas.throwOnCapture = true;
+    const windowTarget = new EventTarget();
+    const options = baseOptions(canvas, windowTarget, new Map([[
+      "tension-grip",
+      { x: 0, y: 0, width: 20, height: 20 },
+    ]]));
+    const controller = new InputController(options);
+
+    canvas.dispatchEvent(pointerEvent("pointerdown", 1, 70, 50));
+    windowTarget.dispatchEvent(pointerEvent("pointermove", 1, 50, 70));
+    expect(options.onRotateDial).toHaveBeenCalled();
+
+    controller.dispose();
+  });
+
+  it("continues an active physical input when pointer capture is unavailable", () => {
+    const canvas = new TestCanvas();
+    canvas.throwOnCapture = true;
+    const windowTarget = new EventTarget();
+    const options = {
+      ...baseOptions(canvas, windowTarget, new Map([[
+        "tension-grip",
+        { x: 0, y: 0, width: 20, height: 20 },
+      ]])),
+      onBeginPhysicalInput: vi.fn(() => "tension" as const),
+    };
+    const controller = new InputController(options);
+
+    canvas.dispatchEvent(pointerEvent("pointerdown", 2, 10, 10));
+    windowTarget.dispatchEvent(pointerEvent("pointermove", 2, 18, 10));
+    expect(options.onUpdatePhysicalInput).toHaveBeenCalledWith(
+      "tension",
+      { x: 10, y: 10 },
+      { x: 18, y: 10 },
+    );
+
+    windowTarget.dispatchEvent(pointerEvent("pointerup", 2, 18, 10));
+    expect(options.onEndPhysicalInput).toHaveBeenCalledWith("tension");
+    controller.dispose();
   });
 
   it("does not route input while disabled", () => {

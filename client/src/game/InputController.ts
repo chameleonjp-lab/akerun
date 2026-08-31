@@ -17,7 +17,7 @@ export type InputDialLayout = {
   readonly x: number;
   readonly y: number;
   readonly radius: number;
-  /** ダイヤル中心のハブ。ここからの回し始めは誤操作防止のため無効にする。 */
+  /** 中心から始めた場合、最初の移動を角度の基準作りに使う範囲。 */
   readonly deadZoneRadius?: number;
 };
 
@@ -55,6 +55,7 @@ const contains = (rect: InputRect, point: InputPoint) =>
 export class InputController {
   private readonly listeners: Array<() => void> = [];
   private lastPointerAngle: number | null = null;
+  private dialNeedsAngle = false;
   private blindPointerX: number | null = null;
   private pointerCarry = 0;
   private activePointerId: number | null = null;
@@ -113,8 +114,9 @@ export class InputController {
         0,
         Math.min(layout.radius * 0.86, layout.deadZoneRadius ?? 0),
       );
-      if (distanceFromCenter >= deadZoneRadius && distanceFromCenter <= layout.radius * 1.08) {
-        this.lastPointerAngle = Math.atan2(dy, dx);
+      if (distanceFromCenter <= layout.radius * 1.08) {
+        this.dialNeedsAngle = distanceFromCenter < deadZoneRadius;
+        this.lastPointerAngle = this.dialNeedsAngle ? null : Math.atan2(dy, dx);
         this.pointerCarry = 0;
         this.activePointerId = event.pointerId;
         this.capturePointer(event.pointerId);
@@ -138,9 +140,16 @@ export class InputController {
         this.options.onUpdatePhysicalInput(this.activePhysicalInput, this.physicalPointerStart, point);
         return;
       }
-      if (this.lastPointerAngle === null) return;
       const layout = this.options.getDialLayout();
       const nextAngle = Math.atan2(point.y - layout.y, point.x - layout.x);
+      // ハブの真上から始めたドラッグには初回の移動方向が存在しない。
+      // 最初の移動を基準角の確定に使えば、中心からでも自然に回し始められる。
+      if (this.lastPointerAngle === null) {
+        if (!this.dialNeedsAngle) return;
+        this.lastPointerAngle = nextAngle;
+        this.dialNeedsAngle = false;
+        return;
+      }
       let delta = nextAngle - this.lastPointerAngle;
       if (delta > Math.PI) delta -= Math.PI * 2;
       if (delta < -Math.PI) delta += Math.PI * 2;
@@ -182,9 +191,15 @@ export class InputController {
     this.addListener(this.options.canvas, "pointermove", onPointerMove as EventListener);
     this.addListener(this.options.canvas, "pointerup", endPointer as EventListener);
     this.addListener(this.options.canvas, "pointercancel", endPointer as EventListener);
-    this.addListener(this.options.canvas, "lostpointercapture", endPointer as EventListener);
+    // setPointerCapture はブラウザ・WebViewによって利用できないことがある。
+    // 捕捉の喪失は必ずしも指の終了ではないため、pointerup/cancelだけを終了条件にする。
     this.addListener(this.options.windowTarget, "pointerup", endPointer as EventListener);
     this.addListener(this.options.windowTarget, "pointercancel", endPointer as EventListener);
+    this.addListener(this.options.windowTarget, "pointermove", ((event: Event) => {
+      // Canvasからのバブリングで同じ移動を二重処理しない。
+      if (event.target === this.options.canvas) return;
+      onPointerMove(event as PointerEvent);
+    }) as EventListener);
     this.addListener(this.options.canvas, "wheel", onWheel as EventListener, { passive: false });
     this.addListener(this.options.windowTarget, "keydown", onKeyDown as EventListener);
     this.addListener(this.options.windowTarget, "keyup", onKeyUp as EventListener);
@@ -197,6 +212,7 @@ export class InputController {
     this.activePhysicalInput = null;
     this.physicalPointerStart = null;
     this.lastPointerAngle = null;
+    this.dialNeedsAngle = false;
     this.blindPointerX = null;
     this.pointerCarry = 0;
     if (physicalInput) this.options.onEndPhysicalInput(physicalInput);
@@ -216,12 +232,7 @@ export class InputController {
     try {
       this.options.canvas.setPointerCapture?.(pointerId);
     } catch {
-      this.activePointerId = null;
-      this.activePhysicalInput = null;
-      this.physicalPointerStart = null;
-      this.lastPointerAngle = null;
-      this.blindPointerX = null;
-      this.pointerCarry = 0;
+      // 捕捉できなくても、Canvas内の移動とwindowの終了通知で操作を継続できる。
     }
   }
 
