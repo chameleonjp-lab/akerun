@@ -12,11 +12,16 @@ type GameCanvasProps = {
   readonly onVisibilityPause?: () => void;
 };
 
-export default function GameCanvas({ onReady, onSnapshot, onVisibilityPause }: GameCanvasProps) {
+export default function GameCanvas({
+  onReady,
+  onSnapshot,
+  onVisibilityPause,
+}: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const startedRef = useRef(false);
   const callbacksRef = useRef({ onReady, onSnapshot, onVisibilityPause });
-  const [liveStatus, setLiveStatus] = useState("タイトルから問題を開始してください。");
+  const [liveStatus, setLiveStatus] =
+    useState("タイトルから問題を開始してください。");
 
   callbacksRef.current = { onReady, onSnapshot, onVisibilityPause };
 
@@ -30,25 +35,35 @@ export default function GameCanvas({ onReady, onSnapshot, onVisibilityPause }: G
       desynchronized: true,
     });
     if (!context) {
-      console.error("Vault Tumbler Labの2D描画コンテキストを作成できませんでした。");
+      console.error(
+        "Vault Tumbler Labの2D描画コンテキストを作成できませんでした。"
+      );
       return;
     }
 
     let handle: GameHandle | null = null;
     let disposed = false;
     let renderLoop: ReturnType<typeof createRenderLoopController> | null = null;
+    let lastSnapshotMessage = "";
 
     const animationFrameTarget = {
-      requestAnimationFrame: (callback: (timestamp: number) => void) => window.requestAnimationFrame(callback),
-      cancelAnimationFrame: (frameId: number) => window.cancelAnimationFrame(frameId),
+      requestAnimationFrame: (callback: (timestamp: number) => void) =>
+        window.requestAnimationFrame(callback),
+      cancelAnimationFrame: (frameId: number) =>
+        window.cancelAnimationFrame(frameId),
     };
 
-    createGameScene(
-      canvas,
-      context,
-      setLiveStatus,
-      (snapshot) => callbacksRef.current.onSnapshot?.(snapshot),
-    )
+    createGameScene(canvas, context, setLiveStatus, snapshot => {
+      // The world emits a snapshot on every frame, while transition cues
+      // use onStatusChange. Only publish a changed snapshot message so the
+      // live region stays current without making screen readers repeat the
+      // same sentence dozens of times per second.
+      if (snapshot.message && snapshot.message !== lastSnapshotMessage) {
+        lastSnapshotMessage = snapshot.message;
+        setLiveStatus(snapshot.message);
+      }
+      callbacksRef.current.onSnapshot?.(snapshot);
+    })
       .then((nextHandle: GameHandle) => {
         if (disposed) {
           nextHandle.dispose();
@@ -56,9 +71,8 @@ export default function GameCanvas({ onReady, onSnapshot, onVisibilityPause }: G
         }
         handle = nextHandle;
         callbacksRef.current.onReady?.(nextHandle);
-        renderLoop = createRenderLoopController(
-          animationFrameTarget,
-          (delta) => nextHandle.update(delta),
+        renderLoop = createRenderLoopController(animationFrameTarget, delta =>
+          nextHandle.update(delta)
         );
         renderLoop.start();
       })
@@ -101,7 +115,9 @@ export default function GameCanvas({ onReady, onSnapshot, onVisibilityPause }: G
         aria-description="公式20問から一問が固定されます。ダイヤルを回し、音と画面の反応を観察し、テンション、フェンス、ロックボルト、扉ハンドルの順に開錠します。音・振動・高コントラスト・低モーションは補助であり、使わなくてもプレイできます。"
         className="fixed inset-0 h-full w-full touch-none outline-none"
       />
-      <p className="sr-only" aria-live="polite" aria-atomic="true">{liveStatus}</p>
+      <p className="sr-only" aria-live="polite" aria-atomic="true">
+        {liveStatus}
+      </p>
     </>
   );
 }

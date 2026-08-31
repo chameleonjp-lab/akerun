@@ -4,18 +4,21 @@
 
 ## リポジトリ内の実行時素材
 
-| Name | Description | Size | Runtime path | Runtime use |
-|---|---|---:|---|---|
-| tumbler_mark | 3枚の同心ホイールと開いたゲートを示すブランドマーク | 96×96 px | `/assets/vault-tumbler-mark.svg` | タイトル画面と favicon |
+| Name         | Description                                         |        Size | Runtime path                     | Runtime use                                       |
+| ------------ | --------------------------------------------------- | ----------: | -------------------------------- | ------------------------------------------------- |
+| vault_door   | 金庫扉の正面写真                                    |  960×960 px | `/assets/vault-door.webp`        | Canvas 2Dの円形クリップ内へ下地として描画         |
+| vault_dial   | 真鍮ダイヤルの写真                                  |  960×960 px | `/assets/vault-dial.webp`        | Canvas 2Dの円形ダイヤル面へ下地として描画         |
+| lock_cutaway | 6ホイール内部機構の断面写真                         | 1280×853 px | `/assets/lock-cutaway.webp`      | Canvas 2Dの内部機構パネルへ縦横比を保って薄く描画 |
+| tumbler_mark | 3枚の同心ホイールと開いたゲートを示すブランドマーク |         SVG | `/assets/vault-tumbler-mark.svg` | faviconのみ                                       |
 
 ## 描画オブジェクト
 
-| Name | Description | Size | Implementation |
-|---|---|---:|---|
-| combination_dial | 0〜99の目盛りを持つ正面ダイヤル | 420 px 直径 | Canvas 2D で精密描画。ドラッグ・ホイール・キーボードに対応。 |
-| tumblers | 問題ごとのノッチ位置を持つ組合せホイール | 可変 | 状態機械の回転値と同期して描画。 |
-| fence_and_bolt | ホイール上のフェンスとロックボルト | 可変 | 全ゲート整列時の反応と後半操作を描画。 |
-| tracer_lines | 正面・内部を結ぶ連動線 | 可変 | 選択中ホイールと揃ったゲートを青緑で接続。 |
+| Name             | Description                              |        Size | Implementation                                               |
+| ---------------- | ---------------------------------------- | ----------: | ------------------------------------------------------------ |
+| combination_dial | 0〜99の目盛りを持つ正面ダイヤル          | 420 px 直径 | Canvas 2D で精密描画。ドラッグ・ホイール・キーボードに対応。 |
+| tumblers         | 問題ごとのノッチ位置を持つ組合せホイール |        可変 | 状態機械の回転値と同期して描画。                             |
+| fence_and_bolt   | ホイール上のフェンスとロックボルト       |        可変 | 全ゲート整列時の反応と後半操作を描画。                       |
+| tracer_lines     | 正面・内部を結ぶ連動線                   |        可変 | 選択中ホイールと揃ったゲートを青緑で接続。                   |
 
 ## 公開素材の契約
 

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createFalseGateTrainingPuzzle, createOfficialPuzzle, createPuzzleFromSeed, createReferencePuzzle, type PuzzleDefinition } from "./GameDefinitions";
+import {
+  createFalseGateTrainingPuzzle,
+  createOfficialPuzzle,
+  createPuzzleFromSeed,
+  createReferencePuzzle,
+  type PuzzleDefinition,
+} from "./GameDefinitions";
 import { LockMechanism } from "./LockMechanism";
 
 const advance = (lock: LockMechanism, seconds: number) => {
@@ -55,7 +61,9 @@ describe("LockMechanism", () => {
     const third = createPuzzleFromSeed(90211);
     expect(first.stages).toEqual(second.stages);
     expect(first.stages).not.toEqual(third.stages);
-    expect(new Set(first.stages.map((stage) => stage.target)).size).toBe(first.stages.length);
+    expect(new Set(first.stages.map(stage => stage.target)).size).toBe(
+      first.stages.length
+    );
   });
 
   it("機構チェックポイントを復元して、途中のダイヤル状態を保持する", () => {
@@ -75,7 +83,11 @@ describe("LockMechanism", () => {
   it("開扉済みチェックポイントは途中プレイへ復元しない", () => {
     const puzzle = createOfficialPuzzle("AKERUN-01-V1");
     const lock = new LockMechanism(puzzle);
-    const checkpoint = { ...lock.snapshot, opened: true, phase: "open" as const };
+    const checkpoint = {
+      ...lock.snapshot,
+      opened: true,
+      phase: "open" as const,
+    };
     expect(new LockMechanism(puzzle).restore(checkpoint)).toBe(false);
   });
 
@@ -96,7 +108,8 @@ describe("LockMechanism", () => {
     }
     expect(lock.stage).toBe(1);
     const tamperedValues = [...lock.tumblerValues];
-    tamperedValues[firstStage.wheel] = (tamperedValues[firstStage.wheel] + 1) % 100;
+    tamperedValues[firstStage.wheel] =
+      (tamperedValues[firstStage.wheel] + 1) % 100;
     const tampered = { ...lock.snapshot, tumblerValues: tamperedValues };
 
     expect(new LockMechanism(puzzle).restore(tampered)).toBe(false);
@@ -105,7 +118,8 @@ describe("LockMechanism", () => {
   it("ダイヤルから扉ハンドルまで、実際に生成される途中状態を復元できる", () => {
     const puzzle = createPuzzleFromSeed(90212, "observe");
     const lock = new LockMechanism(puzzle);
-    const canRestore = () => expect(new LockMechanism(puzzle).restore(lock.snapshot)).toBe(true);
+    const canRestore = () =>
+      expect(new LockMechanism(puzzle).restore(lock.snapshot)).toBe(true);
 
     canRestore();
     for (let index = 0; index < puzzle.stages.length; index += 1) {
@@ -147,17 +161,39 @@ describe("LockMechanism", () => {
     lock.setHandleTurn(0.3);
     expect(lock.phase).toBe("handle-test");
     canRestore();
-    expect(new LockMechanism(puzzle).restore({ ...lock.snapshot, handleHold: 0.2 })).toBe(false);
+    expect(
+      new LockMechanism(puzzle).restore({ ...lock.snapshot, handleHold: 0.2 })
+    ).toBe(false);
   });
 
   it("異なる契約seedが金庫型と報酬のバリエーションを選ぶ", () => {
-    const puzzles = [90210, 90211, 90212].map((seed) => createPuzzleFromSeed(seed));
-    expect(new Set(puzzles.map((puzzle) => puzzle.vault.id)).size).toBe(3);
-    expect(new Set(puzzles.map((puzzle) => puzzle.reward.id)).size).toBe(3);
-    expect(puzzles[0].stages.map((stage) => stage.direction)).toEqual(["ccw", "cw", "ccw", "cw", "ccw", "cw"]);
-    expect(puzzles[1].stages.map((stage) => stage.direction)).toEqual(["cw", "ccw", "cw", "ccw", "cw", "ccw"]);
-    expect(new Set(puzzles.map((puzzle) => puzzle.vault.preload.label)).size).toBe(3);
-    expect(puzzles[1].vault.preload.baseResistance).toBeGreaterThan(puzzles[0].vault.preload.baseResistance);
+    const puzzles = [90210, 90211, 90212].map(seed =>
+      createPuzzleFromSeed(seed)
+    );
+    expect(new Set(puzzles.map(puzzle => puzzle.vault.id)).size).toBe(3);
+    expect(new Set(puzzles.map(puzzle => puzzle.reward.id)).size).toBe(3);
+    expect(puzzles[0].stages.map(stage => stage.direction)).toEqual([
+      "ccw",
+      "cw",
+      "ccw",
+      "cw",
+      "ccw",
+      "cw",
+    ]);
+    expect(puzzles[1].stages.map(stage => stage.direction)).toEqual([
+      "cw",
+      "ccw",
+      "cw",
+      "ccw",
+      "cw",
+      "ccw",
+    ]);
+    expect(
+      new Set(puzzles.map(puzzle => puzzle.vault.preload.label)).size
+    ).toBe(3);
+    expect(puzzles[1].vault.preload.baseResistance).toBeGreaterThan(
+      puzzles[0].vault.preload.baseResistance
+    );
   });
 
   it("基準金庫と可変金庫を抵抗、フェンス、ボルトの順に開錠できる", () => {
@@ -166,10 +202,34 @@ describe("LockMechanism", () => {
     solve(createPuzzleFromSeed(140250, "expert"));
   });
 
+  it("does not let invalid actuator values poison the mechanism state", () => {
+    const lock = new LockMechanism(createReferencePuzzle());
+
+    lock.setTension(Number.NaN);
+    lock.setFenceTravel(Number.POSITIVE_INFINITY);
+    lock.setBoltTravel(Number.NEGATIVE_INFINITY);
+    lock.setHandleTurn(Number.NaN);
+    lock.setRotationSpeed(Number.NaN);
+
+    expect(lock.snapshot).toMatchObject({
+      desiredTorque: 0,
+      appliedTorque: 0,
+      desiredFenceTravel: 0,
+      fenceTravel: 0,
+      desiredBoltTravel: 0,
+      boltTravel: 0,
+      desiredHandleTurn: 0,
+      handleTurn: 0,
+      rotationSpeed: 0,
+    });
+  });
+
   it("方向反転と通過回数により、フライが外側から順にホイールを拾って切り離す", () => {
     const puzzle = createReferencePuzzle("observe");
     const lock = new LockMechanism(puzzle);
-    expect(puzzle.stages.map((stage) => [stage.direction, stage.passes, stage.wheel])).toEqual([
+    expect(
+      puzzle.stages.map(stage => [stage.direction, stage.passes, stage.wheel])
+    ).toEqual([
       ["ccw", 7, 5],
       ["cw", 6, 4],
       ["ccw", 5, 3],
@@ -189,11 +249,11 @@ describe("LockMechanism", () => {
     expect(lock.coupledWheels).toEqual([5, 4]);
 
     const dialBeforeWrongDirection = lock.dial;
+    const tumblersBeforeWrongDirection = [...lock.tumblerValues];
     lock.rotate(1);
     expect(lock.dial).toBe((dialBeforeWrongDirection + 1) % 100);
     expect(lock.currentPass).toBe(2);
-    expect(lock.tumblerValues[5]).toBe(lock.dial);
-    expect(lock.tumblerValues[4]).toBe(lock.dial);
+    expect(lock.tumblerValues).toEqual(tumblersBeforeWrongDirection);
 
     while (lock.stage === 0 && guard < 900) {
       lock.rotate(first.direction === "cw" ? 1 : -1);
@@ -208,10 +268,14 @@ describe("LockMechanism", () => {
     const puzzle = createReferencePuzzle("observe");
     const lock = new LockMechanism(puzzle);
     const stage = puzzle.stages[0];
-    const falseGate = puzzle.falseGates.find((gate) => gate.wheel === stage.wheel);
+    const falseGate = puzzle.falseGates.find(
+      gate => gate.wheel === stage.wheel
+    );
     expect(falseGate).toBeDefined();
     expect(puzzle.falseGates).toHaveLength(puzzle.vault.wheelCount * 2);
-    expect(puzzle.falseGates.some((gate) => gate.position === stage.target)).toBe(false);
+    expect(puzzle.falseGates.some(gate => gate.position === stage.target)).toBe(
+      false
+    );
     let guard = 0;
     while (lock.dial !== falseGate?.position && guard < 120) {
       lock.rotate(stage.direction === "cw" ? 1 : -1);
@@ -230,7 +294,9 @@ describe("LockMechanism", () => {
     expect(puzzle.vault.wheelCount).toBe(2);
     expect(puzzle.difficulty.id).toBe("observe");
     expect(puzzle.falseGates).toHaveLength(4);
-    const firstFalseGate = puzzle.falseGates.find((gate) => gate.wheel === puzzle.stages[0].wheel);
+    const firstFalseGate = puzzle.falseGates.find(
+      gate => gate.wheel === puzzle.stages[0].wheel
+    );
     expect(firstFalseGate).toBeDefined();
     let guard = 0;
     while (lock.dial !== firstFalseGate?.position && guard < 120) {
@@ -250,7 +316,9 @@ describe("LockMechanism", () => {
     expect(nocturne.puzzle.vault.boltLayout.boltRatios).toHaveLength(4);
     expect(nocturne.puzzle.vault.boltLayout.carrierSide).toBe("left");
     expect(pelagic.puzzle.vault.boltLayout.label).toBe("OFFSET MARINE");
-    expect(nocturne.requiredHandleTurn).toBeGreaterThan(aurora.requiredHandleTurn);
+    expect(nocturne.requiredHandleTurn).toBeGreaterThan(
+      aurora.requiredHandleTurn
+    );
     expect(pelagic.requiredHandleTurn).toBeLessThan(aurora.requiredHandleTurn);
   });
 
@@ -264,7 +332,9 @@ describe("LockMechanism", () => {
       return lock.contactDepth;
     };
     const falseDepth = (lock: LockMechanism) => {
-      const falseGate = lock.puzzle.falseGates.find((gate) => gate.wheel === lock.puzzle.stages[0].wheel);
+      const falseGate = lock.puzzle.falseGates.find(
+        gate => gate.wheel === lock.puzzle.stages[0].wheel
+      );
       if (!falseGate) throw new Error("false gate missing");
       lock.dial = falseGate.position;
       return lock.contactDepth;
@@ -275,7 +345,9 @@ describe("LockMechanism", () => {
     expect(pelagic.puzzle.vault.personality.id).toBe("timing");
     expect(edgeDepth(aurora)).toBeGreaterThan(edgeDepth(nocturne));
     expect(falseDepth(nocturne)).toBeGreaterThan(falseDepth(aurora));
-    expect(pelagic.puzzle.vault.personality.settlingDelaySeconds).toBeGreaterThan(0);
+    expect(
+      pelagic.puzzle.vault.personality.settlingDelaySeconds
+    ).toBeGreaterThan(0);
   });
 
   it("公式問題へ金庫固有の候補密度と許容帯を反映する", () => {
@@ -348,8 +420,12 @@ describe("LockMechanism", () => {
     const standard = createReferencePuzzle("standard").difficulty;
     const expert = createReferencePuzzle("expert").difficulty;
     const blind = createReferencePuzzle("blind").difficulty;
-    expect(observe.tensionBand[1] - observe.tensionBand[0]).toBeGreaterThan(standard.tensionBand[1] - standard.tensionBand[0]);
-    expect(expert.tensionBand[1] - expert.tensionBand[0]).toBeLessThan(standard.tensionBand[1] - standard.tensionBand[0]);
+    expect(observe.tensionBand[1] - observe.tensionBand[0]).toBeGreaterThan(
+      standard.tensionBand[1] - standard.tensionBand[0]
+    );
+    expect(expert.tensionBand[1] - expert.tensionBand[0]).toBeLessThan(
+      standard.tensionBand[1] - standard.tensionBand[0]
+    );
     expect(expert.fenceHoldSeconds).toBeLessThan(standard.fenceHoldSeconds);
     expect(observe.showInternalGatePositions).toBe(true);
     expect(standard.showInternalGatePositions).toBe(false);
