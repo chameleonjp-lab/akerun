@@ -19,7 +19,6 @@ import {
 
 const ASSET_BASE_URL = import.meta.env.BASE_URL;
 const ASSETS = {
-  mark: `${ASSET_BASE_URL}assets/vault-tumbler-mark.svg`,
   // 静止している金属面はローカルWebP、可動部と状態表示はCanvasで重ねる。
   realDoor: `${ASSET_BASE_URL}assets/vault-door.webp`,
   realDial: `${ASSET_BASE_URL}assets/vault-dial.webp`,
@@ -57,7 +56,7 @@ export type GameSnapshot = {
   /** 公式問題として保存・ランキング送信してよい結果か。 */
   readonly recordable: boolean;
 };
-type ScreenLayout = {
+export type ScreenLayout = {
   width: number;
   height: number;
   compact: boolean;
@@ -80,6 +79,74 @@ const INSPECTION_STEPS = [
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 const easeOut = (value: number) => 1 - (1 - value) * (1 - value);
+const JAPANESE_FONT_STACK = '"Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif';
+
+const canvasUnit = (width: number, height: number, compact: boolean) =>
+  compact ? Math.max(14, Math.min(width, height) / 52) : Math.max(10, Math.min(width, height) / 85);
+
+/**
+ * 操作面の座標を一か所で決める。描画と入力が同じ値を参照し、
+ * 縦長端末でもダイヤル・メッセージ・物理操作盤が重ならないようにする。
+ */
+export const calculateScreenLayout = (width: number, height: number, trainingContract: boolean): ScreenLayout => {
+  const safeWidth = Math.max(1, width);
+  const safeHeight = Math.max(1, height);
+  const compact = safeWidth / safeHeight < 1.12;
+  if (compact) {
+    const unit = canvasUnit(safeWidth, safeHeight, compact);
+    const bottomReserve = trainingContract
+      ? Math.min(300, Math.max(230, safeHeight * 0.33))
+      : Math.min(175, Math.max(120, safeHeight * 0.18));
+    const contentHeight = Math.max(unit * 30, safeHeight - bottomReserve);
+    const radius = trainingContract
+      ? Math.min(safeWidth * 0.27, contentHeight * 0.2)
+      : Math.min(safeWidth * 0.255, contentHeight * 0.15);
+    // React HUDと写真面が重ならない上端を確保しつつ、旧実装の
+    // unit*18依存を外して、端末の高さに対して安定した位置にする。
+    const dialY = Math.max(
+      unit * 4.5 + radius * 1.12,
+      safeHeight * 0.3,
+      unit * 8 + radius * 1.12,
+    );
+    const controlBottom = dialY + radius * 1.42 + unit * 2.35;
+    const footerY = Math.max(
+      trainingContract ? safeHeight * 0.49 : safeHeight * 0.5,
+      controlBottom + unit * 0.7,
+    );
+    const internalY = dialY + radius * 1.55;
+    const internalHeight = Math.min(156, Math.max(unit * 11.5, contentHeight * 0.21));
+
+    return {
+      width: safeWidth,
+      height: safeHeight,
+      compact,
+      dial: {
+        x: safeWidth * 0.5,
+        y: dialY,
+        radius,
+        deadZoneRadius: radius * 0.42,
+      },
+      internal: { x: safeWidth * 0.05, y: internalY, width: safeWidth * 0.9, height: internalHeight },
+      footerY,
+    };
+  }
+  return {
+    width: safeWidth,
+    height: safeHeight,
+    compact,
+    dial: (() => {
+      const radius = Math.min(safeWidth * 0.235, safeHeight * 0.293);
+      return {
+        x: safeWidth * 0.295,
+        y: safeHeight * 0.545,
+        radius,
+        deadZoneRadius: radius * 0.42,
+      };
+    })(),
+    internal: { x: safeWidth * 0.61, y: safeHeight * 0.18, width: safeWidth * 0.345, height: safeHeight * 0.63 },
+    footerY: safeHeight * 0.855,
+  };
+};
 
 export class VaultWorld {
   private context: CanvasRenderingContext2D;
@@ -368,7 +435,7 @@ export class VaultWorld {
       ctx.textAlign = "center";
       ctx.fillText("MECHANISM DISPLAY RECOVERING", width * 0.5, height * 0.43);
       ctx.fillStyle = "#7c9397";
-      ctx.font = `500 ${Math.max(13, width * 0.014)}px "Noto Sans JP", sans-serif`;
+      ctx.font = `500 ${Math.max(13, width * 0.014)}px ${JAPANESE_FONT_STACK}`;
       ctx.fillText("表示を安全に復旧しています。公式プレイ中のRESETはリタイア扱いです。", width * 0.5, height * 0.52);
       ctx.textAlign = "left";
     } catch {
@@ -966,56 +1033,7 @@ export class VaultWorld {
 
   private getLayout(): ScreenLayout {
     const size = this.getCanvasResolution();
-    const width = size.width;
-    const height = size.height;
-    const compact = width / height < 1.12;
-    if (compact) {
-      // 縦画面では、ダイヤル・操作部品・HTMLの説明カードを別々の帯へ置く。
-      // 写真素材を無理に全面へ広げず、操作可能な領域を先に確保する。
-      const unit = Math.max(10, Math.min(width, height) / 85);
-      const bottomReserve = this.trainingContract
-        ? Math.min(300, Math.max(230, height * 0.33))
-        : Math.min(175, Math.max(120, height * 0.18));
-      const contentHeight = Math.max(unit * 30, height - bottomReserve);
-      const radius = this.trainingContract
-        ? Math.min(width * 0.27, contentHeight * 0.2)
-        : Math.min(width * 0.255, contentHeight * 0.15);
-      const dialY = this.trainingContract
-        ? Math.max(unit * 5.0 + radius * 1.12, contentHeight * 0.34)
-        : Math.max(unit * 18, height * 0.3);
-      const internalY = dialY + radius * 1.55;
-      const internalHeight = Math.min(156, Math.max(unit * 11.5, contentHeight * 0.21));
-
-      return {
-        width,
-        height,
-        compact,
-        dial: {
-          x: width * 0.5,
-          y: dialY,
-          radius,
-          deadZoneRadius: radius * 0.42,
-        },
-        internal: { x: width * 0.05, y: internalY, width: width * 0.9, height: internalHeight },
-        footerY: this.trainingContract ? height * 0.49 : height * 0.5,
-      };
-    }
-    return {
-      width,
-      height,
-      compact,
-      dial: (() => {
-        const radius = Math.min(width * 0.235, height * 0.293);
-        return {
-          x: width * 0.295,
-          y: height * 0.545,
-          radius,
-          deadZoneRadius: radius * 0.42,
-        };
-      })(),
-      internal: { x: width * 0.61, y: height * 0.18, width: width * 0.345, height: height * 0.63 },
-      footerY: height * 0.855,
-    };
+    return calculateScreenLayout(size.width, size.height, this.trainingContract);
   }
 
   private drawBackground(layout: ScreenLayout) {
@@ -1069,76 +1087,33 @@ export class VaultWorld {
 
   private drawHeader(layout: ScreenLayout) {
     const ctx = this.context;
-    const unit = Math.max(10, Math.min(layout.width, layout.height) / 85);
-    const x = unit * 3;
+    const unit = canvasUnit(layout.width, layout.height, layout.compact);
     const y = unit * 2.6;
 
     if (layout.compact) {
-      ctx.fillStyle = "#e8dfc4";
-      ctx.font = `700 ${unit * 1.05}px "DM Mono", monospace`;
-      ctx.letterSpacing = `${unit * 0.1}px`;
-      ctx.fillText("AKERUN / アケルン", x, y + unit * 0.8);
-      ctx.fillStyle = "#7c9397";
-      ctx.font = `500 ${unit * 0.58}px "Noto Sans JP", sans-serif`;
-      ctx.fillText(this.mechanism.puzzle.vault.title, x, y + unit * 2.05);
+      // プレイ中のタイトルと状態はReact HUDに一本化する。Canvas側にも
+      // 同じ見出しを描くと、縦画面でタイトル・説明カード・ダイヤルが重なる。
       return;
     }
-
-    const markSize = unit * 4.9;
-    const mark = this.images.mark;
-    if (mark) ctx.drawImage(mark, x, y, markSize, markSize);
-    else this.drawFallbackMark(x, y, markSize);
-
-    ctx.fillStyle = "#e8dfc4";
-    ctx.font = `600 ${unit * 1.45}px "DM Mono", monospace`;
-    ctx.letterSpacing = `${unit * 0.16}px`;
-    ctx.fillText(layout.compact ? "AKERUN / アケルン" : "VAULT TUMBLER LAB", x + markSize + unit * 1.4, y + markSize * 0.42);
-    ctx.fillStyle = "#7c9397";
-    ctx.font = `500 ${unit * 0.78}px "Noto Sans JP", sans-serif`;
-    ctx.fillText(this.mechanism.puzzle.vault.title, x + markSize + unit * 1.45, y + markSize * 0.82);
-
-    if (!layout.compact) {
-      ctx.fillStyle = "#7c9397";
-      ctx.font = `500 ${unit * 0.54}px "DM Mono", monospace`;
-      ctx.fillText("TOUCH DIAL / OBSERVE SOUND + RESISTANCE / Q TRAIN / J NOTE / O NOTES / V ASSIST / S SOUND / K HAPTIC / L ARCHIVE / I INSPECT / H CONTRAST / M MOTION / P PRECISE", x + markSize + unit * 1.45, y + markSize * 1.13);
-    }
-
-    if (this.trainingContract && !layout.compact) {
-      ctx.fillStyle = "#d39566";
-      ctx.font = `700 ${unit * 0.56}px "DM Mono", monospace`;
-      ctx.fillText("TRAINING CONTRACT / FALSE GATE PRACTICUM", x + markSize + unit * 1.45, y + markSize * 1.43);
-    }
-
-    const status = this.mechanism.opened ? "OPEN" : this.mechanism.phase === "handle-test" ? "HANDLE TEST" : this.mechanism.phase === "boltwork-ready" ? "BOLTWORK READY" : this.mechanism.phase === "bolt-test" ? "BOLT TEST" : this.mechanism.phase === "fence-seated" ? "FENCE SEATED" : this.mechanism.phase === "fence-ready" ? "FENCE READY" : this.mechanism.phase === "settling" ? "SETTLING" : this.mechanism.phase.startsWith("tension") ? "TENSION" : this.mechanism.phase === "jammed" ? "JAMMED" : "LOCKED";
-    const color = this.mechanism.opened || this.mechanism.isReady || this.mechanism.gatesAligned ? "#4de0c0" : this.mechanism.phase === "jammed" ? "#d39566" : "#bd9b53";
-    ctx.textAlign = "right";
-    ctx.fillStyle = color;
-    ctx.font = `700 ${unit * (layout.compact ? 0.7 : 0.92)}px "DM Mono", monospace`;
-    ctx.fillText(layout.compact ? status : `STATUS  /  ${status}`, layout.width - unit * 2.2, layout.compact ? y + markSize + unit * 0.3 : y + markSize * 0.56);
-    ctx.textAlign = "left";
-
-    if (this.resultSummary) {
-      const summary = `RESULT  /  ${this.formatElapsed(this.resultSummary.elapsed)}  /  FAULT ${this.resultSummary.faults}  /  ${this.resultSummary.reward}`;
-      ctx.fillStyle = "#4de0c0";
-      ctx.font = `700 ${unit * 0.58}px "DM Mono", monospace`;
-      ctx.fillText(summary, x + markSize + unit * 1.45, y + markSize * 1.48);
-    }
-
+    // 画面上部はReact HUDと共有するため、Canvasは機構だけを担当する。
+    // ここには細い基準線だけを置き、タイトルの二重描画と重なりを防ぐ。
     ctx.strokeStyle = "rgba(218, 181, 104, 0.48)";
     ctx.lineWidth = 1;
+    const headerLineY = y + unit * 6.3;
     ctx.beginPath();
-    ctx.moveTo(unit * 3, y + markSize + unit * 1.4);
-    ctx.lineTo(layout.width - unit * 3, y + markSize + unit * 1.4);
+    ctx.moveTo(unit * 3, headerLineY);
+    ctx.lineTo(layout.width - unit * 3, headerLineY);
     ctx.stroke();
   }
 
   private drawDialPanel(layout: ScreenLayout) {
     const { dial } = layout;
     const ctx = this.context;
-    const unit = Math.max(10, Math.min(layout.width, layout.height) / 85);
+    const unit = canvasUnit(layout.width, layout.height, layout.compact);
     const plate = this.images.realDoor ?? this.images.door;
     const opening = easeOut(this.openingProgress);
     const doorScale = layout.compact ? 1.12 : 1.42;
+    const faceRadius = dial.radius * doorScale;
 
     if (opening > 0.008) this.drawVaultInterior(dial, opening, layout.compact);
     ctx.save();
@@ -1153,9 +1128,22 @@ export class VaultWorld {
     if (plate) {
       ctx.save();
       ctx.globalAlpha = this.images.realDoor ? 0.94 : 0.5;
-      ctx.drawImage(plate, dial.x - dial.radius * doorScale, dial.y - dial.radius * doorScale, dial.radius * 2 * doorScale, dial.radius * 2 * doorScale);
+      // 写真素材は正方形でも、金庫の正面は円形の面として見せる。
+      // クリップなしで描くと、角が残って「丸くない金庫」になる。
+      ctx.beginPath();
+      ctx.arc(dial.x, dial.y, faceRadius, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(plate, dial.x - faceRadius, dial.y - faceRadius, faceRadius * 2, faceRadius * 2);
       ctx.restore();
     }
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(dial.x, dial.y, faceRadius, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(213, 181, 108, 0.56)";
+    ctx.lineWidth = Math.max(1.5, unit * 0.13);
+    ctx.stroke();
+    ctx.restore();
 
     this.drawMetalCircle(dial.x, dial.y, dial.radius * 1.08, "#23333d", "#071015");
     const realDial = this.images.realDial;
@@ -1170,7 +1158,7 @@ export class VaultWorld {
     } else {
       this.drawMetalCircle(dial.x, dial.y, dial.radius * 0.96, "#bd9650", "#3f2a16");
     }
-    this.drawDialTicks(dial.x, dial.y, dial.radius * 0.88);
+    this.drawDialTicks(dial.x, dial.y, dial.radius * 0.88, layout.compact);
 
     const brass = this.images.brass;
     if (brass) {
@@ -1224,7 +1212,7 @@ export class VaultWorld {
     ctx.font = `600 ${unit * 0.82}px "DM Mono", monospace`;
     ctx.fillText("FRONT DIAL", dial.x - dial.radius * 1.08, dial.y - dial.radius * 1.35);
     ctx.fillStyle = "#799095";
-    ctx.font = `500 ${unit * 0.72}px "Noto Sans JP", sans-serif`;
+    ctx.font = `500 ${unit * 0.72}px ${JAPANESE_FONT_STACK}`;
     ctx.fillText("ドラッグ / ホイール / ← →", dial.x - dial.radius * 1.08, dial.y + dial.radius * 1.32);
 
     const controlY = dial.y + dial.radius * 1.42;
@@ -1234,17 +1222,20 @@ export class VaultWorld {
 
   private drawVaultInterior(dial: ScreenLayout["dial"], opening: number, compact = false) {
     const ctx = this.context;
-    const unit = Math.max(10, Math.min(this.getCanvasResolution().width, this.getCanvasResolution().height) / 85);
+    const resolution = this.getCanvasResolution();
+    const unit = canvasUnit(resolution.width, resolution.height, compact);
     const scale = compact ? 1.08 : 1.34;
     const left = dial.x - dial.radius * scale;
     const top = dial.y - dial.radius * scale;
     const width = dial.radius * 2 * scale;
     const height = dial.radius * 2 * scale;
+    const cavityRadius = Math.min(width, height) / 2;
     const cavity = ctx.createLinearGradient(left, top, left + width, top + height);
     cavity.addColorStop(0, "#020508");
     cavity.addColorStop(0.5, "#111d23");
     cavity.addColorStop(1, "#010304");
-    this.roundRect(left, top, width, height, unit * 0.6);
+    ctx.beginPath();
+    ctx.arc(dial.x, dial.y, cavityRadius, 0, Math.PI * 2);
     ctx.fillStyle = cavity;
     ctx.fill();
     ctx.strokeStyle = "rgba(83, 224, 194, 0.34)";
@@ -1261,7 +1252,8 @@ export class VaultWorld {
     treasureGlow.addColorStop(1, "rgba(0, 0, 0, 0)");
     ctx.save();
     try {
-      this.roundRect(left + unit * 0.8, top + unit * 0.8, width - unit * 1.6, height - unit * 1.6, unit * 0.4);
+      ctx.beginPath();
+      ctx.arc(dial.x, dial.y, Math.max(1, cavityRadius - unit * 0.8), 0, Math.PI * 2);
       ctx.clip();
       ctx.fillStyle = treasureGlow;
       ctx.fillRect(left, top, width, height);
@@ -1311,7 +1303,8 @@ export class VaultWorld {
     }
 
     ctx.save();
-    this.roundRect(left + unit * 1.3, top + unit * 1.3, width - unit * 2.6, height - unit * 2.6, unit * 0.35);
+    ctx.beginPath();
+    ctx.arc(dial.x, dial.y, Math.max(1, cavityRadius - unit * 1.3), 0, Math.PI * 2);
     ctx.clip();
     ctx.globalAlpha = opening * 0.42;
     ctx.fillStyle = "#162d31";
@@ -1328,7 +1321,9 @@ export class VaultWorld {
 
     ctx.fillStyle = `rgba(77, 224, 192, ${opening * 0.72})`;
     ctx.font = `700 ${unit * 0.78}px "DM Mono", monospace`;
-    ctx.fillText(`VAULT INTERIOR / ${this.mechanism.puzzle.reward.title}`, left + unit * 1.5, top + height - unit * 1.25);
+    ctx.textAlign = "center";
+    ctx.fillText(`VAULT INTERIOR / ${this.mechanism.puzzle.reward.title}`, dial.x, dial.y + cavityRadius - unit * 1.25);
+    ctx.textAlign = "left";
   }
 
   private drawTreasureFallback(left: number, top: number, width: number, height: number, unit: number, reveal: number) {
@@ -1352,7 +1347,8 @@ export class VaultWorld {
 
   private drawOpenDoorEdge(dial: ScreenLayout["dial"], opening: number, compact = false) {
     const ctx = this.context;
-    const unit = Math.max(10, Math.min(this.getCanvasResolution().width, this.getCanvasResolution().height) / 85);
+    const resolution = this.getCanvasResolution();
+    const unit = canvasUnit(resolution.width, resolution.height, compact);
     const scale = compact ? 1.12 : 1.42;
     const hingeX = dial.x - dial.radius * scale;
     const doorWidth = dial.radius * 2 * scale;
@@ -1389,9 +1385,10 @@ export class VaultWorld {
     ctx.restore();
   }
 
-  private drawDialTicks(cx: number, cy: number, radius: number) {
+  private drawDialTicks(cx: number, cy: number, radius: number, compact = false) {
     const ctx = this.context;
-    const unit = Math.max(10, Math.min(this.getCanvasResolution().width, this.getCanvasResolution().height) / 85);
+    const resolution = this.getCanvasResolution();
+    const unit = canvasUnit(resolution.width, resolution.height, compact);
     for (let value = 0; value < 100; value += 1) {
       const angle = (value / 100) * Math.PI * 2 - Math.PI / 2;
       const major = value % 5 === 0;
@@ -1418,7 +1415,7 @@ export class VaultWorld {
   private drawInternalPanel(layout: ScreenLayout) {
     const ctx = this.context;
     const { internal } = layout;
-    const unit = Math.max(10, Math.min(layout.width, layout.height) / 85);
+    const unit = canvasUnit(layout.width, layout.height, layout.compact);
     this.drawFrame(internal, "#0d171e", "rgba(187, 150, 77, 0.54)");
     // 実写の内部機構は合成図形と座標系が異なるため、現行の操作盤には重ねない。
     // 写真は素材として保持し、別の資料・拡大表示でのみ使えるようにする。
@@ -1426,7 +1423,7 @@ export class VaultWorld {
     ctx.font = `600 ${unit * 0.86}px "DM Mono", monospace`;
     ctx.fillText(layout.compact ? "LOCK MECHANISM / 内部機構" : "LOCK CUTAWAY  /  SIDE VIEW", internal.x + unit * 1.5, internal.y + unit * 2.2);
     ctx.fillStyle = "#708a90";
-    ctx.font = `500 ${unit * 0.72}px "Noto Sans JP", sans-serif`;
+    ctx.font = `500 ${unit * 0.72}px ${JAPANESE_FONT_STACK}`;
     ctx.fillText(
       layout.compact
         ? `${this.mechanism.puzzle.vault.wheelCount} WHEELS  /  CAM・FLY・FENCE`
@@ -1536,7 +1533,7 @@ export class VaultWorld {
   private drawCausalLink(layout: ScreenLayout) {
     if (layout.compact) return;
     const ctx = this.context;
-    const unit = Math.max(10, Math.min(layout.width, layout.height) / 85);
+    const unit = canvasUnit(layout.width, layout.height, layout.compact);
     const wheelCount = this.mechanism.puzzle.vault.wheelCount;
     const activeWheel = this.mechanism.activeStage?.wheel ?? wheelCount - 1;
     const startX = layout.dial.x + layout.dial.radius * 1.08;
@@ -1577,7 +1574,7 @@ export class VaultWorld {
 
   private drawTumbler(layout: ScreenLayout, wheel: number, cx: number, cy: number, width: number, height: number) {
     const ctx = this.context;
-    const unit = Math.max(10, Math.min(layout.width, layout.height) / 85);
+    const unit = canvasUnit(layout.width, layout.height, layout.compact);
     const gateOffset = this.mechanism.gateOffset(wheel);
     const aligned = this.mechanism.locked[wheel];
     const revealGate = this.mechanism.puzzle.difficulty.showInternalGatePositions || aligned;
@@ -1692,7 +1689,7 @@ export class VaultWorld {
 
   private drawFooter(layout: ScreenLayout) {
     const ctx = this.context;
-    const unit = Math.max(10, Math.min(layout.width, layout.height) / 85);
+    const unit = canvasUnit(layout.width, layout.height, layout.compact);
     const y = layout.footerY;
     const pad = unit * 2.2;
 
@@ -1717,13 +1714,13 @@ export class VaultWorld {
       this.drawFrame({ x: pad, y, width: messageWidth, height: unit * 4.2 }, "rgba(11, 20, 26, 0.9)", "rgba(146, 181, 177, 0.3)");
       ctx.fillStyle = "#4de0c0";
       ctx.font = `700 ${unit * 0.66}px "DM Mono", monospace`;
-      ctx.fillText(hint, pad + unit * 1.1, y + unit * 1.42);
+      this.drawWrappedText(hint, pad + unit * 1.1, y + unit * 1.42, messageWidth - unit * 2.2, unit * 0.9, 1);
       ctx.fillStyle = "#d9c28a";
       ctx.font = `600 ${unit * 0.5}px "DM Mono", monospace`;
       ctx.fillText(`PHASE / ${this.mechanism.phase.toUpperCase()}  ·  ${this.mechanism.faultCount}/${this.mechanism.puzzle.difficulty.maxFaults}`, pad + unit * 1.1, y + unit * 2.28);
       ctx.fillStyle = "#d5d9cc";
-      ctx.font = `500 ${unit * 0.64}px "Noto Sans JP", sans-serif`;
-      this.drawWrappedText(this.mechanism.lastMessage, pad + unit * 1.1, y + unit * 3.12, messageWidth - unit * 2.2, unit * 0.82);
+      ctx.font = `500 ${unit * 0.64}px ${JAPANESE_FONT_STACK}`;
+      this.drawWrappedText(this.mechanism.lastMessage, pad + unit * 1.1, y + unit * 3.12, messageWidth - unit * 2.2, unit * 0.82, 2);
       const bench = {
         x: pad,
         y: y + unit * 4.85,
@@ -1746,7 +1743,7 @@ export class VaultWorld {
     ctx.font = `600 ${unit * 0.56}px "DM Mono", monospace`;
     ctx.fillText(`PHASE / ${this.mechanism.phase.toUpperCase()}   FAULT / ${this.mechanism.faultCount}/${this.mechanism.puzzle.difficulty.maxFaults}`, pad + unit * 1.25, y + unit * 2.9);
     ctx.fillStyle = "#d5d9cc";
-    ctx.font = `500 ${unit * 0.93}px "Noto Sans JP", sans-serif`;
+    ctx.font = `500 ${unit * 0.93}px ${JAPANESE_FONT_STACK}`;
     this.drawWrappedText(this.mechanism.lastMessage, pad + unit * 1.25, y + unit * 3.48, messageWidth - unit * 2.4, unit * 1.05);
 
     const bench = layout.compact
@@ -1773,7 +1770,7 @@ export class VaultWorld {
 
   private drawPhysicalWorkbench(rect: Rect, layout: ScreenLayout) {
     const ctx = this.context;
-    const unit = Math.max(10, Math.min(layout.width, layout.height) / 85);
+    const unit = canvasUnit(layout.width, layout.height, layout.compact);
     const phase = this.mechanism.phase;
     const isTension = phase === "tension-ready" || phase === "tension-test" || phase === "jammed";
     const isFence = phase === "fence-ready";
@@ -1789,8 +1786,8 @@ export class VaultWorld {
       ctx.font = `600 ${unit * 0.48}px "DM Mono", monospace`;
       ctx.fillText(this.audio.isMuted ? "LISTEN / OFF — VISUAL CUES ACTIVE" : "LISTEN / IDLE LOW  ·  EDGE HIGH  ·  PICKUP DOUBLE", rect.x + unit * 1.1, rect.y + unit * 1.94);
       ctx.fillStyle = "#7e9b98";
-      ctx.font = `500 ${unit * 0.72}px "Noto Sans JP", sans-serif`;
-      this.drawWrappedText("ダイヤルの接触痕を記録し、候補が揃ったら抵抗で検証します。標準・専門では内部の正解ゲートは遮蔽されます。", rect.x + unit * 1.1, rect.y + unit * 2.72, rect.width - unit * 2.2, unit * 0.95);
+      ctx.font = `500 ${unit * 0.72}px ${JAPANESE_FONT_STACK}`;
+      this.drawWrappedText("ダイヤルの接触痕を記録し、候補が揃ったら抵抗で検証します。標準・専門では内部の正解ゲートは遮蔽されます。", rect.x + unit * 1.1, rect.y + unit * 2.72, rect.width - unit * 2.2, unit * 0.95, 2);
       if (this.mechanism.puzzle.difficulty.showInternalGatePositions) {
         const profile = this.mechanism.contactProfile.toUpperCase();
         ctx.fillStyle = this.mechanism.contactProfile === "false-gate" ? "#d39566" : this.mechanism.contactProfile === "true-gate" ? "#4de0c0" : "#8da4a5";
@@ -1841,7 +1838,7 @@ export class VaultWorld {
     ctx.lineTo(arm, 0);
     ctx.stroke();
     ctx.restore();
-    this.drawResistanceNeedle(rect.x + rect.width * 0.16, rect.y + rect.height * 0.84, rect.width * 0.68, this.mechanism.appliedTorque, this.mechanism.resistanceState);
+    this.drawResistanceNeedle(rect.x + rect.width * 0.16, rect.y + rect.height * 0.84, rect.width * 0.68, this.mechanism.appliedTorque, this.mechanism.resistanceState, unit);
     this.setHitbox("tension-grip", { x: centerX - unit * 2.4, y: centerY - unit * 2.4, width: arm + unit * 5.0, height: unit * 4.8 });
   }
 
@@ -1865,7 +1862,7 @@ export class VaultWorld {
     ctx.strokeStyle = "#e8dfc4";
     ctx.stroke();
     ctx.fillStyle = "#8da4a5";
-    ctx.font = `500 ${unit * 0.58}px "Noto Sans JP", sans-serif`;
+    ctx.font = `500 ${unit * 0.58}px ${JAPANESE_FONT_STACK}`;
     ctx.fillText(this.mechanism.fenceDropped ? "座りを保持。次はボルトを確認します。" : "上へゆっくり押し、止まる位置を読む。", rect.x + unit * 1.1, rect.y + rect.height * 0.88);
     this.setHitbox("fence-lever", { x: x - unit * 3.2, y: trackTop - unit * 1.2, width: unit * 6.4, height: trackHeight + unit * 2.4 });
   }
@@ -1890,7 +1887,7 @@ export class VaultWorld {
     ctx.strokeStyle = "#e8dfc4";
     ctx.stroke();
     ctx.fillStyle = "#8da4a5";
-    ctx.font = `500 ${unit * 0.58}px "Noto Sans JP", sans-serif`;
+    ctx.font = `500 ${unit * 0.58}px ${JAPANESE_FONT_STACK}`;
     ctx.fillText("右へ押し、引っ掛かりではなく滑らかな後退を確認する。", rect.x + unit * 1.1, rect.y + rect.height * 0.88);
     this.setHitbox("bolt-tab", { x: x - unit * 1.6, y: y - unit * 2.4, width: trackWidth + unit * 3.2, height: unit * 4.8 });
   }
@@ -1919,33 +1916,36 @@ export class VaultWorld {
     ctx.restore();
     const trackX = rect.x + rect.width * 0.16;
     const trackY = rect.y + rect.height * 0.84;
-    this.drawResistanceNeedle(trackX, trackY, rect.width * 0.68, this.mechanism.doorBoltTravel, this.mechanism.boltworkReleased ? "seated" : "idle");
+    this.drawResistanceNeedle(trackX, trackY, rect.width * 0.68, this.mechanism.doorBoltTravel, this.mechanism.boltworkReleased ? "seated" : "idle", unit);
     ctx.fillStyle = "#8da4a5";
-    ctx.font = `500 ${unit * 0.58}px "Noto Sans JP", sans-serif`;
+    ctx.font = `500 ${unit * 0.58}px ${JAPANESE_FONT_STACK}`;
     ctx.fillText("右へ回し、キャリーバーと扉側ボルトを受け金から後退させる。", rect.x + unit * 1.1, rect.y + rect.height * 0.92);
     this.setHitbox("door-handle", { x: centerX - radius * 2.4, y: centerY - radius * 2.4, width: radius * 4.8, height: radius * 4.8 });
   }
 
-  private drawResistanceNeedle(x: number, y: number, width: number, amount: number, state: string) {
+  private drawResistanceNeedle(x: number, y: number, width: number, amount: number, state: string, unit?: number) {
     const ctx = this.context;
-    const unit = Math.max(10, Math.min(this.getCanvasResolution().width, this.getCanvasResolution().height) / 85);
-    this.roundRect(x, y - unit * 0.35, width, unit * 0.7, unit * 0.18);
+    const resolvedUnit = unit ?? (() => {
+      const resolution = this.getCanvasResolution();
+      return canvasUnit(resolution.width, resolution.height, resolution.width / resolution.height < 1.12);
+    })();
+    this.roundRect(x, y - resolvedUnit * 0.35, width, resolvedUnit * 0.7, resolvedUnit * 0.18);
     ctx.fillStyle = "#111b20";
     ctx.fill();
     ctx.strokeStyle = state === "candidate" || state === "seated" ? "#4de0c0" : state === "jammed" ? "#d39566" : "#7e9b98";
     ctx.stroke();
     const needleX = x + width * amount;
     ctx.strokeStyle = ctx.strokeStyle;
-    ctx.lineWidth = Math.max(1.5, unit * 0.12);
+    ctx.lineWidth = Math.max(1.5, resolvedUnit * 0.12);
     ctx.beginPath();
-    ctx.moveTo(needleX, y - unit * 0.7);
-    ctx.lineTo(needleX, y + unit * 0.7);
+    ctx.moveTo(needleX, y - resolvedUnit * 0.7);
+    ctx.lineTo(needleX, y + resolvedUnit * 0.7);
     ctx.stroke();
   }
 
   private drawInspectionOverlay(layout: ScreenLayout) {
     const ctx = this.context;
-    const unit = Math.max(10, Math.min(layout.width, layout.height) / 85);
+    const unit = canvasUnit(layout.width, layout.height, layout.compact);
     const panel = layout.internal;
     const step = INSPECTION_STEPS[this.inspectionStep];
     ctx.save();
@@ -1963,7 +1963,7 @@ export class VaultWorld {
     ctx.font = `700 ${unit * (layout.compact ? 0.94 : 1.15)}px "DM Mono", monospace`;
     ctx.fillText(step.label, panel.x + unit * 1.25, panel.y + unit * 3.15);
     ctx.fillStyle = "#c5d3cf";
-    ctx.font = `500 ${unit * (layout.compact ? 0.62 : 0.72)}px "Noto Sans JP", sans-serif`;
+    ctx.font = `500 ${unit * (layout.compact ? 0.62 : 0.72)}px ${JAPANESE_FONT_STACK}`;
     this.drawWrappedText(step.detail, panel.x + unit * 1.25, panel.y + unit * 4.25, panel.width - unit * 2.5, unit * 0.92);
 
     const mechanismTop = panel.y + panel.height * 0.58;
@@ -2005,7 +2005,7 @@ export class VaultWorld {
 
   private drawObservationOverlay(layout: ScreenLayout) {
     const ctx = this.context;
-    const unit = Math.max(10, Math.min(layout.width, layout.height) / 85);
+    const unit = canvasUnit(layout.width, layout.height, layout.compact);
     const panel: Rect = {
       x: layout.width * (layout.compact ? 0.045 : 0.16),
       y: layout.height * (layout.compact ? 0.08 : 0.13),
@@ -2036,7 +2036,7 @@ export class VaultWorld {
     ctx.font = `700 ${unit * 1.15}px "DM Mono", monospace`;
     ctx.fillText("OBSERVATION NOTES / 端末内メモ", panel.x + unit * 1.4, panel.y + unit * 2.0);
     ctx.fillStyle = "#7c9397";
-    ctx.font = `500 ${unit * 0.66}px "Noto Sans JP", sans-serif`;
+    ctx.font = `500 ${unit * 0.66}px ${JAPANESE_FONT_STACK}`;
     ctx.fillText("接触、浅い切欠き、予圧、扉側ボルトの観察をこの端末だけに保存します。", panel.x + unit * 1.4, panel.y + unit * 3.0);
     this.drawControlButton("notes", { x: panel.x + panel.width - unit * 9.1, y: panel.y + unit * 0.95, width: unit * 7.6, height: unit * 2.05 }, "CLOSE / O", "#c9a963");
     this.drawControlButton("note-capture", { x: panel.x + panel.width - unit * 18.0, y: panel.y + unit * 0.95, width: unit * 7.6, height: unit * 2.05 }, "SAVE / J", "#4de0c0");
@@ -2046,7 +2046,7 @@ export class VaultWorld {
     const rowHeight = Math.max(unit * 3.35, (panel.height - unit * 5.5) / Math.max(1, Math.min(notes.length, 5)));
     if (!notes.length) {
       ctx.fillStyle = "#a9b8b5";
-      ctx.font = `600 ${unit * 0.78}px "Noto Sans JP", sans-serif`;
+      ctx.font = `600 ${unit * 0.78}px ${JAPANESE_FONT_STACK}`;
       ctx.fillText("まだ観察メモがありません。Jキーまたは SAVE / J で現在の接触を記録してください。", panel.x + unit * 1.4, top + unit * 1.5);
     }
     notes.slice(0, 5).forEach((note, index) => {
@@ -2060,7 +2060,7 @@ export class VaultWorld {
       ctx.font = `700 ${unit * 0.58}px "DM Mono", monospace`;
       ctx.fillText(`${note.category.toUpperCase()} / ${note.vaultId.toUpperCase()}`, panel.x + unit * 1.7, y + unit * 0.95);
       ctx.fillStyle = "#c7d3cf";
-      ctx.font = `500 ${unit * 0.68}px "Noto Sans JP", sans-serif`;
+      ctx.font = `500 ${unit * 0.68}px ${JAPANESE_FONT_STACK}`;
       this.drawWrappedText(note.text, panel.x + unit * 1.7, y + unit * 1.75, panel.width - unit * 3.4, unit * 0.82);
     });
     ctx.restore();
@@ -2068,7 +2068,7 @@ export class VaultWorld {
 
   private drawArchiveOverlay(layout: ScreenLayout) {
     const ctx = this.context;
-    const unit = Math.max(10, Math.min(layout.width, layout.height) / 85);
+    const unit = canvasUnit(layout.width, layout.height, layout.compact);
     const panel: Rect = {
       x: layout.width * (layout.compact ? 0.04 : 0.11),
       y: layout.height * (layout.compact ? 0.055 : 0.1),
@@ -2084,7 +2084,7 @@ export class VaultWorld {
     ctx.font = `700 ${unit * (layout.compact ? 1.15 : 1.45)}px "DM Mono", monospace`;
     ctx.fillText("ARCHIVE LEDGER / 鑑定帳", panel.x + unit * 1.45, panel.y + unit * 2.05);
     ctx.fillStyle = "#7c9397";
-    ctx.font = `500 ${unit * 0.66}px "Noto Sans JP", sans-serif`;
+    ctx.font = `500 ${unit * 0.66}px ${JAPANESE_FONT_STACK}`;
     ctx.fillText(`解放済み ${this.archive.unlockedCount}/${REWARD_DEFINITIONS.length}  —  観察メモ ${this.observations.count}件  —  保管物の来歴と機構上の痕跡`, panel.x + unit * 1.45, panel.y + unit * 3.12);
     ctx.fillStyle = "#c9a963";
     ctx.font = `600 ${unit * (layout.compact ? 0.42 : 0.5)}px "DM Mono", monospace`;
@@ -2118,10 +2118,10 @@ export class VaultWorld {
         ctx.font = `700 ${unit * (layout.compact ? 0.52 : 0.62)}px "DM Mono", monospace`;
         ctx.fillText(`${String(index + 1).padStart(2, "0")} / ${reward.rarity.toUpperCase()}`, x + unit * 0.55, y + unit * 0.95);
         ctx.fillStyle = unlocked ? "#c2d1cd" : "#7c8987";
-        ctx.font = `600 ${unit * (layout.compact ? 0.58 : 0.7)}px "Noto Sans JP", sans-serif`;
+        ctx.font = `600 ${unit * (layout.compact ? 0.58 : 0.7)}px ${JAPANESE_FONT_STACK}`;
         ctx.fillText(unlocked ? reward.title : "未解放の収蔵品", x + unit * 0.55, y + unit * 1.8);
         ctx.fillStyle = "#7c9397";
-        ctx.font = `500 ${unit * (layout.compact ? 0.42 : 0.5)}px "Noto Sans JP", sans-serif`;
+        ctx.font = `500 ${unit * (layout.compact ? 0.42 : 0.5)}px ${JAPANESE_FONT_STACK}`;
         ctx.fillText(unlocked ? `× ${record?.unlockCount ?? 0}` : reward.conditionLabel, x + unit * 0.55, y + rowHeight - unit * 0.8);
       });
       ctx.restore();
@@ -2146,16 +2146,16 @@ export class VaultWorld {
       ctx.font = `700 ${unit * (layout.compact ? 0.96 : 1.18)}px "DM Mono", monospace`;
       ctx.fillText(unlocked ? `${reward.catalogNumber}  /  ${reward.title}` : isTarget ? `CURRENT TARGET  /  ${reward.title}` : "RESTRICTED COLLECTION / 未解放", textX, y + unit * 1.58);
       ctx.fillStyle = active ? "#74f2da" : unlocked ? "#c2d1cd" : "#7c8987";
-      ctx.font = `500 ${unit * (layout.compact ? 0.66 : 0.8)}px "Noto Sans JP", sans-serif`;
+      ctx.font = `500 ${unit * (layout.compact ? 0.66 : 0.8)}px ${JAPANESE_FONT_STACK}`;
       if (unlocked) {
         this.drawWrappedText(`${reward.material}。${reward.provenance}`, textX, y + unit * 2.35, panel.width - unit * 4.1, unit * 0.86);
         ctx.fillStyle = "#c9a963";
-        ctx.font = `500 ${unit * (layout.compact ? 0.6 : 0.72)}px "Noto Sans JP", sans-serif`;
+        ctx.font = `500 ${unit * (layout.compact ? 0.6 : 0.72)}px ${JAPANESE_FONT_STACK}`;
         this.drawWrappedText(`観察メモ：${reward.observation}`, textX, y + itemHeight - unit * 1.0, panel.width - unit * 4.1, unit * 0.76);
       } else if (isTarget) {
         this.drawWrappedText(`収蔵物：${reward.description}`, textX, y + unit * 2.62, panel.width - unit * 4.1, unit * 1.02);
         ctx.fillStyle = "#c9a963";
-        ctx.font = `600 ${unit * (layout.compact ? 0.6 : 0.74)}px "Noto Sans JP", sans-serif`;
+        ctx.font = `600 ${unit * (layout.compact ? 0.6 : 0.74)}px ${JAPANESE_FONT_STACK}`;
         ctx.fillText("この金庫を開錠すると、来歴と観察メモが解放されます。", textX, y + itemHeight - unit * 1.1);
       } else {
         ctx.fillText("この保管物は未解放です。対応する金庫を開錠してください。", textX, y + unit * 2.6);
@@ -2177,7 +2177,8 @@ export class VaultWorld {
 
   private drawControlButton(action: string, rect: Rect, label: string, accent = "#7e9b98") {
     const ctx = this.context;
-    const unit = Math.max(10, Math.min(this.getCanvasResolution().width, this.getCanvasResolution().height) / 85);
+    const resolution = this.getCanvasResolution();
+    const unit = canvasUnit(resolution.width, resolution.height, resolution.width / resolution.height < 1.12);
     this.setHitbox(action, rect);
     this.roundRect(rect.x, rect.y, rect.width, rect.height, unit * 0.35);
     ctx.fillStyle = "rgba(8, 15, 19, 0.88)";
@@ -2220,7 +2221,7 @@ export class VaultWorld {
 
   private drawBlindOverlay(layout: ScreenLayout) {
     const ctx = this.context;
-    const unit = Math.max(10, Math.min(layout.width, layout.height) / 85);
+    const unit = canvasUnit(layout.width, layout.height, layout.compact);
     const { width, height } = layout;
     ctx.save();
     ctx.fillStyle = "rgba(1, 3, 5, 0.986)";
@@ -2285,7 +2286,8 @@ export class VaultWorld {
 
   private drawFrame(rect: Rect, fill: string, stroke: string) {
     const ctx = this.context;
-    const unit = Math.max(10, Math.min(this.getCanvasResolution().width, this.getCanvasResolution().height) / 85);
+    const resolution = this.getCanvasResolution();
+    const unit = canvasUnit(resolution.width, resolution.height, resolution.width / resolution.height < 1.12);
     this.roundRect(rect.x, rect.y, rect.width, rect.height, unit * 0.55);
     ctx.fillStyle = fill;
     ctx.fill();
@@ -2315,27 +2317,19 @@ export class VaultWorld {
     ctx.stroke();
   }
 
-  private drawFallbackMark(x: number, y: number, size: number) {
+  private drawWrappedText(text: string, x: number, y: number, maxWidth: number, lineHeight: number, maxLines = Number.POSITIVE_INFINITY) {
     const ctx = this.context;
-    ctx.save();
-    ctx.translate(x + size / 2, y + size / 2);
-    ctx.strokeStyle = "#c6a35b";
-    ctx.lineWidth = Math.max(2, size * 0.09);
-    [0.17, 0.31, 0.45].forEach((ratio, index) => {
-      ctx.beginPath();
-      ctx.arc(0, 0, size * ratio, -Math.PI * 0.32 - index * 0.08, Math.PI * 1.2 - index * 0.08);
-      ctx.stroke();
-    });
-    ctx.restore();
-  }
-
-  private drawWrappedText(text: string, x: number, y: number, maxWidth: number, lineHeight: number) {
-    const ctx = this.context;
+    const lineLimit = Math.max(1, Math.floor(maxLines));
     let current = "";
     let line = 0;
-    for (const character of text) {
+    let truncated = false;
+    for (const character of Array.from(text)) {
       const next = current + character;
       if (ctx.measureText(next).width > maxWidth && current) {
+        if (line >= lineLimit - 1) {
+          truncated = true;
+          break;
+        }
         ctx.fillText(current, x, y + line * lineHeight);
         line += 1;
         current = character;
@@ -2343,7 +2337,16 @@ export class VaultWorld {
         current = next;
       }
     }
-    if (current) ctx.fillText(current, x, y + line * lineHeight);
+    if (!current || line >= lineLimit) return;
+    let output = current;
+    if (truncated) {
+      const ellipsis = "…";
+      output = `${output}${ellipsis}`;
+      while (output.length > 1 && ctx.measureText(output).width > maxWidth) {
+        output = `${Array.from(output).slice(0, -2).join("")}${ellipsis}`;
+      }
+    }
+    ctx.fillText(output, x, y + line * lineHeight);
   }
 
   private roundRect(x: number, y: number, width: number, height: number, radius: number) {

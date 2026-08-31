@@ -6,7 +6,7 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-sans: "Noto Sans JP", sans-serif;
+  --font-sans: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", system-ui, sans-serif;
   --font-mono: "DM Mono", monospace;
 }
 
@@ -27,7 +27,7 @@
 
   body {
     color: #e8dfc4;
-    font-family: "Noto Sans JP", sans-serif;
+    font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", system-ui, sans-serif;
   }
 
   button,
@@ -536,66 +536,6 @@
   transition-duration: 0.001ms !important;
 }
 
-@media (max-width: 680px) {
-  .akerun-title-screen {
-    background: rgba(2, 8, 12, 0.88);
-  }
-
-  .akerun-title-card {
-    margin: 0;
-  }
-
-  .akerun-title-actions > .akerun-button,
-  .akerun-link-row > .akerun-button {
-    flex: 1 1 calc(50% - 10px);
-  }
-
-  .akerun-hud {
-    padding-top: max(10px, env(safe-area-inset-top));
-  }
-
-  .akerun-hud-actions .akerun-button {
-    padding-inline: 8px;
-    font-size: 0.7rem;
-  }
-
-  .akerun-live-panel {
-    top: max(68px, calc(env(safe-area-inset-top) + 52px));
-    width: calc(100% - 28px);
-  }
-
-  .akerun-live-stats {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .akerun-stat {
-    padding: 6px;
-  }
-
-  .akerun-stat strong {
-    font-size: 0.78rem;
-  }
-
-  .akerun-mobile-menu {
-    gap: 5px;
-    justify-content: space-between;
-  }
-
-  .akerun-mobile-menu .akerun-button {
-    flex: 1 1 0;
-    padding-inline: 4px;
-    font-size: 0.66rem;
-  }
-
-  .akerun-result-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .akerun-practice-list {
-    grid-template-columns: 1fr;
-  }
-}
-
 @media (max-height: 720px) and (orientation: landscape) {
   .akerun-title-card,
   .akerun-modal-card,
@@ -622,80 +562,6 @@
     scroll-behavior: auto;
   }
 }
-
-
-/* 縦画面では、訓練説明がダイヤルを覆わない下部シートとして表示される。 */
-@media (orientation: portrait) and (max-width: 600px) {
-  .akerun-training-layer {
-    align-items: flex-end;
-    justify-content: center;
-    padding: 0 max(10px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
-  }
-
-  .akerun-training-card {
-    width: 100%;
-    max-height: min(32dvh, 300px);
-    overflow: auto;
-    padding: 13px 16px 14px;
-    border-radius: 16px 16px 0 0;
-    background: rgba(7, 18, 24, 0.97);
-  }
-
-  .akerun-training-card .akerun-kicker {
-    margin-bottom: 4px;
-    font-size: 0.64rem;
-  }
-
-  .akerun-training-card h2 {
-    font-size: clamp(1.2rem, 6vw, 1.7rem);
-    line-height: 1.25;
-  }
-
-  .akerun-training-card p {
-    margin: 6px 0;
-    font-size: 0.88rem;
-    line-height: 1.45;
-  }
-
-  .akerun-training-card .akerun-small {
-    display: none;
-  }
-
-  .akerun-training-card .akerun-button {
-    min-height: 44px;
-    margin-top: 4px;
-  }
-
-  .akerun-live-panel {
-    top: max(68px, calc(env(safe-area-inset-top) + 54px));
-    width: calc(100% - 20px);
-    padding: 8px 10px;
-  }
-
-  .akerun-live-panel p {
-    margin-top: 3px;
-    font-size: 0.72rem;
-    line-height: 1.35;
-  }
-
-  .akerun-live-stats {
-    gap: 4px;
-  }
-
-  .akerun-stat {
-    padding: 5px 4px;
-  }
-
-  .akerun-stat span {
-    font-size: 0.55rem;
-  }
-
-  .akerun-stat strong {
-    font-size: 0.78rem;
-  }
-}
-
-
 /* Akerun visual hierarchy and portrait-safe layout. */
 .akerun-title-brand {
   display: flex;
@@ -913,6 +779,15 @@
     margin-top: 14px;
   }
 
+  .akerun-link-row > .akerun-button {
+    width: 100%;
+  }
+
+  .akerun-practice-list {
+    width: 100%;
+    grid-template-columns: 1fr;
+  }
+
   .akerun-training-layer {
     align-items: flex-end;
     justify-content: center;
@@ -1014,6 +889,19 @@
   .akerun-result-grid {
     grid-template-columns: 1fr 1fr;
   }
+
+  .akerun-modal-card .akerun-title-actions,
+  .akerun-result-card .akerun-title-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .akerun-modal-card .akerun-title-actions > .akerun-button,
+  .akerun-result-card .akerun-title-actions > .akerun-button {
+    width: 100%;
+    min-height: 48px;
+  }
 }
 
 @media (max-width: 380px) {
@@ -1047,21 +935,5 @@
   .akerun-live-stats {
     height: 100%;
     align-items: center;
-  }
-}
-
-
-@media (max-width: 680px) {
-  .akerun-modal-card .akerun-title-actions,
-  .akerun-result-card .akerun-title-actions {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-
-  .akerun-modal-card .akerun-title-actions > .akerun-button,
-  .akerun-result-card .akerun-title-actions > .akerun-button {
-    width: 100%;
-    min-height: 48px;
   }
 }

@@ -177,7 +177,7 @@ describe("LockMechanism", () => {
       ["ccw", 3, 1],
       ["cw", 2, 0],
     ]);
-    expect(lock.coupledWheels).toEqual([0]);
+    expect(lock.coupledWheels).toEqual([5]);
 
     const first = puzzle.stages[0];
     let guard = 0;
@@ -186,11 +186,14 @@ describe("LockMechanism", () => {
       guard += 1;
     }
     expect(lock.currentPass).toBe(2);
-    expect(lock.coupledWheels).toEqual([0, 1]);
+    expect(lock.coupledWheels).toEqual([5, 4]);
 
     const dialBeforeWrongDirection = lock.dial;
     lock.rotate(1);
-    expect(lock.dial).toBe(dialBeforeWrongDirection);
+    expect(lock.dial).toBe((dialBeforeWrongDirection + 1) % 100);
+    expect(lock.currentPass).toBe(2);
+    expect(lock.tumblerValues[5]).toBe(lock.dial);
+    expect(lock.tumblerValues[4]).toBe(lock.dial);
 
     while (lock.stage === 0 && guard < 900) {
       lock.rotate(first.direction === "cw" ? 1 : -1);

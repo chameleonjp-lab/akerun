@@ -379,7 +379,9 @@ export class LockMechanism {
     const stage = this.activeStage;
     if (!stage) return [];
     const count = Math.min(stage.wheel + 1, this.stagePasses + 1);
-    return Array.from({ length: count }, (_, index) => index);
+    // ステージは外側の輪（W6）から始まる。拾われる輪もその輪から
+    // 内側へ向かうため、配列の先頭（W1）を固定してはいけない。
+    return Array.from({ length: count }, (_, index) => stage.wheel - index);
   }
 
   get driveCamAngle(): number {
@@ -597,18 +599,22 @@ export class LockMechanism {
     for (let index = 0; index < count; index += 1) {
       const current = this.activeStage;
       if (!current) return;
+      const reverses = this.lastDirection !== direction;
+      if (reverses) this.reversalCount += 1;
+      this.lastDirection = direction;
+
+      // 逆方向は機構を空転させるだけだが、ダイヤル自体は物理的に回る。
+      // ここで位置更新まで捨てると、片方向入力に見えてしまい、観察と再現の
+      // 両方が壊れる。正しい方向だけがホイールを拾い、通過を進める。
+      this.dial = normalize(this.dial + delta);
+      for (const wheel of this.coupledWheels) this.tumblerValues[wheel] = this.dial;
+
       if (direction !== current.direction) {
-        this.lastDirection = direction;
         this.lastMessage = this.puzzle.difficulty.showExactInstruction
           ? `ドライブカムが空転しています。次は${current.direction === "cw" ? "右" : "左"}回りで輪 ${current.wheel + 1} のフライを拾います。`
           : "フライが離れ、ドライブカムが空転しています。次の方向反転を観察してください。";
-        return;
+        continue;
       }
-
-      if (this.lastDirection !== direction) this.reversalCount += 1;
-      this.lastDirection = direction;
-      this.dial = normalize(this.dial + delta);
-      for (const wheel of this.coupledWheels) this.tumblerValues[wheel] = this.dial;
 
       const falseGate = this.falseGateAtDial;
       if (falseGate) {
