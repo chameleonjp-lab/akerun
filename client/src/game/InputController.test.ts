@@ -1,11 +1,24 @@
 import { describe, expect, it, vi } from "vitest";
-import { InputController, containsInputRect, type InputRect } from "./InputController";
+import {
+  InputController,
+  containsInputRect,
+  type InputRect,
+} from "./InputController";
 
 class TestCanvas extends EventTarget {
   captured = new Set<number>();
   throwOnCapture = false;
+  invalidBounds = false;
 
   getBoundingClientRect() {
+    if (this.invalidBounds) {
+      return {
+        left: Number.NaN,
+        top: Number.NaN,
+        width: Number.NaN,
+        height: Number.NaN,
+      };
+    }
     return { left: 0, top: 0, width: 100, height: 100 };
   }
 
@@ -23,13 +36,23 @@ class TestCanvas extends EventTarget {
   }
 }
 
-const pointerEvent = (type: string, pointerId: number, clientX: number, clientY: number) => {
-  const event = new Event(type, { bubbles: true, cancelable: true }) as Event & Partial<PointerEvent>;
+const pointerEvent = (
+  type: string,
+  pointerId: number,
+  clientX: number,
+  clientY: number
+) => {
+  const event = new Event(type, { bubbles: true, cancelable: true }) as Event &
+    Partial<PointerEvent>;
   Object.assign(event, { pointerId, clientX, clientY });
   return event;
 };
 
-const baseOptions = (canvas: TestCanvas, windowTarget: EventTarget, hitboxes: ReadonlyMap<string, InputRect>) => ({
+const baseOptions = (
+  canvas: TestCanvas,
+  windowTarget: EventTarget,
+  hitboxes: ReadonlyMap<string, InputRect>
+) => ({
   canvas,
   windowTarget,
   getSurfaceSize: () => ({ width: 100, height: 100 }),
@@ -51,7 +74,11 @@ describe("InputController", () => {
   it("routes hitboxes and dial gestures without exposing mechanism state", () => {
     const canvas = new TestCanvas();
     const windowTarget = new EventTarget();
-    const options = baseOptions(canvas, windowTarget, new Map([["pause", { x: 0, y: 0, width: 20, height: 20 }]]));
+    const options = baseOptions(
+      canvas,
+      windowTarget,
+      new Map([["pause", { x: 0, y: 0, width: 20, height: 20 }]])
+    );
     new InputController(options);
 
     canvas.dispatchEvent(pointerEvent("pointerdown", 1, 10, 10));
@@ -73,9 +100,11 @@ describe("InputController", () => {
     canvas.dispatchEvent(pointerEvent("pointermove", 1, 50, 70));
     canvas.dispatchEvent(pointerEvent("pointermove", 1, 70, 50));
 
-    const rotations = options.onRotateDial.mock.calls.map(([steps]) => steps as number);
-    expect(rotations.some((steps) => steps > 0)).toBe(true);
-    expect(rotations.some((steps) => steps < 0)).toBe(true);
+    const rotations = options.onRotateDial.mock.calls.map(
+      ([steps]) => steps as number
+    );
+    expect(rotations.some(steps => steps > 0)).toBe(true);
+    expect(rotations.some(steps => steps < 0)).toBe(true);
   });
 
   it("ignores a second pointer while a dial gesture is active", () => {
@@ -114,10 +143,11 @@ describe("InputController", () => {
     const canvas = new TestCanvas();
     canvas.throwOnCapture = true;
     const windowTarget = new EventTarget();
-    const options = baseOptions(canvas, windowTarget, new Map([[
-      "tension-grip",
-      { x: 0, y: 0, width: 20, height: 20 },
-    ]]));
+    const options = baseOptions(
+      canvas,
+      windowTarget,
+      new Map([["tension-grip", { x: 0, y: 0, width: 20, height: 20 }]])
+    );
     const controller = new InputController(options);
 
     canvas.dispatchEvent(pointerEvent("pointerdown", 1, 70, 50));
@@ -132,10 +162,11 @@ describe("InputController", () => {
     canvas.throwOnCapture = true;
     const windowTarget = new EventTarget();
     const options = {
-      ...baseOptions(canvas, windowTarget, new Map([[
-        "tension-grip",
-        { x: 0, y: 0, width: 20, height: 20 },
-      ]])),
+      ...baseOptions(
+        canvas,
+        windowTarget,
+        new Map([["tension-grip", { x: 0, y: 0, width: 20, height: 20 }]])
+      ),
       onBeginPhysicalInput: vi.fn(() => "tension" as const),
     };
     const controller = new InputController(options);
@@ -145,7 +176,7 @@ describe("InputController", () => {
     expect(options.onUpdatePhysicalInput).toHaveBeenCalledWith(
       "tension",
       { x: 10, y: 10 },
-      { x: 18, y: 10 },
+      { x: 18, y: 10 }
     );
 
     windowTarget.dispatchEvent(pointerEvent("pointerup", 2, 18, 10));
@@ -156,7 +187,10 @@ describe("InputController", () => {
   it("does not route input while disabled", () => {
     const canvas = new TestCanvas();
     const windowTarget = new EventTarget();
-    const options = { ...baseOptions(canvas, windowTarget, new Map()), isInputEnabled: () => false };
+    const options = {
+      ...baseOptions(canvas, windowTarget, new Map()),
+      isInputEnabled: () => false,
+    };
     new InputController(options);
 
     canvas.dispatchEvent(pointerEvent("pointerdown", 1, 50, 50));
@@ -167,7 +201,14 @@ describe("InputController", () => {
   it("releases an active physical input on pointer end and dispose", () => {
     const canvas = new TestCanvas();
     const windowTarget = new EventTarget();
-    const options = { ...baseOptions(canvas, windowTarget, new Map([["tension-grip", { x: 0, y: 0, width: 20, height: 20 }]])), onBeginPhysicalInput: vi.fn(() => "tension" as const) };
+    const options = {
+      ...baseOptions(
+        canvas,
+        windowTarget,
+        new Map([["tension-grip", { x: 0, y: 0, width: 20, height: 20 }]])
+      ),
+      onBeginPhysicalInput: vi.fn(() => "tension" as const),
+    };
     const controller = new InputController(options);
 
     canvas.dispatchEvent(pointerEvent("pointerdown", 3, 10, 10));
@@ -181,7 +222,35 @@ describe("InputController", () => {
   });
 
   it("keeps rectangle hit testing deterministic", () => {
-    expect(containsInputRect({ x: 10, y: 10, width: 20, height: 20 }, { x: 10, y: 10 })).toBe(true);
-    expect(containsInputRect({ x: 10, y: 10, width: 20, height: 20 }, { x: 31, y: 10 })).toBe(false);
+    expect(
+      containsInputRect(
+        { x: 10, y: 10, width: 20, height: 20 },
+        { x: 10, y: 10 }
+      )
+    ).toBe(true);
+    expect(
+      containsInputRect(
+        { x: 10, y: 10, width: 20, height: 20 },
+        { x: 31, y: 10 }
+      )
+    ).toBe(false);
+  });
+
+  it("keeps invalid browser geometry from turning a pointer into NaN coordinates", () => {
+    const canvas = new TestCanvas();
+    canvas.invalidBounds = true;
+    const windowTarget = new EventTarget();
+    const options = baseOptions(
+      canvas,
+      windowTarget,
+      new Map([["pause", { x: 0, y: 0, width: 20, height: 20 }]])
+    );
+    new InputController(options);
+
+    canvas.dispatchEvent(
+      pointerEvent("pointerdown", 1, Number.NaN, Number.NaN)
+    );
+
+    expect(options.onAction).toHaveBeenCalledWith("pause");
   });
 });

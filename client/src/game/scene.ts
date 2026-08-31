@@ -10,6 +10,8 @@ export type PuzzleStartOptions = {
   readonly postDial?: boolean;
   readonly resume?: RunCheckpoint;
   readonly recordable?: boolean;
+  /** 競技など、検証はするが端末内の進行・収蔵品へ保存しない実行。 */
+  readonly persistProgress?: boolean;
 };
 
 export type GameHandle = {
@@ -29,9 +31,14 @@ export async function createGameScene(
   canvas: HTMLCanvasElement,
   context: CanvasRenderingContext2D,
   onStatusChange?: (status: string) => void,
-  onSnapshotChange?: (snapshot: GameSnapshot) => void,
+  onSnapshotChange?: (snapshot: GameSnapshot) => void
 ): Promise<GameHandle> {
-  const world = new VaultWorld(context, canvas, onStatusChange, onSnapshotChange);
+  const world = new VaultWorld(
+    context,
+    canvas,
+    onStatusChange,
+    onSnapshotChange
+  );
   let lastWorldErrorAt = 0;
 
   const update = (delta: number) => {
@@ -40,7 +47,10 @@ export async function createGameScene(
     } catch (error) {
       const now = performance.now();
       if (now - lastWorldErrorAt > 1500) {
-        console.error("Vault Tumbler Lab frame recovered after a render error.", error);
+        console.error(
+          "Vault Tumbler Lab frame recovered after a render error.",
+          error
+        );
         lastWorldErrorAt = now;
       }
       world.renderRecoveryOverlay();
@@ -51,10 +61,10 @@ export async function createGameScene(
     update,
     startPuzzle: (puzzle, options) => world.startPuzzle(puzzle, options),
     startDemo: () => world.startDemo(),
-    setPaused: (paused) => world.setPaused(paused),
+    setPaused: paused => world.setPaused(paused),
     retire: () => world.retire(),
     reset: () => world.performAction("reset"),
-    performAction: (action) => world.performAction(action),
+    performAction: action => world.performAction(action),
     getSnapshot: () => world.getSnapshot(),
     getCheckpoint: () => world.getCheckpoint(),
     dispose: () => world.dispose(),

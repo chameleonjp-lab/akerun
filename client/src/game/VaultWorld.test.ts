@@ -1,13 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { calculateScreenLayout } from "./VaultWorld";
+import {
+  calculateScreenLayout,
+  getContainedImageRect,
+  getDemoTurnCount,
+} from "./VaultWorld";
 
 const compactUnit = (width: number, height: number) =>
   Math.max(14, Math.min(width, height) / 52);
 
 describe("calculateScreenLayout", () => {
+  it("falls back to a finite layout when the surface reports invalid dimensions", () => {
+    const layout = calculateScreenLayout(
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      false
+    );
+
+    expect(layout.width).toBe(1);
+    expect(layout.height).toBe(1);
+    expect(Object.values(layout.dial).every(Number.isFinite)).toBe(true);
+  });
+
   it.each([
     [320, 520],
     [390, 844],
+    [402, 874],
     [430, 932],
   ])(
     "keeps the portrait dial and workbench in separate bands at %ix%i",
@@ -53,5 +70,47 @@ describe("calculateScreenLayout", () => {
     expect(layout.dial.x).toBeCloseTo(1363 * 0.295, 5);
     expect(layout.internal.x).toBeCloseTo(1363 * 0.61, 5);
     expect(layout.footerY).toBeCloseTo(936 * 0.855, 5);
+  });
+});
+
+describe("getContainedImageRect", () => {
+  it("preserves a landscape cutaway aspect ratio inside a panel", () => {
+    expect(
+      getContainedImageRect(1200, 600, {
+        x: 10,
+        y: 20,
+        width: 300,
+        height: 300,
+      })
+    ).toEqual({
+      x: 10,
+      y: 95,
+      width: 300,
+      height: 150,
+    });
+  });
+
+  it("returns no draw area for invalid image dimensions or excessive padding", () => {
+    expect(
+      getContainedImageRect(0, 600, { x: 10, y: 20, width: 300, height: 300 })
+    ).toBeNull();
+    expect(
+      getContainedImageRect(
+        1200,
+        600,
+        { x: 10, y: 20, width: 20, height: 20 },
+        11
+      )
+    ).toBeNull();
+  });
+});
+
+describe("getDemoTurnCount", () => {
+  it("consumes elapsed time without losing sub-frame dial intervals", () => {
+    expect(getDemoTurnCount(0.016)).toBe(0);
+    expect(getDemoTurnCount(0.048)).toBe(1);
+    expect(getDemoTurnCount(0.288)).toBe(6);
+    expect(getDemoTurnCount(0.9)).toBe(12);
+    expect(getDemoTurnCount(Number.NaN)).toBe(0);
   });
 });

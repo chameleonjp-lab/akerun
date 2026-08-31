@@ -2,7 +2,14 @@
  * Vault Tumbler Lab — 真鍮の機械製図室。
  * 外部音源を使わず、ダイヤル、抵抗、フェンス、ボルトを短い合成金属音へ変換する。
  */
-export type AudioSampleId = "idle" | "edge" | "false-gate" | "pickup" | "deep-contact" | "fence" | "bolt";
+export type AudioSampleId =
+  | "idle"
+  | "edge"
+  | "false-gate"
+  | "pickup"
+  | "deep-contact"
+  | "fence"
+  | "bolt";
 
 export type AudioSampleDefinition = {
   readonly id: AudioSampleId;
@@ -20,7 +27,8 @@ export type FalseGateToneProfile = {
   readonly secondaryGain: number;
 };
 
-const clamp = (value: number, min = 0, max = 1) => Math.min(max, Math.max(min, value));
+const clamp = (value: number, min = 0, max = 1) =>
+  Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : min;
 
 /**
  * 偽ゲートの音色を金庫固有の類似度から決める純粋関数。
@@ -29,7 +37,7 @@ const clamp = (value: number, min = 0, max = 1) => Math.min(max, Math.max(min, v
 export const getFalseGateToneProfile = (
   depth: number,
   hardness = 0.5,
-  similarity = 0,
+  similarity = 0
 ): FalseGateToneProfile => {
   const shallow = clamp(depth);
   const edge = clamp(hardness);
@@ -53,13 +61,48 @@ export const getFalseGateToneProfile = (
 };
 
 export const AUDIO_SAMPLE_DEFINITIONS: readonly AudioSampleDefinition[] = [
-  { id: "idle", title: "空転", description: "フライが輪を拾わず、ドライブカムだけが回る音。", visualMeaning: "画面では大きな整列変化が起きません。" },
-  { id: "edge", title: "ゲート縁", description: "ゲートの端に触れた軽い金属音。正解確定ではありません。", visualMeaning: "接触深度は浅く、候補を記録できます。" },
-  { id: "false-gate", title: "偽ゲート", description: "一瞬だけ入りかける、短く鈍い反発音。", visualMeaning: "フェンスは最後まで下降せず、別の候補と比べます。" },
-  { id: "pickup", title: "フライ接続", description: "フライが次の輪を拾う擦過音。", visualMeaning: "通過回数や操作中の輪が変わります。" },
-  { id: "deep-contact", title: "深い接触", description: "正規ゲートに近づいたときの、低く長い接触音。", visualMeaning: "抵抗と接触深度を画面でも確認します。" },
-  { id: "fence", title: "フェンス", description: "フェンスが座り、機構の後半へ進める音。", visualMeaning: "テンションからフェンス操作へ移ります。" },
-  { id: "bolt", title: "ボルト", description: "ロックボルトと扉側ボルトが動く重いリンク音。", visualMeaning: "扉ハンドルへ進める状態を示します。" },
+  {
+    id: "idle",
+    title: "空転",
+    description: "フライが輪を拾わず、ドライブカムだけが回る音。",
+    visualMeaning: "画面では大きな整列変化が起きません。",
+  },
+  {
+    id: "edge",
+    title: "ゲート縁",
+    description: "ゲートの端に触れた軽い金属音。正解確定ではありません。",
+    visualMeaning: "接触深度は浅く、候補を記録できます。",
+  },
+  {
+    id: "false-gate",
+    title: "偽ゲート",
+    description: "一瞬だけ入りかける、短く鈍い反発音。",
+    visualMeaning: "フェンスは最後まで下降せず、別の候補と比べます。",
+  },
+  {
+    id: "pickup",
+    title: "フライ接続",
+    description: "フライが次の輪を拾う擦過音。",
+    visualMeaning: "通過回数や操作中の輪が変わります。",
+  },
+  {
+    id: "deep-contact",
+    title: "深い接触",
+    description: "正規ゲートに近づいたときの、低く長い接触音。",
+    visualMeaning: "抵抗と接触深度を画面でも確認します。",
+  },
+  {
+    id: "fence",
+    title: "フェンス",
+    description: "フェンスが座り、機構の後半へ進める音。",
+    visualMeaning: "テンションからフェンス操作へ移ります。",
+  },
+  {
+    id: "bolt",
+    title: "ボルト",
+    description: "ロックボルトと扉側ボルトが動く重いリンク音。",
+    visualMeaning: "扉ハンドルへ進める状態を示します。",
+  },
 ];
 
 export class AudioFeedback {
@@ -75,18 +118,36 @@ export class AudioFeedback {
   }
 
   enableFromGesture() {
-    if (!this.context) {
-      this.context = new AudioContext();
-      this.master = this.context.createGain();
-      this.master.gain.value = 0.34;
-      this.master.connect(this.context.destination);
+    let createdContext: AudioContext | null = null;
+    try {
+      if (!this.context) {
+        if (typeof AudioContext === "undefined") return;
+        createdContext = new AudioContext();
+        const master = createdContext.createGain();
+        master.gain.value = 0.34;
+        master.connect(createdContext.destination);
+        this.context = createdContext;
+        this.master = master;
+        createdContext = null;
+      }
+      if (this.context.state === "suspended")
+        void this.context.resume().catch(() => undefined);
+    } catch {
+      const failedContext = this.context ?? createdContext;
+      this.context = null;
+      this.master = null;
+      if (failedContext && failedContext.state !== "closed")
+        void failedContext.close().catch(() => undefined);
     }
-    if (this.context.state === "suspended") void this.context.resume();
   }
 
   toggleMute() {
     this.muted = !this.muted;
-    if (this.master) this.master.gain.value = this.muted ? 0 : 0.34;
+    try {
+      if (this.master) this.master.gain.value = this.muted ? 0 : 0.34;
+    } catch {
+      // A Web Audio context can close asynchronously while the UI is alive.
+    }
   }
 
   dialTick(direction: "cw" | "ccw", speed: number, preload = 0.5) {
@@ -97,21 +158,40 @@ export class AudioFeedback {
     if (now - this.lastTickAt < interval) return;
     this.lastTickAt = now;
     const materialBias = Math.min(1, Math.max(0, preload));
-    const directionBase = (direction === "cw" ? 1510 : 1380) - materialBias * 130;
+    const directionBase =
+      (direction === "cw" ? 1510 : 1380) - materialBias * 130;
     const pitch = directionBase * (1 + normalizedSpeed * 0.31);
     const duration = 0.038 - normalizedSpeed * 0.016;
     const gain = 0.095 + normalizedSpeed * 0.085 + materialBias * 0.025;
     this.strike(pitch, duration, gain, "square");
-    this.strike(pitch * 2.02, duration * 0.68, gain * (0.18 + normalizedSpeed * 0.22), "sine", 0.002);
-    if (normalizedSpeed > 0.62) this.strike(pitch * 0.56, duration * 1.2, gain * 0.28, "triangle", 0.004);
+    this.strike(
+      pitch * 2.02,
+      duration * 0.68,
+      gain * (0.18 + normalizedSpeed * 0.22),
+      "sine",
+      0.002
+    );
+    if (normalizedSpeed > 0.62)
+      this.strike(pitch * 0.56, duration * 1.2, gain * 0.28, "triangle", 0.004);
   }
 
   flyPickup(depth: number, stickiness = 0.5) {
     if (!this.ready()) return;
     const normalizedDepth = Math.min(1, Math.max(0, depth));
     const grip = Math.min(1, Math.max(0, stickiness));
-    this.strike(420 + normalizedDepth * 130 - grip * 42, 0.055 + grip * 0.03, 0.085 + grip * 0.035, "triangle");
-    this.strike(840 + normalizedDepth * 220, 0.03 + grip * 0.014, 0.04, "sine", 0.01);
+    this.strike(
+      420 + normalizedDepth * 130 - grip * 42,
+      0.055 + grip * 0.03,
+      0.085 + grip * 0.035,
+      "triangle"
+    );
+    this.strike(
+      840 + normalizedDepth * 220,
+      0.03 + grip * 0.014,
+      0.04,
+      "sine",
+      0.01
+    );
   }
 
   flyRelease() {
@@ -145,8 +225,19 @@ export class AudioFeedback {
   falseGate(depth: number, hardness = 0.5, similarity = 0) {
     if (!this.mechanicalCueReady(0.095)) return;
     const tone = getFalseGateToneProfile(depth, hardness, similarity);
-    this.strike(tone.primaryFrequency, tone.primaryDuration, tone.primaryGain, "square");
-    this.strike(tone.secondaryFrequency, tone.secondaryDuration, tone.secondaryGain, "triangle", 0.008);
+    this.strike(
+      tone.primaryFrequency,
+      tone.primaryDuration,
+      tone.primaryGain,
+      "square"
+    );
+    this.strike(
+      tone.secondaryFrequency,
+      tone.secondaryDuration,
+      tone.secondaryGain,
+      "triangle",
+      0.008
+    );
   }
 
   /** フライが遊びの中で次の輪へ近づく擦過音。 */
@@ -154,7 +245,12 @@ export class AudioFeedback {
     if (!this.mechanicalCueReady(0.11)) return;
     const normalizedDepth = Math.min(1, Math.max(0, depth));
     const grip = Math.min(1, Math.max(0, stickiness));
-    this.strike(286 + normalizedDepth * 78 - grip * 28, 0.042 + grip * 0.028, 0.042 + normalizedDepth * 0.018, "square");
+    this.strike(
+      286 + normalizedDepth * 78 - grip * 28,
+      0.042 + grip * 0.028,
+      0.042 + normalizedDepth * 0.018,
+      "square"
+    );
   }
 
   tensionLoad(amount: number) {
@@ -164,7 +260,13 @@ export class AudioFeedback {
     this.lastResistanceAt = now;
     const pressure = Math.min(1, Math.max(0, amount));
     this.strike(156 - pressure * 42, 0.08, 0.045 + pressure * 0.05, "triangle");
-    this.strike(468 - pressure * 92, 0.045, 0.02 + pressure * 0.028, "sine", 0.008);
+    this.strike(
+      468 - pressure * 92,
+      0.045,
+      0.02 + pressure * 0.028,
+      "sine",
+      0.008
+    );
   }
 
   tensionCandidate() {
@@ -239,7 +341,10 @@ export class AudioFeedback {
   preview(sampleId: AudioSampleId) {
     if (!this.context) return;
     if (this.context.state === "suspended") {
-      void this.context.resume().then(() => this.preview(sampleId)).catch(() => undefined);
+      void this.context
+        .resume()
+        .then(() => this.preview(sampleId))
+        .catch(() => undefined);
       return;
     }
     if (sampleId === "idle") this.camIdle();
@@ -252,13 +357,24 @@ export class AudioFeedback {
   }
 
   dispose() {
-    if (this.context && this.context.state !== "closed") void this.context.close();
+    if (this.context && this.context.state !== "closed") {
+      try {
+        void this.context.close().catch(() => undefined);
+      } catch {
+        // A platform may reject or throw while the page is being torn down.
+      }
+    }
     this.context = null;
     this.master = null;
   }
 
   private ready() {
-    return Boolean(this.context && this.master && !this.muted && this.context.state === "running");
+    return Boolean(
+      this.context &&
+        this.master &&
+        !this.muted &&
+        this.context.state === "running"
+    );
   }
 
   private mechanicalCueReady(interval: number) {
@@ -269,20 +385,34 @@ export class AudioFeedback {
     return true;
   }
 
-  private strike(frequency: number, duration: number, gain: number, type: OscillatorType, delay = 0) {
-    if (!this.context || !this.master) return;
-    const start = this.context.currentTime + delay;
-    const oscillator = this.context.createOscillator();
-    const envelope = this.context.createGain();
-    oscillator.type = type;
-    oscillator.frequency.setValueAtTime(frequency, start);
-    oscillator.frequency.exponentialRampToValueAtTime(Math.max(70, frequency * 0.56), start + duration);
-    envelope.gain.setValueAtTime(0.0001, start);
-    envelope.gain.exponentialRampToValueAtTime(gain, start + 0.003);
-    envelope.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-    oscillator.connect(envelope);
-    envelope.connect(this.master);
-    oscillator.start(start);
-    oscillator.stop(start + duration + 0.02);
+  private strike(
+    frequency: number,
+    duration: number,
+    gain: number,
+    type: OscillatorType,
+    delay = 0
+  ) {
+    const { context, master } = this;
+    if (!context || !master) return;
+    try {
+      const start = context.currentTime + delay;
+      const oscillator = context.createOscillator();
+      const envelope = context.createGain();
+      oscillator.type = type;
+      oscillator.frequency.setValueAtTime(frequency, start);
+      oscillator.frequency.exponentialRampToValueAtTime(
+        Math.max(70, frequency * 0.56),
+        start + duration
+      );
+      envelope.gain.setValueAtTime(0.0001, start);
+      envelope.gain.exponentialRampToValueAtTime(gain, start + 0.003);
+      envelope.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+      oscillator.connect(envelope);
+      envelope.connect(master);
+      oscillator.start(start);
+      oscillator.stop(start + duration + 0.02);
+    } catch {
+      // Web Audioが利用できない・終了済みでも、操作と描画は継続する。
+    }
   }
 }

@@ -6,7 +6,9 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-sans: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", system-ui, sans-serif;
+  --font-sans:
+    "Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Gothic ProN", -apple-system,
+    BlinkMacSystemFont, "Yu Gothic", system-ui, sans-serif;
   --font-mono: "DM Mono", monospace;
 }
 
@@ -27,7 +29,15 @@
 
   body {
     color: #e8dfc4;
-    font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", system-ui, sans-serif;
+    font-family:
+      "Noto Sans JP",
+      "Hiragino Sans",
+      "Hiragino Kaku Gothic ProN",
+      -apple-system,
+      BlinkMacSystemFont,
+      "Yu Gothic",
+      system-ui,
+      sans-serif;
   }
 
   button,
@@ -68,7 +78,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+  padding: max(18px, env(safe-area-inset-top))
+    max(18px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom))
+    max(18px, env(safe-area-inset-left));
   overflow: auto;
   background: rgba(2, 8, 12, 0.78);
 }
@@ -77,7 +89,12 @@
   align-items: flex-start;
   justify-content: flex-start;
   padding-top: max(30px, env(safe-area-inset-top));
-  background: linear-gradient(90deg, rgba(2, 8, 12, 0.92), rgba(2, 8, 12, 0.48) 60%, rgba(2, 8, 12, 0.24));
+  background: linear-gradient(
+    90deg,
+    rgba(2, 8, 12, 0.92),
+    rgba(2, 8, 12, 0.48) 60%,
+    rgba(2, 8, 12, 0.24)
+  );
 }
 
 .akerun-title-card,
@@ -88,8 +105,14 @@
   border: 1px solid rgba(202, 169, 99, 0.58);
   border-radius: 18px;
   padding: clamp(20px, 4vw, 42px);
-  background: linear-gradient(145deg, rgba(7, 18, 24, 0.97), rgba(9, 14, 18, 0.94));
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.46), inset 0 0 0 1px rgba(77, 224, 192, 0.08);
+  background: linear-gradient(
+    145deg,
+    rgba(7, 18, 24, 0.97),
+    rgba(9, 14, 18, 0.94)
+  );
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.46),
+    inset 0 0 0 1px rgba(77, 224, 192, 0.08);
   backdrop-filter: blur(14px);
 }
 
@@ -100,7 +123,9 @@
 .akerun-kicker {
   margin: 0 0 12px;
   color: #4de0c0;
-  font: 600 0.72rem "DM Mono", monospace;
+  font:
+    600 0.72rem "DM Mono",
+    monospace;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
@@ -192,7 +217,10 @@
   color: #dbe4dc;
   background: rgba(13, 28, 33, 0.92);
   cursor: pointer;
-  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    transform 120ms ease;
   touch-action: manipulation;
 }
 
@@ -243,7 +271,8 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) 0 max(14px, env(safe-area-inset-left));
+  padding: max(14px, env(safe-area-inset-top))
+    max(14px, env(safe-area-inset-right)) 0 max(14px, env(safe-area-inset-left));
   pointer-events: auto;
 }
 
@@ -318,7 +347,9 @@
 .akerun-stat span {
   overflow: hidden;
   color: #8da4a5;
-  font: 0.65rem "DM Mono", monospace;
+  font:
+    0.65rem "DM Mono",
+    monospace;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -326,7 +357,9 @@
 .akerun-stat strong {
   margin-top: 3px;
   color: #f2e7c5;
-  font: 600 0.95rem "DM Mono", monospace;
+  font:
+    600 0.95rem "DM Mono",
+    monospace;
 }
 
 .akerun-mobile-menu {
@@ -341,7 +374,9 @@
   display: flex;
   align-items: flex-start;
   justify-content: flex-start;
-  padding: max(106px, calc(env(safe-area-inset-top) + 78px)) max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+  padding: max(106px, calc(env(safe-area-inset-top) + 78px))
+    max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom))
+    max(14px, env(safe-area-inset-left));
   pointer-events: none;
 }
 
@@ -358,7 +393,9 @@
 .akerun-step {
   margin: 14px 0 4px;
   color: #d9c28a !important;
-  font: 600 0.78rem "DM Mono", monospace;
+  font:
+    600 0.78rem "DM Mono",
+    monospace;
 }
 
 .akerun-modal-screen {
@@ -372,7 +409,9 @@
 
 .akerun-result-subtitle {
   color: #7e9b98 !important;
-  font: 0.78rem "DM Mono", monospace;
+  font:
+    0.78rem "DM Mono",
+    monospace;
 }
 
 .akerun-result-grid {
@@ -448,7 +487,9 @@
 
 .akerun-ranking-row b {
   color: #4de0c0;
-  font: 600 0.95rem "DM Mono", monospace;
+  font:
+    600 0.95rem "DM Mono",
+    monospace;
 }
 
 .akerun-archive-row {
@@ -468,7 +509,9 @@
 
 .akerun-archive-row strong {
   color: #d9c28a;
-  font: 600 0.75rem "DM Mono", monospace;
+  font:
+    600 0.75rem "DM Mono",
+    monospace;
 }
 
 .akerun-archive-row span {
@@ -581,14 +624,18 @@
 .akerun-brand-subtitle {
   margin: 0;
   color: #4de0c0;
-  font: 600 0.74rem "DM Mono", monospace;
+  font:
+    600 0.74rem "DM Mono",
+    monospace;
   letter-spacing: 0.12em;
 }
 
 .akerun-build-id {
   margin: 12px 0 0;
   color: #7e9b98;
-  font: 500 0.72rem "DM Mono", monospace;
+  font:
+    500 0.72rem "DM Mono",
+    monospace;
   letter-spacing: 0.08em;
 }
 
@@ -613,7 +660,9 @@
 
 .akerun-progress-strip strong {
   color: #4de0c0;
-  font: 600 0.82rem "DM Mono", monospace;
+  font:
+    600 0.82rem "DM Mono",
+    monospace;
 }
 
 .akerun-title-primary-actions,
@@ -666,7 +715,11 @@
 }
 
 .akerun-countdown-screen {
-  background: radial-gradient(circle at center, rgba(16, 50, 53, 0.92), rgba(2, 8, 12, 0.98) 68%);
+  background: radial-gradient(
+    circle at center,
+    rgba(16, 50, 53, 0.92),
+    rgba(2, 8, 12, 0.98) 68%
+  );
 }
 
 .akerun-countdown-card {
@@ -675,8 +728,14 @@
   border: 1px solid rgba(77, 224, 192, 0.62);
   border-radius: 20px;
   text-align: center;
-  background: linear-gradient(145deg, rgba(7, 21, 27, 0.98), rgba(4, 12, 16, 0.96));
-  box-shadow: 0 24px 90px rgba(0, 0, 0, 0.55), 0 0 40px rgba(77, 224, 192, 0.12);
+  background: linear-gradient(
+    145deg,
+    rgba(7, 21, 27, 0.98),
+    rgba(4, 12, 16, 0.96)
+  );
+  box-shadow:
+    0 24px 90px rgba(0, 0, 0, 0.55),
+    0 0 40px rgba(77, 224, 192, 0.12);
 }
 
 .akerun-countdown-label {
@@ -689,7 +748,9 @@
   min-height: 1.1em;
   margin: 4px 0;
   color: #f2e7c5;
-  font: 700 clamp(5rem, 25vw, 9rem)/1 "DM Mono", monospace;
+  font:
+    700 clamp(5rem, 25vw, 9rem) / 1 "DM Mono",
+    monospace;
   letter-spacing: -0.08em;
 }
 
@@ -715,7 +776,10 @@
 @media (max-width: 680px) {
   .akerun-title-screen {
     align-items: flex-start;
-    padding: max(18px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+    padding: max(18px, env(safe-area-inset-top))
+      max(12px, env(safe-area-inset-right))
+      max(24px, env(safe-area-inset-bottom))
+      max(12px, env(safe-area-inset-left));
     overflow: auto;
   }
 
@@ -791,7 +855,9 @@
   .akerun-training-layer {
     align-items: flex-end;
     justify-content: center;
-    padding: 0 max(12px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+    padding: 0 max(12px, env(safe-area-inset-right))
+      max(10px, env(safe-area-inset-bottom))
+      max(12px, env(safe-area-inset-left));
   }
 
   .akerun-training-card {
@@ -802,6 +868,10 @@
     overflow: auto;
     border-radius: 15px 15px 0 0;
     background: rgba(5, 15, 20, 0.985);
+    /* The compact tutorial card is a visual instruction layer. Let the
+       Canvas controls behind it receive touches; keep only its action button
+       interactive so the card cannot make the lower workbench unreachable. */
+    pointer-events: none;
   }
 
   .akerun-training-card .akerun-kicker {
@@ -827,6 +897,7 @@
   .akerun-training-card .akerun-button {
     min-height: 44px;
     margin-top: 3px;
+    pointer-events: auto;
   }
 
   .akerun-live-panel {
@@ -919,7 +990,6 @@
     padding-inline: 13px;
   }
 }
-
 
 @media (orientation: portrait) and (max-width: 600px) {
   /* HUDはダイヤルの上に情報を置くだけにし、説明文は下部の操作盤へ任せる。 */

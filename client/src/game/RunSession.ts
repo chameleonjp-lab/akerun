@@ -1,6 +1,14 @@
 import type { PuzzleDefinition } from "./GameDefinitions";
-import { isLockMechanismSnapshot, type LockMechanismSnapshot } from "./LockMechanism";
-import { isRunTrace, RunTraceRecorder, type RunTrace, type RunTraceKind } from "./RunTrace";
+import {
+  isLockMechanismSnapshot,
+  type LockMechanismSnapshot,
+} from "./LockMechanism";
+import {
+  isRunTrace,
+  RunTraceRecorder,
+  type RunTrace,
+  type RunTraceKind,
+} from "./RunTrace";
 
 export type RunResult = {
   readonly elapsedTime: number;
@@ -41,6 +49,17 @@ export type RunCheckpoint = {
 
 const nonNegative = (value: number) =>
   Math.max(0, Number.isFinite(value) ? value : 0);
+const safeNonNegativeInteger = (value: number) =>
+  Number.isFinite(value)
+    ? Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.round(value)))
+    : 0;
+export const MAX_RUN_TIME_SECONDS = 1_800;
+const CHECKPOINT_TIME_EPSILON = 0.001;
+
+const getParDialSteps = (problem: PuzzleDefinition) =>
+  Number.isFinite(problem.parDialSteps) && (problem.parDialSteps ?? 0) >= 0
+    ? (problem.parDialSteps ?? 600)
+    : 600;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -49,43 +68,101 @@ const isNonNegativeNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value) && value >= 0;
 
 const isNonNegativeInteger = (value: unknown): value is number =>
-  typeof value === "number" && Number.isInteger(value) && value >= 0;
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+
+const isNonEmptyString = (value: unknown, maxLength = 128): value is string =>
+  typeof value === "string" &&
+  value.trim().length > 0 &&
+  value.length <= maxLength;
 
 const isRunSessionSnapshot = (value: unknown): value is RunSessionSnapshot => {
   if (!isRecord(value)) return false;
-  return isNonNegativeNumber(value.elapsedTime)
-    && isNonNegativeInteger(value.faultCount)
-    && isNonNegativeInteger(value.totalDialSteps)
-    && isNonNegativeInteger(value.excessDialSteps)
-    && isNonNegativeInteger(value.falseGateContacts)
-    && isNonNegativeInteger(value.avoidableFalseGateContacts)
-    && typeof value.observationAccuracy === "number"
-    && Number.isFinite(value.observationAccuracy)
-    && value.observationAccuracy >= 0
-    && value.observationAccuracy <= 100
-    && isNonNegativeInteger(value.score)
-    && value.finished === false
-    && (value.operationTrace === undefined || isRunTrace(value.operationTrace));
+  const elapsedTime = value.elapsedTime;
+  const operationTrace = value.operationTrace;
+  const validBase =
+    isNonNegativeNumber(elapsedTime) &&
+    elapsedTime <= MAX_RUN_TIME_SECONDS &&
+    isNonNegativeInteger(value.faultCount) &&
+    isNonNegativeInteger(value.totalDialSteps) &&
+    isNonNegativeInteger(value.excessDialSteps) &&
+    isNonNegativeInteger(value.falseGateContacts) &&
+    isNonNegativeInteger(value.avoidableFalseGateContacts) &&
+    typeof value.observationAccuracy === "number" &&
+    Number.isFinite(value.observationAccuracy) &&
+    value.observationAccuracy >= 0 &&
+    value.observationAccuracy <= 100 &&
+    isNonNegativeInteger(value.score) &&
+    value.finished === false;
+  if (!validBase) return false;
+  return (
+    operationTrace === undefined ||
+    (isRunTrace(operationTrace) &&
+      operationTrace.events.every(
+        ([atMs]) => atMs <= Math.ceil(elapsedTime * 1000)
+      ))
+  );
 };
 
 export const isRunCheckpoint = (value: unknown): value is RunCheckpoint => {
   if (!isRecord(value)) return false;
   const runElapsed = value.runElapsed;
-  return isNonNegativeNumber(runElapsed)
-    && runElapsed <= 1800
-    && isLockMechanismSnapshot(value.mechanism)
-    && !value.mechanism.opened
-    && value.mechanism.phase !== "open"
-    && isRunSessionSnapshot(value.session);
+  const session = value.session;
+  return (
+    isNonNegativeNumber(runElapsed) &&
+    runElapsed <= MAX_RUN_TIME_SECONDS &&
+    isLockMechanismSnapshot(value.mechanism) &&
+    !value.mechanism.opened &&
+    value.mechanism.phase !== "open" &&
+    isRunSessionSnapshot(session) &&
+    Math.abs(runElapsed - session.elapsedTime) <= CHECKPOINT_TIME_EPSILON
+  );
+};
+
+/**
+ * Local storage and retry records are untrusted input. Keep malformed result
+ * objects out of the ranking queue and the result HUD instead of letting a
+ * single NaN/string field poison comparisons or Canvas text.
+ */
+export const isRunResult = (value: unknown): value is RunResult => {
+  if (!isRecord(value)) return false;
+  const elapsedTime = value.elapsedTime;
+  const operationTrace = value.operationTrace;
+  const validBase =
+    isNonNegativeNumber(elapsedTime) &&
+    elapsedTime <= MAX_RUN_TIME_SECONDS &&
+    isNonNegativeInteger(value.faultCount) &&
+    isNonNegativeInteger(value.totalDialSteps) &&
+    isNonNegativeInteger(value.excessDialSteps) &&
+    isNonNegativeInteger(value.falseGateContacts) &&
+    (value.avoidableFalseGateContacts === undefined ||
+      isNonNegativeInteger(value.avoidableFalseGateContacts)) &&
+    typeof value.observationAccuracy === "number" &&
+    Number.isFinite(value.observationAccuracy) &&
+    value.observationAccuracy >= 0 &&
+    value.observationAccuracy <= 100 &&
+    isNonNegativeInteger(value.score) &&
+    isNonEmptyString(value.problemId) &&
+    isNonEmptyString(value.problemVersion) &&
+    isNonEmptyString(value.difficulty);
+  if (!validBase) return false;
+  return (
+    operationTrace === undefined ||
+    (isRunTrace(operationTrace) &&
+      operationTrace.events.every(
+        ([atMs]) => atMs <= Math.ceil(elapsedTime * 1000)
+      ))
+  );
 };
 
 export const avoidableFalseGateContacts = (
   problem: PuzzleDefinition,
-  observedContacts: number,
-) => Math.max(
-  0,
-  nonNegative(observedContacts) - nonNegative(problem.parFalseGateContacts ?? 0),
-);
+  observedContacts: number
+) =>
+  Math.max(
+    0,
+    nonNegative(observedContacts) -
+      nonNegative(problem.parFalseGateContacts ?? 0)
+  );
 
 /**
  * The verified ranking contract sends elapsed time as integer milliseconds.
@@ -93,7 +170,10 @@ export const avoidableFalseGateContacts = (
  * the same value at Math.round half-step boundaries.
  */
 export const quantizeElapsedTime = (seconds: number) =>
-  Math.round(nonNegative(seconds) * 1000) / 1000;
+  Math.min(
+    MAX_RUN_TIME_SECONDS,
+    Math.round(nonNegative(seconds) * 1000) / 1000
+  );
 
 export const calculateRunScore = (
   problem: PuzzleDefinition,
@@ -102,12 +182,25 @@ export const calculateRunScore = (
   totalDialSteps: number,
   falseGateContacts: number
 ): number => {
-  const parTime = problem.parTime ?? 60;
-  const parDialSteps = problem.parDialSteps ?? 600;
-  const parFaults = Math.max(0, problem.parFaults ?? 0);
-  const weight = problem.difficultyWeight ?? 1;
-  const timePart = Math.round((parTime - elapsedTime) * 120);
-  const dialPart = Math.round((parDialSteps - totalDialSteps) * 6);
+  const parTime =
+    Number.isFinite(problem.parTime) && (problem.parTime ?? 0) >= 0
+      ? (problem.parTime ?? 60)
+      : 60;
+  const parDialSteps = getParDialSteps(problem);
+  const parFaults =
+    Number.isFinite(problem.parFaults) && (problem.parFaults ?? 0) >= 0
+      ? (problem.parFaults ?? 0)
+      : 0;
+  const weight = Number.isFinite(problem.difficultyWeight)
+    ? (problem.difficultyWeight ?? 1)
+    : 1;
+  const safeElapsedTime = Math.min(
+    MAX_RUN_TIME_SECONDS,
+    nonNegative(elapsedTime)
+  );
+  const safeTotalDialSteps = safeNonNegativeInteger(totalDialSteps);
+  const timePart = Math.round((parTime - safeElapsedTime) * 120);
+  const dialPart = Math.round((parDialSteps - safeTotalDialSteps) * 6);
   const difficultyPart = Math.round(weight * 1000);
   const faultPart = Math.round((nonNegative(faultCount) - parFaults) * 650);
   const falseGatePart = Math.round(nonNegative(falseGateContacts) * 35);
@@ -133,13 +226,19 @@ export class RunSession {
 
   advance(seconds: number) {
     if (this.finished || !Number.isFinite(seconds) || seconds <= 0) return;
-    this.elapsedTime += seconds;
+    this.elapsedTime = Math.min(
+      MAX_RUN_TIME_SECONDS,
+      this.elapsedTime + seconds
+    );
   }
 
   recordRotation(steps: number) {
-    if (this.finished) return;
-    const count = Math.max(0, Math.round(Math.abs(steps)));
-    this.totalDialSteps += count;
+    if (this.finished || !Number.isFinite(steps)) return;
+    const count = safeNonNegativeInteger(Math.abs(steps));
+    this.totalDialSteps = Math.min(
+      Number.MAX_SAFE_INTEGER,
+      this.totalDialSteps + count
+    );
     if (count > 0) this.trace.recordRotation(this.elapsedTime, steps);
   }
 
@@ -149,18 +248,24 @@ export class RunSession {
   }
 
   recordActuator(kind: Exclude<RunTraceKind, "rotate">, value: number) {
-    if (this.finished) return;
+    if (this.finished || !Number.isFinite(value)) return;
     this.trace.recordActuator(this.elapsedTime, kind, value);
   }
 
   recordFalseGate() {
     if (this.finished) return;
-    this.falseGateContacts += 1;
+    this.falseGateContacts = Math.min(
+      Number.MAX_SAFE_INTEGER,
+      this.falseGateContacts + 1
+    );
   }
 
   recordFault(count = 1) {
     if (this.finished) return;
-    this.faultCount += Math.max(0, Math.round(count));
+    this.faultCount = Math.min(
+      Number.MAX_SAFE_INTEGER,
+      this.faultCount + safeNonNegativeInteger(count)
+    );
   }
 
   restore(snapshot: RunSessionSnapshot) {
@@ -179,14 +284,24 @@ export class RunSession {
     overrides?: Partial<Pick<RunResult, "elapsedTime" | "faultCount">>
   ): RunResult {
     if (this.result) return this.result;
-    const elapsedTime = quantizeElapsedTime(overrides?.elapsedTime ?? this.elapsedTime);
-    const faultCount = Math.max(
-      0,
-      Math.round(overrides?.faultCount ?? this.faultCount)
+    const requestedElapsed = overrides?.elapsedTime;
+    const elapsedTime = quantizeElapsedTime(
+      Number.isFinite(requestedElapsed)
+        ? (requestedElapsed as number)
+        : this.elapsedTime
     );
-    const parDialSteps = this.problem.parDialSteps ?? 600;
+    const requestedFaults = overrides?.faultCount;
+    const faultCount = safeNonNegativeInteger(
+      Number.isFinite(requestedFaults)
+        ? (requestedFaults as number)
+        : this.faultCount
+    );
+    const parDialSteps = getParDialSteps(this.problem);
     const excessDialSteps = Math.max(0, this.totalDialSteps - parDialSteps);
-    const avoidableContacts = avoidableFalseGateContacts(this.problem, this.falseGateContacts);
+    const avoidableContacts = avoidableFalseGateContacts(
+      this.problem,
+      this.falseGateContacts
+    );
     const observationAccuracy = Math.max(
       0,
       Math.min(100, 100 - avoidableContacts * 4 - faultCount * 8)
@@ -225,17 +340,21 @@ export class RunSession {
         this.totalDialSteps,
         avoidableFalseGateContacts(this.problem, this.falseGateContacts)
       );
-    const avoidableContacts = avoidableFalseGateContacts(this.problem, this.falseGateContacts);
+    const avoidableContacts = avoidableFalseGateContacts(
+      this.problem,
+      this.falseGateContacts
+    );
     return {
       elapsedTime: this.result?.elapsedTime ?? this.elapsedTime,
       faultCount: this.result?.faultCount ?? this.faultCount,
       totalDialSteps: this.totalDialSteps,
       excessDialSteps: Math.max(
         0,
-        this.totalDialSteps - (this.problem.parDialSteps ?? 600)
+        this.totalDialSteps - getParDialSteps(this.problem)
       ),
       falseGateContacts: this.falseGateContacts,
-      avoidableFalseGateContacts: this.result?.avoidableFalseGateContacts ?? avoidableContacts,
+      avoidableFalseGateContacts:
+        this.result?.avoidableFalseGateContacts ?? avoidableContacts,
       observationAccuracy:
         this.result?.observationAccuracy ??
         Math.max(0, 100 - avoidableContacts * 4 - this.faultCount * 8),

@@ -11,7 +11,10 @@ export type InputRect = {
   readonly height: number;
 };
 
-export type InputSurfaceSize = { readonly width: number; readonly height: number };
+export type InputSurfaceSize = {
+  readonly width: number;
+  readonly height: number;
+};
 
 export type InputDialLayout = {
   readonly x: number;
@@ -22,10 +25,18 @@ export type InputDialLayout = {
 };
 
 export type PhysicalInput = "tension" | "fence" | "bolt" | "handle";
-export type PhysicalInputStartResult = "not-physical" | "blocked" | PhysicalInput;
+export type PhysicalInputStartResult =
+  | "not-physical"
+  | "blocked"
+  | PhysicalInput;
 
 export type InputCanvas = EventTarget & {
-  getBoundingClientRect: () => { left: number; top: number; width: number; height: number };
+  getBoundingClientRect: () => {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  };
   setPointerCapture?: (pointerId: number) => void;
   hasPointerCapture?: (pointerId: number) => boolean;
   releasePointerCapture?: (pointerId: number) => void;
@@ -43,14 +54,27 @@ export type InputControllerOptions = {
   readonly onAction: (action: string) => void;
   readonly onRotateDial: (steps: number) => void;
   readonly onBeginPhysicalInput: (action: string) => PhysicalInputStartResult;
-  readonly onUpdatePhysicalInput: (input: PhysicalInput, start: InputPoint, point: InputPoint) => void;
+  readonly onUpdatePhysicalInput: (
+    input: PhysicalInput,
+    start: InputPoint,
+    point: InputPoint
+  ) => void;
   readonly onEndPhysicalInput: (input: PhysicalInput) => void;
   readonly onKeyDown: (event: KeyboardEvent) => void;
   readonly onKeyUp: (event: KeyboardEvent) => void;
 };
 
 const contains = (rect: InputRect, point: InputPoint) =>
-  point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height;
+  point.x >= rect.x &&
+  point.x <= rect.x + rect.width &&
+  point.y >= rect.y &&
+  point.y <= rect.y + rect.height;
+
+const finiteOr = (value: number, fallback: number) =>
+  Number.isFinite(value) ? value : fallback;
+
+const positiveFiniteOr = (value: number, fallback: number) =>
+  Number.isFinite(value) && value > 0 ? value : fallback;
 
 export class InputController {
   private readonly listeners: Array<() => void> = [];
@@ -72,7 +96,7 @@ export class InputController {
 
   dispose() {
     this.release();
-    this.listeners.forEach((remove) => remove());
+    this.listeners.forEach(remove => remove());
     this.listeners.length = 0;
   }
 
@@ -93,7 +117,9 @@ export class InputController {
       const layout = this.options.getDialLayout();
       const dx = point.x - layout.x;
       const dy = point.y - layout.y;
-      for (const [action, rect] of Array.from(this.options.getHitboxes().entries())) {
+      for (const [action, rect] of Array.from(
+        this.options.getHitboxes().entries()
+      )) {
         if (!contains(rect, point)) continue;
         const physicalInput = this.options.onBeginPhysicalInput(action);
         if (physicalInput !== "not-physical") {
@@ -112,7 +138,7 @@ export class InputController {
       const distanceFromCenter = Math.hypot(dx, dy);
       const deadZoneRadius = Math.max(
         0,
-        Math.min(layout.radius * 0.86, layout.deadZoneRadius ?? 0),
+        Math.min(layout.radius * 0.86, layout.deadZoneRadius ?? 0)
       );
       if (distanceFromCenter <= layout.radius * 1.08) {
         this.dialNeedsAngle = distanceFromCenter < deadZoneRadius;
@@ -125,7 +151,11 @@ export class InputController {
 
     const onPointerMove = (event: PointerEvent) => {
       if (!this.options.isInputEnabled()) return;
-      if (this.activePointerId !== null && event.pointerId !== this.activePointerId) return;
+      if (
+        this.activePointerId !== null &&
+        event.pointerId !== this.activePointerId
+      )
+        return;
       const point = this.mapPointer(event);
       if (this.options.isBlindMode() && this.blindPointerX !== null) {
         const requestedSteps = Math.trunc((point.x - this.blindPointerX) / 7);
@@ -137,7 +167,11 @@ export class InputController {
         return;
       }
       if (this.activePhysicalInput && this.physicalPointerStart) {
-        this.options.onUpdatePhysicalInput(this.activePhysicalInput, this.physicalPointerStart, point);
+        this.options.onUpdatePhysicalInput(
+          this.activePhysicalInput,
+          this.physicalPointerStart,
+          point
+        );
         return;
       }
       const layout = this.options.getDialLayout();
@@ -154,7 +188,10 @@ export class InputController {
       if (delta > Math.PI) delta -= Math.PI * 2;
       if (delta < -Math.PI) delta += Math.PI * 2;
       this.pointerCarry += (delta / (Math.PI * 2)) * 100;
-      const requestedSteps = this.pointerCarry > 0 ? Math.floor(this.pointerCarry) : Math.ceil(this.pointerCarry);
+      const requestedSteps =
+        this.pointerCarry > 0
+          ? Math.floor(this.pointerCarry)
+          : Math.ceil(this.pointerCarry);
       const steps = Math.max(-8, Math.min(8, requestedSteps));
       if (steps !== 0) {
         this.options.onRotateDial(steps);
@@ -166,7 +203,12 @@ export class InputController {
     };
 
     const endPointer = (event?: PointerEvent) => {
-      if (event && this.activePointerId !== null && event.pointerId !== this.activePointerId) return;
+      if (
+        event &&
+        this.activePointerId !== null &&
+        event.pointerId !== this.activePointerId
+      )
+        return;
       this.endPointer();
     };
 
@@ -174,7 +216,10 @@ export class InputController {
       if (!this.options.isInputEnabled()) return;
       event.preventDefault();
       this.options.onGesture();
-      const magnitude = Math.min(8, Math.max(1, Math.round(Math.abs(event.deltaY) / 42)));
+      const magnitude = Math.min(
+        8,
+        Math.max(1, Math.round(Math.abs(event.deltaY) / 42))
+      );
       this.options.onRotateDial(event.deltaY > 0 ? magnitude : -magnitude);
     };
 
@@ -187,22 +232,58 @@ export class InputController {
       this.options.onKeyUp(event);
     };
 
-    this.addListener(this.options.canvas, "pointerdown", onPointerDown as EventListener);
-    this.addListener(this.options.canvas, "pointermove", onPointerMove as EventListener);
-    this.addListener(this.options.canvas, "pointerup", endPointer as EventListener);
-    this.addListener(this.options.canvas, "pointercancel", endPointer as EventListener);
+    this.addListener(
+      this.options.canvas,
+      "pointerdown",
+      onPointerDown as EventListener
+    );
+    this.addListener(
+      this.options.canvas,
+      "pointermove",
+      onPointerMove as EventListener
+    );
+    this.addListener(
+      this.options.canvas,
+      "pointerup",
+      endPointer as EventListener
+    );
+    this.addListener(
+      this.options.canvas,
+      "pointercancel",
+      endPointer as EventListener
+    );
     // setPointerCapture はブラウザ・WebViewによって利用できないことがある。
     // 捕捉の喪失は必ずしも指の終了ではないため、pointerup/cancelだけを終了条件にする。
-    this.addListener(this.options.windowTarget, "pointerup", endPointer as EventListener);
-    this.addListener(this.options.windowTarget, "pointercancel", endPointer as EventListener);
-    this.addListener(this.options.windowTarget, "pointermove", ((event: Event) => {
+    this.addListener(
+      this.options.windowTarget,
+      "pointerup",
+      endPointer as EventListener
+    );
+    this.addListener(
+      this.options.windowTarget,
+      "pointercancel",
+      endPointer as EventListener
+    );
+    this.addListener(this.options.windowTarget, "pointermove", ((
+      event: Event
+    ) => {
       // Canvasからのバブリングで同じ移動を二重処理しない。
       if (event.target === this.options.canvas) return;
       onPointerMove(event as PointerEvent);
     }) as EventListener);
-    this.addListener(this.options.canvas, "wheel", onWheel as EventListener, { passive: false });
-    this.addListener(this.options.windowTarget, "keydown", onKeyDown as EventListener);
-    this.addListener(this.options.windowTarget, "keyup", onKeyUp as EventListener);
+    this.addListener(this.options.canvas, "wheel", onWheel as EventListener, {
+      passive: false,
+    });
+    this.addListener(
+      this.options.windowTarget,
+      "keydown",
+      onKeyDown as EventListener
+    );
+    this.addListener(
+      this.options.windowTarget,
+      "keyup",
+      onKeyUp as EventListener
+    );
   }
 
   private endPointer() {
@@ -222,9 +303,17 @@ export class InputController {
   private mapPointer(event: PointerEvent): InputPoint {
     const bounds = this.options.canvas.getBoundingClientRect();
     const size = this.options.getSurfaceSize();
+    const left = finiteOr(bounds.left, 0);
+    const top = finiteOr(bounds.top, 0);
+    const boundsWidth = positiveFiniteOr(bounds.width, 1);
+    const boundsHeight = positiveFiniteOr(bounds.height, 1);
+    const surfaceWidth = positiveFiniteOr(size.width, 1);
+    const surfaceHeight = positiveFiniteOr(size.height, 1);
+    const clientX = finiteOr(event.clientX, left);
+    const clientY = finiteOr(event.clientY, top);
     return {
-      x: ((event.clientX - bounds.left) / Math.max(1, bounds.width)) * size.width,
-      y: ((event.clientY - bounds.top) / Math.max(1, bounds.height)) * size.height,
+      x: ((clientX - left) / boundsWidth) * surfaceWidth,
+      y: ((clientY - top) / boundsHeight) * surfaceHeight,
     };
   }
 
@@ -238,15 +327,23 @@ export class InputController {
 
   private releasePointer(pointerId: number) {
     try {
-      if (this.options.canvas.hasPointerCapture?.(pointerId)) this.options.canvas.releasePointerCapture?.(pointerId);
+      if (this.options.canvas.hasPointerCapture?.(pointerId))
+        this.options.canvas.releasePointerCapture?.(pointerId);
     } catch {
       // ブラウザ側ですでに捕捉が解除されている場合は何もしない。
     }
   }
 
-  private addListener(target: EventTarget, type: string, listener: EventListener, options?: AddEventListenerOptions) {
+  private addListener(
+    target: EventTarget,
+    type: string,
+    listener: EventListener,
+    options?: AddEventListenerOptions
+  ) {
     target.addEventListener(type, listener, options);
-    this.listeners.push(() => target.removeEventListener(type, listener, options));
+    this.listeners.push(() =>
+      target.removeEventListener(type, listener, options)
+    );
   }
 }
 
