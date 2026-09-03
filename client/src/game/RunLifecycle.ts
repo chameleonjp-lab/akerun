@@ -19,6 +19,9 @@ export type CompetitiveResetContext = {
 export const isOfficialProblemIdentity = (problemId: string, problemVersion: string) =>
   /^AKERUN-\d{2}-V\d+$/.test(problemId) && /^V\d+$/.test(problemVersion);
 
+/** 開錠済みの演出中にRESETで結果状態を消さない。 */
+export const canResetMechanism = (opened: boolean) => !opened;
+
 export const shouldForfeitOfficialReset = (context: CompetitiveResetContext) =>
   context.sessionActive
     && !context.demoMode

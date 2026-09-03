@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { RankingClient } from "./RankingClient";
+import {
+  isVerifiedRunStart,
+  RankingClient,
+  type RankingRunPreparation,
+  type RankingRunStart,
+} from "./RankingClient";
 import type { RunResult } from "./RunSession";
 
 const result: RunResult = {
@@ -18,6 +23,29 @@ const result: RunResult = {
 };
 
 describe("RankingClient", () => {
+  const prepared: RankingRunPreparation = {
+    status: "ok",
+    runToken: "run-token-1",
+    problemId: "AKERUN-01-V1",
+    problemVersion: "V1",
+  };
+  const begun: RankingRunStart = {
+    status: "ok",
+    problemId: "AKERUN-01-V1",
+    problemVersion: "V1",
+  };
+
+  it("accepts only a begin response for the prepared and requested problem", () => {
+    expect(isVerifiedRunStart(prepared, begun)).toBe(true);
+    expect(
+      isVerifiedRunStart(prepared, { ...begun, problemId: "AKERUN-02-V1" })
+    ).toBe(false);
+    expect(isVerifiedRunStart(prepared, begun, "AKERUN-02-V1")).toBe(false);
+    expect(isVerifiedRunStart(prepared, { ...begun, status: "error" })).toBe(
+      false
+    );
+  });
+
   it("uses the verified contract and deduplicates a run token", async () => {
     const fetch = vi.fn(
       async (_input: RequestInfo | URL, init?: RequestInit) => {

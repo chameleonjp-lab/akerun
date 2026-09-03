@@ -259,6 +259,11 @@ export const isCoherentLockMechanismSnapshot = (
     return false;
   }
 
+  // ロックアウトはテンション／フェンス検証後にしか発生しない。
+  // stageを飛ばした保存値を再開可能にすると、機構状態と操作履歴の
+  // 対応が崩れる。
+  if (value.phase === "lockout" && value.stage !== stageCount) return false;
+
   if (value.phase === "settling") {
     if (
       puzzle.vault.personality.settlingDelaySeconds <= 0 ||

@@ -38,6 +38,7 @@ import {
   type PhysicalInputStartResult,
 } from "./InputController";
 import {
+  canResetMechanism,
   isOfficialProblemIdentity,
   shouldForfeitOfficialReset,
 } from "./RunLifecycle";
@@ -163,6 +164,8 @@ export type ScreenLayout = {
   internal: Rect;
   footerY: number;
 };
+
+export const COMPACT_WORKBENCH_ONLY_MAX_HEIGHT = 550;
 
 const INSPECTION_STEPS = [
   {
@@ -938,6 +941,7 @@ export class VaultWorld {
     if (action === "minus") this.rotateDial(-1);
     if (action === "plus") this.rotateDial(1);
     if (action === "reset") {
+      if (!canResetMechanism(this.mechanism.opened)) return;
       if (this.demoMode) {
         // Resetting the example must leave a usable example session. A plain
         // mechanism.reset() would stop the demo while React still shows the
@@ -2514,8 +2518,14 @@ export class VaultWorld {
     const hint = `NEXT  /  ${nextAction}`;
     const guide = this.getGuideText();
 
-    if (layout.compact && this.trainingContract) {
-      const workbenchHeight = Math.min(unit * 10.0, layout.height * 0.115);
+    if (
+      layout.compact &&
+      (this.trainingContract ||
+        layout.height <= COMPACT_WORKBENCH_ONLY_MAX_HEIGHT)
+    ) {
+      const workbenchHeight = this.trainingContract
+        ? Math.min(unit * 10.0, layout.height * 0.115)
+        : Math.min(unit * 9.0, layout.height * 0.11);
       const bench = {
         x: pad,
         y,
