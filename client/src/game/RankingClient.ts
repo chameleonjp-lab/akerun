@@ -50,6 +50,32 @@ export type RankingRunStart = {
   readonly problemVersion: string | null;
 };
 
+export type VerifiedRankingRunStart = RankingRunStart & {
+  readonly status: "ok";
+  readonly problemId: string;
+  readonly problemVersion: string;
+};
+
+/**
+ * prepare と begin の両方が同じ問題を指していることを確認する。
+ * 再挑戦では、呼び出し元が要求した問題も一致していなければ検証済み
+ * トークンを採用しない。
+ */
+export const isVerifiedRunStart = (
+  preparation: Pick<
+    RankingRunPreparation,
+    "status" | "problemId" | "problemVersion"
+  >,
+  begun: RankingRunStart,
+  requestedProblemId?: string
+): begun is VerifiedRankingRunStart =>
+  preparation.status === "ok" &&
+  begun.status === "ok" &&
+  Boolean(preparation.problemId && preparation.problemVersion) &&
+  begun.problemId === preparation.problemId &&
+  begun.problemVersion === preparation.problemVersion &&
+  (!requestedProblemId || begun.problemId === requestedProblemId);
+
 const SUPABASE_URL = "https://mlpnjgezrnhdxsxolyzj.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY =
   "sb_publishable_drzcy0v97knU6FgjqSgBHw_0A9XPdFM";

@@ -16,12 +16,17 @@ import {
   type PuzzleDefinition,
 } from "./game/GameDefinitions";
 import { ProgressStore, normalizePlayerName } from "./game/ProgressStore";
-import { RankingClient, type RankingRow } from "./game/RankingClient";
+import {
+  isVerifiedRunStart,
+  RankingClient,
+  type RankingRow,
+} from "./game/RankingClient";
 import { competitionDayForDate } from "./game/CompetitionSchedule";
 import { isCoherentLockMechanismSnapshot } from "./game/LockMechanism";
 import type { RunCheckpoint } from "./game/RunSession";
 import { isCompleteRunTrace } from "./game/RunTrace";
 import { getStartCountdownSteps } from "./game/StartCountdown";
+import { isDialTrainingComplete } from "./game/TrainingProgress";
 
 type Screen =
   | "title"
@@ -279,6 +284,16 @@ export default function App() {
   const onSnapshot = useCallback(
     (nextSnapshot: GameSnapshot) => {
       setSnapshot(nextSnapshot);
+      if (
+        mode === "training" &&
+        screen === "training" &&
+        isDialTrainingComplete(tutorialStep, nextSnapshot)
+      ) {
+        gameHandleRef.current?.retire();
+        setTutorialStep(current => Math.min(4, current + 1));
+        setScreen("tutorial");
+        return;
+      }
       const activeRun = activeRunContextRef.current;
       if (
         activeRun &&
@@ -348,7 +363,7 @@ export default function App() {
         setScreen("result");
       }
     },
-    [mode, requestOfficialRunAbandonment, screen, store]
+    [mode, requestOfficialRunAbandonment, screen, store, tutorialStep]
   );
 
   const retireActiveRun = useCallback(
@@ -530,6 +545,7 @@ export default function App() {
     replayRunToken?: string | null
   ) => {
     if (!store.trainingComplete) {
+      if (!validateName()) return;
       setTutorialStep(1);
       setScreen("tutorial");
       return;
@@ -648,11 +664,7 @@ export default function App() {
           const begun = await rankingClient.beginOfficialRun(
             preparation.runToken
           );
-          if (
-            begun.status === "ok" &&
-            begun.problemId &&
-            begun.problemVersion
-          ) {
+          if (isVerifiedRunStart(preparation, begun, requestedProblemId)) {
             try {
               const candidate = createOfficialPuzzle(begun.problemId);
               if (candidate.problemVersion === begun.problemVersion) {
@@ -749,6 +761,10 @@ export default function App() {
 
   const startTraining = () => {
     if (!handle) return;
+    if (!validateName()) {
+      setScreen("title");
+      return;
+    }
     activeRunContextRef.current = null;
     lastCheckpointSavedAtRef.current = 0;
     const step = Math.max(1, Math.min(4, tutorialStep)) as 1 | 2 | 3 | 4;
@@ -793,6 +809,7 @@ export default function App() {
 
   const startCompetition = async () => {
     if (!store.trainingComplete) {
+      if (!validateName()) return;
       setTutorialStep(1);
       setScreen("tutorial");
       return;
@@ -844,13 +861,7 @@ export default function App() {
 
       unclaimedRunToken = preparation.runToken;
       const begun = await rankingClient.beginOfficialRun(preparation.runToken);
-      if (
-        begun.status !== "ok" ||
-        !begun.problemId ||
-        !begun.problemVersion ||
-        begun.problemId !== preparation.problemId ||
-        begun.problemVersion !== preparation.problemVersion
-      ) {
+      if (!isVerifiedRunStart(preparation, begun)) {
         void requestOfficialRunAbandonment(preparation.runToken);
         unclaimedRunToken = null;
         abortCompetitionStart(
@@ -1248,7 +1259,7 @@ export default function App() {
               setPlayerName(event.target.value);
               setNameError("");
             }}
-            placeholder="名前を入力"
+            placeholder="名前を入力してください"
             autoComplete="nickname"
           />
         </label>
@@ -1281,6 +1292,7 @@ export default function App() {
           </Button>
           <Button
             onClick={() => {
+              if (!validateName()) return;
               setTutorialStep(1);
               setScreen("tutorial");
             }}
@@ -1336,7 +1348,7 @@ export default function App() {
         </div>
         <p className="akerun-submit-status">
           {submitStatus === "未送信"
-            ? "ランキング受付は現在停止中です。プレイ結果は端末内へ保存されます。"
+            ? "プレイ結果は開錠後にランキングへ送信します。"
             : submitStatus}
         </p>
         <p className="akerun-footnote">

@@ -115,6 +115,17 @@ describe("LockMechanism", () => {
     expect(new LockMechanism(puzzle).restore(tampered)).toBe(false);
   });
 
+  it("ダイヤル整列前のロックアウト状態を復元しない", () => {
+    const puzzle = createOfficialPuzzle("AKERUN-10-V1");
+    const fresh = new LockMechanism(puzzle);
+    const tampered = {
+      ...fresh.snapshot,
+      phase: "lockout" as const,
+    };
+
+    expect(new LockMechanism(puzzle).restore(tampered)).toBe(false);
+  });
+
   it("ダイヤルから扉ハンドルまで、実際に生成される途中状態を復元できる", () => {
     const puzzle = createPuzzleFromSeed(90212, "observe");
     const lock = new LockMechanism(puzzle);

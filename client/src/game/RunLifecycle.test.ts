@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isOfficialProblemIdentity, shouldForfeitOfficialReset } from "./RunLifecycle";
+import {
+  canResetMechanism,
+  isOfficialProblemIdentity,
+  shouldForfeitOfficialReset,
+} from "./RunLifecycle";
 
 const context = {
   sessionActive: true,
@@ -11,6 +15,11 @@ const context = {
 };
 
 describe("RunLifecycle", () => {
+  it("blocks RESET after the mechanism has opened", () => {
+    expect(canResetMechanism(false)).toBe(true);
+    expect(canResetMechanism(true)).toBe(false);
+  });
+
   it("recognizes only versioned official problem identities", () => {
     expect(isOfficialProblemIdentity("AKERUN-01-V1", "V1")).toBe(true);
     expect(isOfficialProblemIdentity("AKERUN-1-V1", "V1")).toBe(false);

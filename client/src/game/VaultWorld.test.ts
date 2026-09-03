@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  COMPACT_WORKBENCH_ONLY_MAX_HEIGHT,
   calculateScreenLayout,
   getContainedImageRect,
   getDemoTurnCount,
@@ -9,6 +10,17 @@ const compactUnit = (width: number, height: number) =>
   Math.max(14, Math.min(width, height) / 52);
 
 describe("calculateScreenLayout", () => {
+  it("uses the compact workbench-only mode before the mobile menu can overlap it", () => {
+    expect(COMPACT_WORKBENCH_ONLY_MAX_HEIGHT).toBe(550);
+    const layout = calculateScreenLayout(320, 520, false);
+    const unit = compactUnit(320, 520);
+    const workbenchBottom =
+      layout.footerY + Math.min(unit * 9, layout.height * 0.11);
+    const mobileMenuTop = 520 - 10 - (44 * 2 + 6);
+
+    expect(workbenchBottom).toBeLessThanOrEqual(mobileMenuTop);
+  });
+
   it("falls back to a finite layout when the surface reports invalid dimensions", () => {
     const layout = calculateScreenLayout(
       Number.NaN,
