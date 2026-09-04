@@ -213,6 +213,39 @@ describe("LockMechanism", () => {
     solve(createPuzzleFromSeed(140250, "expert"));
   });
 
+  it("後半アクチュエータの保持進行を0〜1で取得でき、判定時間と一致する", () => {
+    const puzzle = createReferencePuzzle("observe");
+    const lock = new LockMechanism(puzzle);
+    alignGates(lock, puzzle);
+
+    const [tensionMin, tensionMax] = puzzle.difficulty.tensionBand;
+    lock.setTension((tensionMin + tensionMax) / 2);
+    lock.tick(0.04);
+    expect(lock.tensionHoldProgress).toBeCloseTo(0.04 / 0.12, 5);
+    lock.setTension(0);
+    expect(lock.tensionHoldProgress).toBe(0);
+    lock.setTension((tensionMin + tensionMax) / 2);
+    advance(lock, puzzle.difficulty.tensionHoldSeconds + 0.04);
+    expect(lock.phase).toBe("fence-ready");
+
+    const [fenceMin, fenceMax] = puzzle.difficulty.fenceBand;
+    lock.setFenceTravel((fenceMin + fenceMax) / 2);
+    lock.tick(0.04);
+    expect(lock.fenceHoldProgress).toBeCloseTo(0.04 / 0.12, 5);
+    advance(lock, puzzle.difficulty.fenceHoldSeconds + 0.04);
+    expect(lock.phase).toBe("fence-seated");
+
+    lock.setBoltTravel(0.84);
+    lock.tick(0.09);
+    expect(lock.boltHoldProgress).toBeCloseTo(0.09 / 0.18, 5);
+    advance(lock, 0.12);
+    expect(lock.phase).toBe("boltwork-ready");
+
+    lock.setHandleTurn(lock.requiredHandleTurn);
+    lock.tick(0.1);
+    expect(lock.handleHoldProgress).toBeCloseTo(0.1 / 0.2, 5);
+  });
+
   it("does not let invalid actuator values poison the mechanism state", () => {
     const lock = new LockMechanism(createReferencePuzzle());
 

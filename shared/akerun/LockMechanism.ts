@@ -674,6 +674,29 @@ export class LockMechanism {
     );
   }
 
+  /** 現在の保持判定がどこまで進んだかを、表示用に0〜1で返す。 */
+  get tensionHoldProgress(): number {
+    return this.holdProgress(
+      this.tensionHold,
+      this.puzzle.difficulty.tensionHoldSeconds
+    );
+  }
+
+  get fenceHoldProgress(): number {
+    return this.holdProgress(
+      this.fenceHold,
+      this.puzzle.difficulty.fenceHoldSeconds
+    );
+  }
+
+  get boltHoldProgress(): number {
+    return this.holdProgress(this.boltHold, 0.18);
+  }
+
+  get handleHoldProgress(): number {
+    return this.holdProgress(this.handleHold, 0.2);
+  }
+
   get resistanceState(): ResistanceState {
     if (this.phase === "jammed" || this.phase === "lockout") return "jammed";
     if (
@@ -692,6 +715,10 @@ export class LockMechanism {
     )
       return "candidate";
     return "idle";
+  }
+
+  private holdProgress(value: number, duration: number): number {
+    return duration > 0 ? clamp(value / duration, 0, 1) : 0;
   }
 
   get snapshot(): LockMechanismSnapshot {

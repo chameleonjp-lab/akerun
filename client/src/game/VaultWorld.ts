@@ -61,6 +61,14 @@ const DEMO_ACTION_INTERVAL_SECONDS = 0.08;
 
 export type Rect = { x: number; y: number; width: number; height: number };
 
+type ActuatorMeterOptions = {
+  readonly band?: readonly [number, number];
+  readonly threshold?: number;
+  readonly holdProgress?: number;
+  /** observeのみ正確な安定帯を表示し、標準以上では反応から探す余地を残す。 */
+  readonly showBand?: boolean;
+};
+
 /**
  * 画像の縦横比を維持したまま、指定矩形の内側へ収める描画領域を返す。
  * 写真素材を機構パネルへ敷くときも、引き伸ばしや角のはみ出しを起こさない。
@@ -2943,6 +2951,39 @@ export class VaultWorld {
     ctx.fillStyle = "#e8dfc4";
     ctx.font = `700 ${unit * 0.67}px "DM Mono", monospace`;
     ctx.fillText(title, rect.x + unit * 1.1, rect.y + unit * 1.25);
+    const holdProgress = isTension
+      ? this.mechanism.tensionHoldProgress
+      : isFence
+        ? this.mechanism.fenceHoldProgress
+        : isBolt
+          ? this.mechanism.boltHoldProgress
+          : isHandle
+            ? this.mechanism.handleHoldProgress
+            : 0;
+    const holdingPhase = [
+      "tension-test",
+      "fence-ready",
+      "bolt-test",
+      "handle-test",
+    ].includes(phase);
+    const holdLabel =
+      phase === "jammed"
+        ? "力を抜いて復帰"
+        : holdingPhase
+          ? `保持 ${Math.round(holdProgress * 100)}%`
+          : isTension || isFence || isBolt || isHandle
+            ? "位置を探す"
+            : "記録待ち";
+    ctx.save();
+    ctx.fillStyle = phase === "jammed" ? "#d39566" : "#4de0c0";
+    ctx.font = `600 ${unit * 0.5}px "DM Mono", monospace`;
+    ctx.textAlign = "right";
+    ctx.fillText(
+      holdLabel,
+      rect.x + rect.width - unit * 1.1,
+      rect.y + unit * 1.25
+    );
+    ctx.restore();
     if (!isTension && !isFence && !isBolt) {
       ctx.fillStyle = this.audio.isMuted ? "#d39566" : "#4de0c0";
       ctx.font = `600 ${unit * 0.48}px "DM Mono", monospace`;
@@ -3032,11 +3073,16 @@ export class VaultWorld {
     ctx.restore();
     this.drawResistanceNeedle(
       rect.x + rect.width * 0.16,
-      rect.y + rect.height * 0.84,
+      rect.y + rect.height * 0.78,
       rect.width * 0.68,
       this.mechanism.appliedTorque,
       this.mechanism.resistanceState,
-      unit
+      unit,
+      {
+        band: this.mechanism.puzzle.difficulty.tensionBand,
+        holdProgress: this.mechanism.tensionHoldProgress,
+        showBand: this.mechanism.puzzle.difficulty.showInternalGatePositions,
+      }
     );
     this.setHitbox("tension-grip", {
       x: centerX - unit * 2.4,
@@ -3059,6 +3105,19 @@ export class VaultWorld {
     ctx.moveTo(x, trackTop);
     ctx.lineTo(x, trackTop + trackHeight);
     ctx.stroke();
+    this.drawResistanceNeedle(
+      rect.x + rect.width * 0.16,
+      rect.y + rect.height * 0.78,
+      rect.width * 0.68,
+      travel,
+      this.mechanism.resistanceState,
+      unit,
+      {
+        band: this.mechanism.puzzle.difficulty.fenceBand,
+        holdProgress: this.mechanism.fenceHoldProgress,
+        showBand: this.mechanism.puzzle.difficulty.showInternalGatePositions,
+      }
+    );
     const handleY = trackTop + trackHeight * (1 - travel);
     ctx.fillStyle = this.mechanism.fenceDropped ? "#4de0c0" : "#c9a963";
     this.roundRect(
@@ -3104,6 +3163,18 @@ export class VaultWorld {
     ctx.moveTo(x, y);
     ctx.lineTo(x + trackWidth, y);
     ctx.stroke();
+    this.drawResistanceNeedle(
+      rect.x + rect.width * 0.16,
+      rect.y + rect.height * 0.78,
+      rect.width * 0.68,
+      travel,
+      this.mechanism.resistanceState,
+      unit,
+      {
+        threshold: 0.72,
+        holdProgress: this.mechanism.boltHoldProgress,
+      }
+    );
     const tabX = x + trackWidth * travel;
     ctx.fillStyle = "#4de0c0";
     this.roundRect(
@@ -3157,21 +3228,24 @@ export class VaultWorld {
     this.drawMetalCircle(0, 0, radius, "#c9a963", "#1d292d");
     ctx.restore();
     const trackX = rect.x + rect.width * 0.16;
-    const trackY = rect.y + rect.height * 0.84;
     this.drawResistanceNeedle(
       trackX,
-      trackY,
+      rect.y + rect.height * 0.78,
       rect.width * 0.68,
       this.mechanism.doorBoltTravel,
       this.mechanism.boltworkReleased ? "seated" : "idle",
-      unit
+      unit,
+      {
+        threshold: this.mechanism.requiredHandleTurn,
+        holdProgress: this.mechanism.handleHoldProgress,
+      }
     );
     ctx.fillStyle = "#8da4a5";
     ctx.font = `500 ${unit * 0.58}px ${JAPANESE_FONT_STACK}`;
     this.drawWrappedText(
       "右へ回し、キャリーバーと扉側ボルトを受け金から後退させる。",
       rect.x + unit * 1.1,
-      rect.y + rect.height * 0.92,
+      rect.y + rect.height * 0.88,
       rect.width - unit * 2.2,
       unit * 0.7,
       1
@@ -3190,7 +3264,8 @@ export class VaultWorld {
     width: number,
     amount: number,
     state: string,
-    unit?: number
+    unit?: number,
+    options: ActuatorMeterOptions = {}
   ) {
     const ctx = this.context;
     const resolvedUnit =
@@ -3203,15 +3278,38 @@ export class VaultWorld {
           resolution.width / resolution.height < 1.12
         );
       })();
+    const meterHeight = resolvedUnit * 0.7;
     this.roundRect(
       x,
-      y - resolvedUnit * 0.35,
+      y - meterHeight * 0.5,
       width,
-      resolvedUnit * 0.7,
+      meterHeight,
       resolvedUnit * 0.18
     );
     ctx.fillStyle = "#111b20";
     ctx.fill();
+    if (options.showBand && options.band) {
+      const bandStart = clamp(options.band[0], 0, 1);
+      const bandEnd = clamp(options.band[1], bandStart, 1);
+      ctx.fillStyle = "rgba(77, 224, 192, 0.28)";
+      this.roundRect(
+        x + width * bandStart,
+        y - meterHeight * 0.5,
+        width * (bandEnd - bandStart),
+        meterHeight,
+        resolvedUnit * 0.18
+      );
+      ctx.fill();
+    }
+    if (options.threshold !== undefined) {
+      const threshold = clamp(options.threshold, 0, 1);
+      ctx.strokeStyle = "#d9c28a";
+      ctx.lineWidth = Math.max(1.2, resolvedUnit * 0.1);
+      ctx.beginPath();
+      ctx.moveTo(x + width * threshold, y - resolvedUnit * 0.52);
+      ctx.lineTo(x + width * threshold, y + resolvedUnit * 0.52);
+      ctx.stroke();
+    }
     ctx.strokeStyle =
       state === "candidate" || state === "seated"
         ? "#4de0c0"
@@ -3219,7 +3317,22 @@ export class VaultWorld {
           ? "#d39566"
           : "#7e9b98";
     ctx.stroke();
-    const needleX = x + width * amount;
+    if (options.holdProgress !== undefined) {
+      const progress = clamp(options.holdProgress, 0, 1);
+      ctx.fillStyle =
+        state === "jammed"
+          ? "rgba(211, 149, 102, 0.72)"
+          : "rgba(77, 224, 192, 0.82)";
+      this.roundRect(
+        x + resolvedUnit * 0.18,
+        y + resolvedUnit * 0.07,
+        Math.max(0, (width - resolvedUnit * 0.36) * progress),
+        resolvedUnit * 0.16,
+        resolvedUnit * 0.08
+      );
+      ctx.fill();
+    }
+    const needleX = x + width * clamp(amount, 0, 1);
     ctx.strokeStyle = ctx.strokeStyle;
     ctx.lineWidth = Math.max(1.5, resolvedUnit * 0.12);
     ctx.beginPath();
