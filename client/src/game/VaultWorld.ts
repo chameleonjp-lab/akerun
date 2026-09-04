@@ -163,6 +163,8 @@ export type ScreenLayout = {
   compact: boolean;
   dial: { x: number; y: number; radius: number; deadZoneRadius: number };
   internal: Rect;
+  /** 縦長画面で、ダイヤルと内部機構の因果を残すための要約表示。 */
+  compactMechanism: Rect | null;
   footerY: number;
 };
 
@@ -242,15 +244,32 @@ export const calculateScreenLayout = (
       : Math.min(175, Math.max(120, safeHeight * 0.18));
     const contentHeight = Math.max(unit * 30, safeHeight - bottomReserve);
     const radius = trainingContract
-      ? Math.min(safeWidth * 0.27, contentHeight * 0.2)
+      ? Math.min(safeWidth * 0.27, contentHeight * 0.17)
       : Math.min(safeWidth * 0.255, contentHeight * 0.15);
     // React HUDと写真面が重ならない上端を確保しつつ、旧実装の
     // unit*18依存を外して、端末の高さに対して安定した位置にする。
     const dialY = Math.max(
       unit * 4.5 + radius * 1.12,
-      safeHeight * 0.3,
+      // iPhoneのsafe-area上端でReact HUDが下がっても、機構ストリップを
+      // HUDへ食い込ませないため、十分な縦長画面ではダイヤルを少し下げる。
+      safeHeight * 0.34,
       unit * 8 + radius * 1.12
     );
+    const dialTop = dialY - radius * 1.12;
+    const compactMechanismHeight = unit * 2.15;
+    const compactMechanismY = Math.max(
+      unit * 10.0,
+      dialTop - compactMechanismHeight - unit * 0.25
+    );
+    const compactMechanism =
+      compactMechanismY + compactMechanismHeight <= dialTop - unit * 0.12
+        ? {
+            x: unit * 1.1,
+            y: compactMechanismY,
+            width: safeWidth - unit * 2.2,
+            height: compactMechanismHeight,
+          }
+        : null;
     const controlBottom = dialY + radius * 1.42 + unit * 2.35;
     const footerY = Math.max(
       trainingContract ? safeHeight * 0.49 : safeHeight * 0.5,
@@ -278,6 +297,7 @@ export const calculateScreenLayout = (
         width: safeWidth * 0.9,
         height: internalHeight,
       },
+      compactMechanism,
       footerY,
     };
   }
@@ -300,6 +320,7 @@ export const calculateScreenLayout = (
       width: safeWidth * 0.345,
       height: safeHeight * 0.63,
     },
+    compactMechanism: null,
     footerY: safeHeight * 0.855,
   };
 };
@@ -1499,9 +1520,8 @@ export class VaultWorld {
     this.drawBackground(layout);
     this.drawHeader(layout);
     this.drawDialPanel(layout);
-    if (!layout.compact) {
-      this.drawInternalPanel(layout);
-    }
+    if (layout.compact) this.drawCompactMechanismStrip(layout);
+    else this.drawInternalPanel(layout);
     this.drawCausalLink(layout);
     this.drawFooter(layout);
     if (this.isBlindMode) {
@@ -1739,21 +1759,26 @@ export class VaultWorld {
     ctx.restore();
     if (opening > 0.008) this.drawOpenDoorEdge(dial, opening, layout.compact);
 
-    ctx.fillStyle = "#e9dfc8";
-    ctx.beginPath();
-    ctx.moveTo(dial.x, dial.y - dial.radius * 1.12);
-    ctx.lineTo(dial.x - unit * 0.7, dial.y - dial.radius * 1.25);
-    ctx.lineTo(dial.x + unit * 0.7, dial.y - dial.radius * 1.25);
-    ctx.closePath();
-    ctx.fill();
+    // 縦長画面では、この上端に機構ストリップを置く。ポインタと英語見出しを
+    // 同じ場所へ描くと、ダイヤルと機構のどちらが正本か分からなくなるため、
+    // compact ではReact HUDとストリップへ役割を譲る。
+    if (!layout.compact) {
+      ctx.fillStyle = "#e9dfc8";
+      ctx.beginPath();
+      ctx.moveTo(dial.x, dial.y - dial.radius * 1.12);
+      ctx.lineTo(dial.x - unit * 0.7, dial.y - dial.radius * 1.25);
+      ctx.lineTo(dial.x + unit * 0.7, dial.y - dial.radius * 1.25);
+      ctx.closePath();
+      ctx.fill();
 
-    ctx.fillStyle = "#c9a963";
-    ctx.font = `600 ${unit * 0.82}px "DM Mono", monospace`;
-    ctx.fillText(
-      "正面ダイヤル / FRONT DIAL",
-      dial.x - dial.radius * 1.08,
-      dial.y - dial.radius * 1.35
-    );
+      ctx.fillStyle = "#c9a963";
+      ctx.font = `600 ${unit * 0.82}px "DM Mono", monospace`;
+      ctx.fillText(
+        "正面ダイヤル / FRONT DIAL",
+        dial.x - dial.radius * 1.08,
+        dial.y - dial.radius * 1.35
+      );
+    }
     ctx.fillStyle = "#799095";
     ctx.font = `500 ${unit * 0.72}px ${JAPANESE_FONT_STACK}`;
     ctx.fillText(
@@ -2306,8 +2331,148 @@ export class VaultWorld {
     );
   }
 
+  /**
+   * ポートレートでは断面パネルを縦に置く余白がないため、機構の因果を
+   * 輪ごとの状態ストリップへ圧縮する。正解位置を隠す設定では、中央線を
+   * フェンス基準として残し、ターゲットや偽ゲートの位置は表示しない。
+   */
+  private drawCompactMechanismStrip(layout: ScreenLayout) {
+    const panel = layout.compactMechanism;
+    if (!panel) return;
+
+    const ctx = this.context;
+    const unit = canvasUnit(layout.width, layout.height, layout.compact);
+    const wheelCount = this.mechanism.puzzle.vault.wheelCount;
+    const activeStage = this.mechanism.activeStage;
+    const activeWheel = activeStage?.wheel ?? -1;
+    const header = activeStage
+      ? `機構 / ${wheelCount}輪   駆動カム → 第${activeWheel + 1}輪   ${activeStage.direction === "cw" ? "右" : "左"} ${this.mechanism.currentPass}/${activeStage.passes}`
+      : `機構 / ${wheelCount}輪   ${this.mechanism.opened ? "扉ボルト / 退避済み" : "後半機構を確認"}`;
+
+    this.drawFrame(panel, "rgba(5, 15, 19, 0.9)", "rgba(77, 224, 192, 0.48)");
+    ctx.fillStyle = "#d9c28a";
+    ctx.font = `600 ${unit * 0.52}px "DM Mono", monospace`;
+    ctx.fillText(header, panel.x + unit * 0.75, panel.y + unit * 0.78);
+
+    const cellTop = panel.y + unit * 1.02;
+    const cellHeight = panel.height - unit * 1.28;
+    const gap = unit * 0.25;
+    const cellWidth =
+      (panel.width - unit * 1.5 - gap * Math.max(0, wheelCount - 1)) /
+      Math.max(1, wheelCount);
+    for (let wheel = 0; wheel < wheelCount; wheel += 1) {
+      const cell = {
+        x: panel.x + unit * 0.75 + wheel * (cellWidth + gap),
+        y: cellTop,
+        width: cellWidth,
+        height: cellHeight,
+      };
+      const aligned = this.mechanism.locked[wheel];
+      const active = activeWheel === wheel;
+      const coupled = this.mechanism.coupledWheels.includes(wheel);
+      const revealGate =
+        this.mechanism.puzzle.difficulty.showInternalGatePositions || aligned;
+
+      this.roundRect(cell.x, cell.y, cell.width, cell.height, unit * 0.16);
+      ctx.fillStyle = aligned
+        ? "rgba(46, 128, 112, 0.88)"
+        : active
+          ? "rgba(124, 93, 42, 0.9)"
+          : coupled
+            ? "rgba(27, 83, 78, 0.82)"
+            : "rgba(25, 39, 43, 0.9)";
+      ctx.fill();
+      ctx.strokeStyle = active ? "#e9d7a7" : "rgba(180, 203, 194, 0.42)";
+      ctx.lineWidth = active ? Math.max(1, unit * 0.1) : 1;
+      ctx.stroke();
+
+      const centerX = cell.x + cell.width * 0.5;
+      ctx.strokeStyle = "rgba(214, 225, 213, 0.38)";
+      ctx.lineWidth = Math.max(1, unit * 0.07);
+      ctx.beginPath();
+      ctx.moveTo(centerX, cell.y + unit * 0.15);
+      ctx.lineTo(centerX, cell.y + cell.height - unit * 0.15);
+      ctx.stroke();
+
+      if (revealGate) {
+        const gateX = clamp(
+          centerX + this.mechanism.gateOffset(wheel) * cell.width * 0.26,
+          cell.x + unit * 0.4,
+          cell.x + cell.width - unit * 0.4
+        );
+        ctx.strokeStyle = aligned ? "#c7fff0" : "#e8c477";
+        ctx.lineWidth = Math.max(1, unit * 0.12);
+        ctx.beginPath();
+        ctx.moveTo(gateX, cell.y + unit * 0.12);
+        ctx.lineTo(gateX, cell.y + cell.height - unit * 0.12);
+        ctx.stroke();
+      }
+
+      if (this.mechanism.puzzle.difficulty.showFalseGatePositions) {
+        for (const falseGate of this.mechanism.puzzle.falseGates) {
+          if (falseGate.wheel !== wheel) continue;
+          const raw =
+            ((falseGate.position - this.mechanism.tumblerValues[wheel] + 150) %
+              100) -
+            50;
+          const falseX = clamp(
+            centerX + (raw / 50) * cell.width * 0.26,
+            cell.x + unit * 0.32,
+            cell.x + cell.width - unit * 0.32
+          );
+          ctx.fillStyle = "#d39566";
+          ctx.beginPath();
+          ctx.arc(
+            falseX,
+            cell.y + cell.height * 0.78,
+            unit * 0.11,
+            0,
+            Math.PI * 2
+          );
+          ctx.fill();
+        }
+      }
+
+      ctx.fillStyle = aligned ? "#05201e" : "#e8dfc4";
+      ctx.font = `700 ${Math.max(5, unit * 0.42)}px "DM Mono", monospace`;
+      ctx.textAlign = "center";
+      ctx.fillText(String(wheel + 1), centerX, cell.y + cell.height * 0.5);
+      ctx.textAlign = "left";
+    }
+  }
+
   private drawCausalLink(layout: ScreenLayout) {
-    if (layout.compact) return;
+    if (layout.compact) {
+      const panel = layout.compactMechanism;
+      if (!panel) return;
+      const ctx = this.context;
+      const unit = canvasUnit(layout.width, layout.height, layout.compact);
+      const startX = panel.x + panel.width * 0.5;
+      const startY = panel.y + panel.height;
+      const endX = layout.dial.x;
+      const endY = layout.dial.y - layout.dial.radius * 1.12;
+
+      ctx.save();
+      ctx.strokeStyle = "rgba(77, 224, 192, 0.72)";
+      ctx.shadowColor = "rgba(77, 224, 192, 0.8)";
+      ctx.shadowBlur = unit * 0.45;
+      ctx.lineWidth = Math.max(1.25, unit * 0.1);
+      ctx.setLineDash([unit * 0.28, unit * 0.24]);
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#4de0c0";
+      ctx.beginPath();
+      ctx.moveTo(endX, endY + unit * 0.18);
+      ctx.lineTo(endX - unit * 0.3, endY - unit * 0.28);
+      ctx.lineTo(endX + unit * 0.3, endY - unit * 0.28);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+      return;
+    }
     const ctx = this.context;
     const unit = canvasUnit(layout.width, layout.height, layout.compact);
     const wheelCount = this.mechanism.puzzle.vault.wheelCount;

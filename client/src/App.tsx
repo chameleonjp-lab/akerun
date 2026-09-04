@@ -1427,6 +1427,10 @@ export default function App() {
               <p>
                 回す、反応を見る、判断を直す。この流れを使って、初級から順番に進みます。
               </p>
+              <p>
+                最初の公式2問（AKERUN-01 / 02）は、訓練の続きとして正規ゲートと
+                偽ゲートの位置を表示します。AKERUN-03から標準の遮蔽へ移ります。
+              </p>
               <Button
                 tone="primary"
                 onClick={() => void startOfficial()}
@@ -1504,6 +1508,10 @@ export default function App() {
                       : mode === "competition"
                         ? "DAILY COMPETITION / 本日の競技"
                         : (problem?.problemId ?? "問題準備中")}
+                  {mode === "official" &&
+                  problem?.difficulty.showInternalGatePositions
+                    ? " / 導入ガイド"
+                    : ""}
                 </p>
                 <h2>{snapshot?.vaultTitle ?? "金庫"}</h2>
               </div>

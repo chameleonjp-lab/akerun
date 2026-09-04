@@ -123,6 +123,24 @@ describe("official puzzle catalog", () => {
     );
   });
 
+  it("guides only the first two official problems without changing their tier", () => {
+    const first = createOfficialPuzzle("AKERUN-01-V1");
+    const second = createOfficialPuzzle("AKERUN-02-V1");
+    const third = createOfficialPuzzle("AKERUN-03-V1");
+
+    for (const puzzle of [first, second]) {
+      expect(puzzle.problemTier).toBe("beginner");
+      expect(puzzle.difficulty.id).toBe("standard");
+      expect(puzzle.difficulty.showExactInstruction).toBe(true);
+      expect(puzzle.difficulty.showInternalGatePositions).toBe(true);
+      expect(puzzle.difficulty.showFalseGatePositions).toBe(true);
+    }
+    expect(third.difficulty.id).toBe("standard");
+    expect(third.difficulty.showExactInstruction).toBe(false);
+    expect(third.difficulty.showInternalGatePositions).toBe(false);
+    expect(third.difficulty.showFalseGatePositions).toBe(false);
+  });
+
   it("opens every official problem through the existing mechanism", () => {
     OFFICIAL_PROBLEM_CATALOG.forEach(catalog => solve(catalog.problemId));
   });
