@@ -3,6 +3,7 @@ import { createOfficialPuzzle } from "./GameDefinitions";
 import { LockMechanism } from "./LockMechanism";
 import { replayAkerunTrace } from "../../../shared/akerun/replayAkerunTrace";
 import type { RunTrace, RunTraceEvent } from "./RunTrace";
+import { calculateRunScore } from "./RunSession";
 
 const buildOpeningTrace = () => {
   const puzzle = createOfficialPuzzle("AKERUN-01-V1");
@@ -31,9 +32,10 @@ const buildOpeningTrace = () => {
 
   for (const stage of puzzle.stages) {
     for (let pass = 0; pass < stage.passes; pass += 1) {
-      const distance = stage.direction === "cw"
-        ? (stage.target - mechanism.dial + 100) % 100
-        : (mechanism.dial - stage.target + 100) % 100;
+      const distance =
+        stage.direction === "cw"
+          ? (stage.target - mechanism.dial + 100) % 100
+          : (mechanism.dial - stage.target + 100) % 100;
       const steps = distance === 0 ? 100 : distance;
       for (let step = 0; step < steps; step += 1) {
         apply("rotate", stage.direction === "cw" ? 1 : -1);
@@ -65,12 +67,26 @@ const buildOpeningTrace = () => {
 describe("replayAkerunTrace", () => {
   it("replays a complete official route to the open state", () => {
     const input = buildOpeningTrace();
-    const replay = replayAkerunTrace("AKERUN-01-V1", input.trace, input.elapsedTimeMs);
+    const replay = replayAkerunTrace(
+      "AKERUN-01-V1",
+      input.trace,
+      input.elapsedTimeMs
+    );
     expect(replay.ok).toBe(true);
     if (!replay.ok) return;
     expect(replay.phase).toBe("open");
     expect(replay.totalDialSteps).toBeGreaterThan(0);
     expect(replay.eventCount).toBe(input.trace.events.length);
+    expect(replay.excessDialSteps).toBe(0);
+    expect(replay.score).toBe(
+      calculateRunScore(
+        createOfficialPuzzle("AKERUN-01-V1"),
+        input.elapsedTimeMs / 1000,
+        replay.faultCount,
+        replay.totalDialSteps,
+        replay.avoidableFalseGateContacts
+      )
+    );
   });
 
   it("rejects a trace changed after recording", () => {
@@ -81,18 +97,25 @@ describe("replayAkerunTrace", () => {
     const replay = replayAkerunTrace(
       "AKERUN-01-V1",
       { ...input.trace, events },
-      input.elapsedTimeMs,
+      input.elapsedTimeMs
     );
     expect(replay.ok).toBe(false);
   });
 
   it("rejects empty or too-short result timing", () => {
-    expect(replayAkerunTrace(
-      "AKERUN-01-V1",
-      { version: 1, events: [[0, "rotate", 1]], truncated: false },
-      1000,
-    )).toMatchObject({ ok: false });
-    expect(replayAkerunTrace("AKERUN-01-V1", { version: 1, events: [], truncated: false }, 1000))
-      .toMatchObject({ ok: false, reason: "trace_invalid" });
+    expect(
+      replayAkerunTrace(
+        "AKERUN-01-V1",
+        { version: 1, events: [[0, "rotate", 1]], truncated: false },
+        1000
+      )
+    ).toMatchObject({ ok: false });
+    expect(
+      replayAkerunTrace(
+        "AKERUN-01-V1",
+        { version: 1, events: [], truncated: false },
+        1000
+      )
+    ).toMatchObject({ ok: false, reason: "trace_invalid" });
   });
 });

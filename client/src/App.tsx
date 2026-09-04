@@ -1320,35 +1320,38 @@ export default function App() {
             <Button onClick={() => void retryPending()}>記録を再送する</Button>
           </div>
         ) : null}
-        <div className="akerun-title-secondary-actions">
-          <Button onClick={() => setScreen("practice")}>自由練習</Button>
-          <Button onClick={openRanking}>公式ランキング</Button>
-          <Button onClick={openDailyRanking}>本日の競技ランキング</Button>
-          <Button onClick={() => setScreen("archive")}>収蔵品</Button>
-          <Button onClick={() => setScreen("help")}>遊び方</Button>
-          <Button onClick={() => setScreen("settings")}>設定</Button>
-          <Button
-            onClick={() => {
-              setReturnScreen("title");
-              setScreen("sound-lab");
-            }}
-          >
-            音の試験室
-          </Button>
-        </div>
-        <div className="akerun-title-utilities">
-          <Button onClick={() => void shareHome()}>ゲームを共有</Button>
-          <LinkButton
-            href={EXPERIMENT_LAB_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            カメレオンJPの実験場
-          </LinkButton>
-        </div>
+        <details className="akerun-title-more">
+          <summary>その他の入口（練習・情報・設定）</summary>
+          <div className="akerun-title-secondary-actions">
+            <Button onClick={() => setScreen("practice")}>自由練習</Button>
+            <Button onClick={openRanking}>公式ランキング</Button>
+            <Button onClick={openDailyRanking}>本日の競技ランキング</Button>
+            <Button onClick={() => setScreen("archive")}>収蔵品</Button>
+            <Button onClick={() => setScreen("help")}>遊び方</Button>
+            <Button onClick={() => setScreen("settings")}>設定</Button>
+            <Button
+              onClick={() => {
+                setReturnScreen("title");
+                setScreen("sound-lab");
+              }}
+            >
+              音の試験室
+            </Button>
+          </div>
+          <div className="akerun-title-utilities">
+            <Button onClick={() => void shareHome()}>ゲームを共有</Button>
+            <LinkButton
+              href={EXPERIMENT_LAB_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              カメレオンJPの実験場
+            </LinkButton>
+          </div>
+        </details>
         <p className="akerun-submit-status">
           {submitStatus === "未送信"
-            ? "プレイ結果は開錠後にランキングへ送信します。"
+            ? "ランキングは公開準備中です。開錠結果は端末内に保存します。"
             : submitStatus}
         </p>
         <p className="akerun-footnote">
@@ -1693,6 +1696,14 @@ export default function App() {
               }
             />
             <Stat
+              label="余分な偽ゲート"
+              value={
+                result?.avoidableFalseGateContacts ??
+                snapshot?.avoidableFalseGateContacts ??
+                0
+              }
+            />
+            <Stat
               label="観察精度"
               value={
                 String(
@@ -1709,7 +1720,7 @@ export default function App() {
           </div>
           {!isRetired && mode === "official" ? (
             <p className="akerun-small">
-              偽ゲート接触は物理的な通過数を表示し、問題ごとの不可避な基準通過はスコアから除外しています。
+              「偽ゲート接触」は物理的な総数、「余分な偽ゲート」は問題ごとの不可避な基準通過を除いた数です。偽ゲート由来のスコア減点と観察精度には後者だけを使います。
             </p>
           ) : null}
           <p className="akerun-submit-status">
@@ -1984,11 +1995,27 @@ export default function App() {
         <p>
           ダイヤルを回すと、空転、ゲート縁、偽ゲート、フライ接続などの反応が返ります。特定の音だけで正解を決めず、音・見た目・抵抗を比べてください。
         </p>
+        <h3>まず覚える3つ</h3>
         <ol>
-          <li>方向と通過回数を読み、ホイールを順に整列する。</li>
-          <li>テンションを抵抗帯へ合わせ、フェンスを座らせる。</li>
-          <li>ロックボルトを退避させ、扉ハンドルで扉側ボルトを抜く。</li>
+          <li>
+            各指示の方向と「何回目に止めるか」を読み、外側のホイールから順に整列します。1回の通過は、指定方向へ回して正規ゲートを拾うことです。
+          </li>
+          <li>
+            浅い切欠きは偽ゲートです。音・接触の深さ・抵抗が揃う候補だけをメモし、偽ゲートに止まっても慌てず次の通過で比較します。
+          </li>
+          <li>
+            全ホイールの後は、テンション → フェンス → ロックボルト →
+            扉ハンドルの順です。帯域の中で保持し、強く押し込み続けると噛み込み（jam）になります。
+          </li>
         </ol>
+        <h3>反応の読み方</h3>
+        <p>
+          正規ゲートはフライ接続と段階の進行を伴います。ゲート縁は近づいた合図、偽ゲートは浅い接触だけで段階が進みません。Pelagicでは止めた後の反応が変わるので、回転を止めてから確認します。
+        </p>
+        <h3>失敗とスコア</h3>
+        <p>
+          後半の過負荷は失敗数になります。失敗数が上限に達すると安全停止し、リセットが必要です。スコアは時間・余分な回転・余分な偽ゲート・失敗数から計算し、高コントラスト、低モーション、精密入力、音や振動のOFFで減点しません。
+        </p>
         <p className="akerun-small">
           通常の進行ゲームと自由練習では一時停止できます。本日の競技では停止・設定・ヘルプ・画面離脱をするとランキング対象外になります。
         </p>

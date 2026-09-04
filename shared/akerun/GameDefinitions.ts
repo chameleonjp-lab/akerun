@@ -337,7 +337,7 @@ export const DEFAULT_REWARD: RewardDefinition = standardReward(
   "VTL-AU-1903",
   "金、黄銅、赤紫のガーネット、黒漆",
   "北方の時計工房から、1911年に修復室へ移管された私設収蔵品。",
-  "懐中時計の裏蓋には、6枚のホイールと同じ間隔で浅い刻印が残る。",
+  "懐中時計の裏蓋には、ホイールパックと同じ間隔で浅い刻印が残る。",
   "Auroraを開錠する",
   [{ type: "vault", vaultId: "museum-aurora" }],
 );
@@ -578,12 +578,21 @@ export const OFFICIAL_PROBLEM_CATALOG: readonly OfficialProblemDefinition[] = [
 
 const cloneVault = (vault: VaultDefinition, wheelCount: number, tier: ProblemTier): VaultDefinition => ({
   ...vault,
+  description: vault.description.replace(/六層/g, `${wheelCount}層`),
   wheelCount,
   preload: {
     ...vault.preload,
     baseResistance: normalize(vault.preload.baseResistance * 100 + (tier === "advanced" ? 4 : tier === "beginner" ? -3 : 0)) / 100,
   },
 });
+
+const rewardForOfficialProblem = (problemId: string) =>
+  REWARD_DEFINITIONS.find(reward =>
+    reward.unlockConditions.some(
+      condition =>
+        condition.type === "problem" && condition.problemId === problemId
+    )
+  ) ?? DEFAULT_REWARD;
 
 export const createOfficialPuzzle = (problemId: string): PuzzleDefinition => {
   const problem = OFFICIAL_PROBLEM_CATALOG.find((item) => item.problemId === problemId);
@@ -597,7 +606,7 @@ export const createOfficialPuzzle = (problemId: string): PuzzleDefinition => {
     difficulty: officialDifficulty(problem.tier, vault.personality),
     stages,
     falseGates: createFalseGates(problem.targets, vault.personality),
-    reward: REWARD_DEFINITIONS[VAULT_DEFINITIONS.findIndex((item) => item.id === problem.vaultId)] ?? DEFAULT_REWARD,
+    reward: rewardForOfficialProblem(problem.problemId),
     problemId: problem.problemId,
     problemVersion: problem.problemVersion,
     parTime: problem.parTime,

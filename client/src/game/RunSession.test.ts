@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createOfficialPuzzle } from "./GameDefinitions";
+import {
+  createOfficialPuzzle,
+  OFFICIAL_PROBLEM_CATALOG,
+} from "./GameDefinitions";
 import { LockMechanism } from "./LockMechanism";
 import {
   isRunCheckpoint,
@@ -156,8 +159,36 @@ describe("RunSession", () => {
       problem.parDialSteps ?? 0,
       0
     );
-    expect(cleanRun - standardFaults).toBe(650);
-    expect(standardFaults - extraFault).toBe(650);
+    expect(cleanRun - standardFaults).toBe(100);
+    expect(standardFaults - extraFault).toBe(500);
+  });
+
+  it("keeps ordinary observation runs above zero while reserving 10000+ for speed", () => {
+    OFFICIAL_PROBLEM_CATALOG.forEach(catalog => {
+      const problem = createOfficialPuzzle(catalog.problemId);
+      const parDialSteps = problem.parDialSteps ?? 0;
+      const threeMinuteObservation = calculateRunScore(
+        problem,
+        180,
+        0,
+        parDialSteps,
+        0
+      );
+      const twelveMinuteObservation = calculateRunScore(
+        problem,
+        720,
+        catalog.parFaults + 1,
+        parDialSteps,
+        20
+      );
+      const speedRun = calculateRunScore(problem, 30, 0, parDialSteps, 0);
+
+      expect(threeMinuteObservation).toBeGreaterThanOrEqual(6_000);
+      expect(threeMinuteObservation).toBeLessThanOrEqual(9_500);
+      expect(twelveMinuteObservation).toBeGreaterThanOrEqual(6_000);
+      expect(twelveMinuteObservation).toBeLessThanOrEqual(9_500);
+      expect(speedRun).toBeGreaterThan(10_000);
+    });
   });
 
   it("quantizes elapsed time before the score is calculated", () => {

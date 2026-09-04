@@ -50,8 +50,8 @@ describe("RankingClient", () => {
     const fetch = vi.fn(
       async (_input: RequestInfo | URL, init?: RequestInit) => {
         const body = JSON.parse(String(init?.body));
-        expect(body.clientVersion).toBe("akerun-web-verified-v2");
-        expect(body.contractVersion).toBe("akerun-play-v2");
+        expect(body.clientVersion).toBe("akerun-web-verified-v3");
+        expect(body.contractVersion).toBe("akerun-play-v3");
         expect(body.clientInstanceId).toEqual(expect.any(String));
         expect(body.action).toBe("finish");
         expect(body.runToken).toBe("run-token-1");
@@ -133,8 +133,8 @@ describe("RankingClient", () => {
     const fetch = vi.fn(
       async (_input: RequestInfo | URL, init?: RequestInit) => {
         const body = JSON.parse(String(init?.body));
-        expect(body.clientVersion).toBe("akerun-web-verified-v2");
-        expect(body.contractVersion).toBe("akerun-play-v2");
+        expect(body.clientVersion).toBe("akerun-web-verified-v3");
+        expect(body.contractVersion).toBe("akerun-play-v3");
         expect(body.action).toBe("abandon");
         expect(body.runToken).toBe("run-token-orphan");
         return new Response(
@@ -204,7 +204,7 @@ describe("RankingClient", () => {
     };
     const client = new RankingClient({ rpcClient: rpc });
     const rows = await client.getBestScores(10);
-    expect(rpc.rpc).toHaveBeenCalledWith("get_akerun_ranking_v1", {
+    expect(rpc.rpc).toHaveBeenCalledWith("get_akerun_ranking_v2", {
       p_limit: 10,
     });
     expect(RankingClient.rank(rows[0]!, 1)).toBe(1);
@@ -287,7 +287,7 @@ describe("RankingClient", () => {
   it("reads the server-selected daily competition ranking", async () => {
     const rpc = {
       rpc: vi.fn(async (name: string, params: Record<string, unknown>) => {
-        expect(name).toBe("get_akerun_daily_ranking_v1");
+        expect(name).toBe("get_akerun_daily_ranking_v2");
         expect(params).toEqual({ p_competition_day: "2026-08-29" });
         return {
           data: [
