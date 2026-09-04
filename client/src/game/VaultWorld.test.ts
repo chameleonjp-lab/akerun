@@ -3,6 +3,7 @@ import {
   COMPACT_WORKBENCH_ONLY_MAX_HEIGHT,
   calculateScreenLayout,
   getContainedImageRect,
+  getCutawayUnderlayAlpha,
   getDemoTurnCount,
 } from "./VaultWorld";
 
@@ -130,6 +131,15 @@ describe("getContainedImageRect", () => {
         11
       )
     ).toBeNull();
+  });
+});
+
+describe("getCutawayUnderlayAlpha", () => {
+  it("does not show a fixed six-wheel photo behind variable wheel counts", () => {
+    expect(getCutawayUnderlayAlpha(4)).toBe(0);
+    expect(getCutawayUnderlayAlpha(5)).toBe(0);
+    expect(getCutawayUnderlayAlpha(6)).toBe(0.2);
+    expect(getCutawayUnderlayAlpha(2)).toBe(0);
   });
 });
 

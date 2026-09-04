@@ -115,6 +115,14 @@ export const getContainedImageRect = (
   };
 };
 
+/**
+ * 断面写真は6輪構成を固定撮影した素材なので、写真と論理上の輪数が
+ * 一致する問題だけを下地として使う。4/5輪や訓練ではCanvasの可変図形を
+ * 正本にし、写真の余分な輪を現在の機構として見せない。
+ */
+export const getCutawayUnderlayAlpha = (wheelCount: number) =>
+  wheelCount === 6 ? 0.2 : 0;
+
 /** デモ操作の時間積算を、フレームレートに依存しない回数へ変換する。 */
 export const getDemoTurnCount = (
   elapsed: number,
@@ -2120,8 +2128,11 @@ export class VaultWorld {
     // 上書きする。写真だけに依存しないので、読込失敗や高コントラスト時も
     // 機構の意味と入力状態は失われない。
     const cutaway = this.images.realLock;
+    const cutawayAlpha = getCutawayUnderlayAlpha(
+      this.mechanism.puzzle.vault.wheelCount
+    );
     const imageRect =
-      cutaway && this.isDrawableImage(cutaway)
+      cutawayAlpha > 0 && cutaway && this.isDrawableImage(cutaway)
         ? getContainedImageRect(cutaway.naturalWidth, cutaway.naturalHeight, {
             x: internal.x + unit * 0.8,
             y: internal.y + unit * 0.8,
@@ -2139,7 +2150,7 @@ export class VaultWorld {
         unit * 0.35
       );
       ctx.clip();
-      ctx.globalAlpha = 0.2;
+      ctx.globalAlpha = cutawayAlpha;
       ctx.drawImage(
         cutaway,
         imageRect.x,
