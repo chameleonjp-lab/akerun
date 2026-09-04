@@ -1151,7 +1151,9 @@ export class VaultWorld {
     const category: ObservationCategory =
       contact === "false-gate"
         ? "false-gate"
-        : contact === "true-gate" || contact === "edge"
+        : contact === "true-gate" ||
+            contact === "edge" ||
+            contact === "false-edge"
           ? "contact"
           : phase === "boltwork-ready" ||
               phase === "handle-test" ||
@@ -1161,9 +1163,11 @@ export class VaultWorld {
     const contactLabel =
       contact === "true-gate"
         ? "正規ゲート"
-        : contact === "edge"
-          ? "ゲート縁"
-          : "待機";
+        : contact === "false-edge"
+          ? "偽ゲート縁"
+          : contact === "edge"
+            ? "ゲート縁"
+            : "待機";
     const text =
       category === "false-gate"
         ? `浅い切欠き：深さ ${Math.round(this.mechanism.contactDepth * 100)}%。短い反発で、フェンスは座らない。`
@@ -1317,22 +1321,33 @@ export class VaultWorld {
         this.haptics.pulse("false-gate");
         this.setBlindSignal("EDGE");
       } else if (cueStage && this.mechanism.stage === previousStage) {
-        const directDistance = Math.abs(this.mechanism.dial - cueStage.target);
-        if (
-          Math.min(directDistance, 100 - directDistance) <= 1 &&
-          this.mechanism.currentPass === previousPass
-        ) {
+        if (this.mechanism.contactProfile === "false-edge") {
           this.audio.gateEdge(
-            preload.edgeHardness * (0.7 + personality.contactContrast * 0.3)
+            preload.edgeHardness *
+              (0.45 + personality.falseGateSimilarity * 0.25)
           );
           this.haptics.pulse("edge");
           this.setBlindSignal("EDGE");
         } else {
-          this.audio.flyBrush(
-            this.mechanism.currentPass /
-              Math.max(1, this.mechanism.requiredPasses),
-            preload.flyStickiness
+          const directDistance = Math.abs(
+            this.mechanism.dial - cueStage.target
           );
+          if (
+            Math.min(directDistance, 100 - directDistance) <= 1 &&
+            this.mechanism.currentPass === previousPass
+          ) {
+            this.audio.gateEdge(
+              preload.edgeHardness * (0.7 + personality.contactContrast * 0.3)
+            );
+            this.haptics.pulse("edge");
+            this.setBlindSignal("EDGE");
+          } else {
+            this.audio.flyBrush(
+              this.mechanism.currentPass /
+                Math.max(1, this.mechanism.requiredPasses),
+              preload.flyStickiness
+            );
+          }
         }
       }
     } else {
@@ -2626,20 +2641,30 @@ export class VaultWorld {
     ctx.strokeStyle = coupled ? "#d0fff5" : "rgba(205, 194, 165, 0.35)";
     ctx.stroke();
 
-    ctx.fillStyle = aligned ? "#70f2d9" : active ? "#e9d7a7" : "#758d8f";
+    const contactProfile = this.mechanism.contactProfile;
+    ctx.fillStyle = aligned
+      ? "#70f2d9"
+      : active &&
+          (contactProfile === "false-gate" || contactProfile === "false-edge")
+        ? "#efc091"
+        : active
+          ? "#e9d7a7"
+          : "#758d8f";
     ctx.font = `700 ${Math.max(6, Math.min(unit * 0.68, height * 0.34))}px "DM Mono", monospace`;
     const profile =
       this.mechanism.contactProfile === "false-gate" && active
         ? "偽ゲート"
-        : aligned
-          ? "正規ゲート"
-          : coupled
-            ? "フライ接続"
-            : active
-              ? "待機"
-              : revealGate
-                ? "自由"
-                : "遮蔽";
+        : this.mechanism.contactProfile === "false-edge" && active
+          ? "偽ゲート縁"
+          : aligned
+            ? "正規ゲート"
+            : coupled
+              ? "フライ接続"
+              : active
+                ? "待機"
+                : revealGate
+                  ? "自由"
+                  : "遮蔽";
     ctx.fillText(
       `第${wheel + 1}輪  ${profile}`,
       left + unit * 1.1,
@@ -2692,7 +2717,7 @@ export class VaultWorld {
     const nextAction = active
       ? this.mechanism.puzzle.difficulty.showExactInstruction
         ? `${active.instruction} / 駆動カム → ${active.wheel + 1}輪目`
-        : `${active.direction === "cw" ? "右回り" : "左回り"} / ${active.wheel + 1}輪目を拾う / ${this.mechanism.currentPass}/${active.passes}回目`
+        : `${active.direction === "cw" ? "右回り" : "左回り"} / ${active.wheel + 1}輪目を拾う / ${this.mechanism.currentPass}/${active.passes}回目 / 接触位置で止める`
       : this.mechanism.protocolInstruction;
     const hint = `次の操作 / ${nextAction}`;
     const guide = this.getGuideText();
@@ -2942,11 +2967,14 @@ export class VaultWorld {
         const profile =
           this.mechanism.contactProfile === "false-gate"
             ? "偽ゲート"
-            : this.mechanism.contactProfile === "true-gate"
-              ? "正規ゲート"
-              : "待機";
+            : this.mechanism.contactProfile === "false-edge"
+              ? "偽ゲート縁"
+              : this.mechanism.contactProfile === "true-gate"
+                ? "正規ゲート"
+                : "待機";
         ctx.fillStyle =
-          this.mechanism.contactProfile === "false-gate"
+          this.mechanism.contactProfile === "false-gate" ||
+          this.mechanism.contactProfile === "false-edge"
             ? "#d39566"
             : this.mechanism.contactProfile === "true-gate"
               ? "#4de0c0"

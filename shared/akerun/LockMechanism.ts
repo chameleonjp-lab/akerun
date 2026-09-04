@@ -29,7 +29,12 @@ export type ResistanceState =
   | "candidate"
   | "jammed"
   | "seated";
-export type ContactProfile = "clear" | "edge" | "false-gate" | "true-gate";
+export type ContactProfile =
+  | "clear"
+  | "edge"
+  | "false-edge"
+  | "false-gate"
+  | "true-gate";
 
 export type LockMechanismSnapshot = {
   readonly dial: number;
@@ -494,10 +499,27 @@ export class LockMechanism {
     );
   }
 
+  /** 現在のダイヤルから一刻みの位置にある、偽ゲートの縁。 */
+  get falseGateEdgeAtDial() {
+    const stage = this.activeStage;
+    if (!stage || this.falseGateAtDial) return null;
+    return (
+      this.puzzle.falseGates.find(
+        gate =>
+          gate.wheel === stage.wheel &&
+          Math.min(
+            Math.abs(gate.position - this.dial),
+            100 - Math.abs(gate.position - this.dial)
+          ) <= 1
+      ) ?? null
+    );
+  }
+
   get contactProfile(): ContactProfile {
     if (this.phase !== "dial") return "clear";
     if (this.falseGateAtDial) return "false-gate";
     if (this.activeStage?.target === this.dial) return "true-gate";
+    if (this.falseGateEdgeAtDial) return "false-edge";
     const target = this.activeStage?.target;
     if (
       target !== undefined &&
@@ -528,6 +550,15 @@ export class LockMechanism {
         1
       );
     }
+    if (this.contactProfile === "false-edge") {
+      return clamp(
+        (this.falseGateEdgeAtDial?.depth ?? 0) * 0.64 +
+          personality.falseGateSimilarity * 0.08 -
+          speedResponse * 0.4,
+        0,
+        1
+      );
+    }
     if (this.contactProfile === "edge")
       return clamp(
         0.45 + personality.contactContrast * 0.2 - speedResponse * 0.4,
@@ -546,9 +577,11 @@ export class LockMechanism {
         ? 0.08 + personality.contactContrast * 0.13
         : this.contactProfile === "false-gate"
           ? 0.05 + personality.falseGateSimilarity * 0.08
-          : this.contactProfile === "edge"
-            ? 0.035 + personality.contactContrast * 0.055
-            : 0;
+          : this.contactProfile === "false-edge"
+            ? 0.025 + personality.falseGateSimilarity * 0.04
+            : this.contactProfile === "edge"
+              ? 0.035 + personality.contactContrast * 0.055
+              : 0;
     const speedDrag = personality.speedSensitivity * this.rotationSpeed * 0.035;
     return clamp(
       baseResistance * 0.55 + edgeHardness * contactLift + speedDrag,
@@ -741,7 +774,7 @@ export class LockMechanism {
       if (!stage) return "ドライブカムを観察";
       if (this.puzzle.difficulty.showExactInstruction)
         return `輪 ${stage.wheel + 1}：${stage.instruction}`;
-      return `輪 ${stage.wheel + 1}へフライを拾わせる。${stage.direction === "cw" ? "右" : "左"}回りの接触痕を探る`;
+      return `輪 ${stage.wheel + 1}へフライを拾わせる。${stage.direction === "cw" ? "右" : "左"}回りで接触痕を探り、候補に触れたらその位置で止める`;
     }
     if (this.phase === "settling")
       return "ダイヤルを止め、停止後のわずかな反応を観察する";
@@ -799,10 +832,14 @@ export class LockMechanism {
     const direction: TurnDirection = steps > 0 ? "cw" : "ccw";
     const count = Math.min(32, Math.max(1, Math.round(Math.abs(steps))));
     const delta = direction === "cw" ? 1 : -1;
+    const current = this.activeStage;
+    if (!current) return;
+    const target = current.target;
+    const targetWheel = current.wheel;
+    const targetPasses = current.passes;
+    let targetContacted = false;
 
     for (let index = 0; index < count; index += 1) {
-      const current = this.activeStage;
-      if (!current) return;
       const reverses = this.lastDirection !== direction;
       if (reverses) this.reversalCount += 1;
       this.lastDirection = direction;
@@ -830,40 +867,59 @@ export class LockMechanism {
           : "浅い切欠きに触れ、フェンスがわずかに反発しました。音の減衰と戻りを確かめてください。";
         continue;
       }
-      if (this.dial !== current.target) continue;
-      this.stagePasses += 1;
-      if (this.stagePasses < current.passes) {
-        this.lastMessage = this.puzzle.difficulty.showExactInstruction
-          ? `輪 ${current.wheel + 1} はまだフライの遊びの中です。${this.stagePasses + 1}回目に ${String(current.target).padStart(2, "0")} を通過します。`
-          : `フライの接触が一段深くなりました。通過 ${this.stagePasses}/${current.passes}。`;
+      if (this.dial !== target) {
+        if (this.falseGateEdgeAtDial) {
+          const edgeGate = this.falseGateEdgeAtDial;
+          this.lastMessage = this.puzzle.difficulty.showFalseGatePositions
+            ? `輪 ${current.wheel + 1} の偽ゲートの縁をなぞっています。${edgeGate ? `深度 ${Math.round(edgeGate.depth * 100)}%` : ""}。そこで止めず、正規ゲートと反応を比べてください。`
+            : "浅い切欠きの縁をなぞりました。ここでは止めず、正規ゲートとの深さを比べてください。";
+        }
         continue;
       }
-
-      this.tumblerValues[current.wheel] = current.target;
-      this.locked[current.wheel] = true;
-      this.stage += 1;
-      this.stagePasses = 0;
-      if (this.stage >= this.puzzle.stages.length) {
-        this.settlingElapsed = 0;
-        const settlingDelay =
-          this.puzzle.vault.personality.settlingDelaySeconds;
-        if (settlingDelay > 0) {
-          this.phase = "settling";
-          this.lastMessage =
-            "全ホイールが止まりました。停止後の反応が落ち着くまで観察してください。";
-        } else {
-          this.phase = "tension-ready";
-          this.lastMessage =
-            "全ホイールのゲートが静止。フェンスが落ちるか、テンションで検証してください。";
-        }
-        return;
-      }
-      const next = this.activeStage;
-      this.lastMessage =
-        next && this.puzzle.difficulty.showExactInstruction
-          ? `輪 ${current.wheel + 1} を残してフライが切れました。次は${next.direction === "cw" ? "右" : "左"}回りで輪 ${next.wheel + 1} を拾います。`
-          : "一枚のホイールを残してフライが切れました。反転後の接触を観察してください。";
+      // 正規ゲートを途中で通過しただけでは、通過として数えない。
+      // 大きなドラッグやホイール入力で目標を飛び越した場合も、最後に
+      // その位置で止めたときだけ、観察した一回の通過を確定する。
+      targetContacted = true;
     }
+
+    if (!targetContacted) return;
+    if (this.dial !== target) {
+      this.lastMessage = this.puzzle.difficulty.showExactInstruction
+        ? "正規ゲートを通過しましたが、目標位置で止まらなかったため通過として数えません。接触した位置へ戻って止めてください。"
+        : "正規ゲートを通過しましたが、止めた位置が目標ではないため通過として数えません。候補の位置で止めて反応を比べてください。";
+      return;
+    }
+    this.stagePasses += 1;
+    if (this.stagePasses < targetPasses) {
+      this.lastMessage = this.puzzle.difficulty.showExactInstruction
+        ? `輪 ${targetWheel + 1} はまだフライの遊びの中です。${this.stagePasses + 1}回目に ${String(target).padStart(2, "0")} を通過します。`
+        : `フライの接触が一段深くなりました。通過 ${this.stagePasses}/${targetPasses}。`;
+      return;
+    }
+
+    this.tumblerValues[targetWheel] = target;
+    this.locked[targetWheel] = true;
+    this.stage += 1;
+    this.stagePasses = 0;
+    if (this.stage >= this.puzzle.stages.length) {
+      this.settlingElapsed = 0;
+      const settlingDelay = this.puzzle.vault.personality.settlingDelaySeconds;
+      if (settlingDelay > 0) {
+        this.phase = "settling";
+        this.lastMessage =
+          "全ホイールが止まりました。停止後の反応が落ち着くまで観察してください。";
+      } else {
+        this.phase = "tension-ready";
+        this.lastMessage =
+          "全ホイールのゲートが静止。フェンスが落ちるか、テンションで検証してください。";
+      }
+      return;
+    }
+    const next = this.activeStage;
+    this.lastMessage =
+      next && this.puzzle.difficulty.showExactInstruction
+        ? `輪 ${targetWheel + 1} を残してフライが切れました。次は${next.direction === "cw" ? "右" : "左"}回りで輪 ${next.wheel + 1} を拾います。`
+        : "一枚のホイールを残してフライが切れました。反転後の接触を観察してください。";
   }
 
   setTension(value: number) {

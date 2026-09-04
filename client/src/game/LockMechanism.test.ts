@@ -299,6 +299,54 @@ describe("LockMechanism", () => {
     expect(lock.lastMessage).toContain("偽ゲート");
   });
 
+  it("偽ゲートの一刻み手前と後ろを、通常の空転と区別できる", () => {
+    const puzzle = createReferencePuzzle("observe");
+    const lock = new LockMechanism(puzzle);
+    const stage = puzzle.stages[0];
+    const falseGates = puzzle.falseGates.filter(
+      gate => gate.wheel === stage.wheel
+    );
+    const candidate = Array.from(
+      { length: 100 },
+      (_, position) => position
+    ).find(
+      position =>
+        position !== stage.target &&
+        !falseGates.some(gate => gate.position === position) &&
+        falseGates.some(gate => {
+          const distance = Math.abs(gate.position - position);
+          return Math.min(distance, 100 - distance) === 1;
+        })
+    );
+    expect(candidate).toBeDefined();
+    lock.dial = candidate ?? 0;
+
+    expect(lock.contactProfile).toBe("false-edge");
+    expect(lock.falseGateEdgeAtDial).not.toBeNull();
+    expect(lock.contactDepth).toBeGreaterThan(0);
+  });
+
+  it("正規ゲートを回転入力の途中で通過しても、止めなければ通過を確定しない", () => {
+    const puzzle = createReferencePuzzle("observe");
+    const stage = puzzle.stages[0];
+    const direction = stage.direction === "cw" ? 1 : -1;
+    const lock = new LockMechanism(puzzle);
+    lock.dial = (stage.target - direction + 100) % 100;
+
+    lock.rotate(direction * 2);
+
+    expect(lock.dial).toBe((stage.target + direction + 100) % 100);
+    expect(lock.stage).toBe(0);
+    expect(lock.currentPass).toBe(1);
+    expect(lock.lastMessage).toContain("通過として数えません");
+
+    const stopped = new LockMechanism(puzzle);
+    stopped.dial = (stage.target - direction + 100) % 100;
+    stopped.rotate(direction);
+    expect(stopped.dial).toBe(stage.target);
+    expect(stopped.currentPass).toBe(2);
+  });
+
   it("偽ゲート訓練契約は二輪の短い手順で、浅い接触を反証して開錠できる", () => {
     const puzzle = createFalseGateTrainingPuzzle();
     const lock = new LockMechanism(puzzle);
