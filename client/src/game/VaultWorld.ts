@@ -140,6 +140,7 @@ export type GameSnapshot = {
   readonly totalDialSteps: number;
   readonly excessDialSteps: number;
   readonly falseGateContacts: number;
+  readonly avoidableFalseGateContacts: number;
   readonly observationAccuracy: number;
   readonly score: number;
   readonly opened: boolean;
@@ -169,42 +170,42 @@ export const COMPACT_WORKBENCH_ONLY_MAX_HEIGHT = 550;
 
 const INSPECTION_STEPS = [
   {
-    label: "CASE COVER / 錠ケースカバー",
+    label: "錠ケースカバー / CASE COVER",
     detail:
       "取り外し可能なケースカバーが、ホイールパックとレバー機構を保護します。観察では保安部材として扱い、解除操作の対象にはしません。",
   },
   {
-    label: "SPINDLE & TUBE / 駆動軸",
+    label: "駆動軸 / SPINDLE & TUBE",
     detail:
       "ダイヤルの回転はスピンドルと位置決め管を通り、最初のドライブカムへ渡されます。",
   },
   {
-    label: "BRIDGE & WHEEL POST / 支持枠",
+    label: "支持枠 / BRIDGE & WHEEL POST",
     detail:
-      "ブリッジアセンブリとホイールポストが、6枚のホイールを同軸上に保ちます。",
+      "ブリッジアセンブリとホイールポストが、問題ごとのホイールパックを同軸上に保ちます。",
   },
   {
-    label: "KEY-CHANGE WHEEL / 変更式ホイール",
+    label: "変更式ホイール / KEY-CHANGE WHEEL",
     detail:
       "変更式ホイールの内輪とハブは、整備時の再設定に関わる部分です。通常の開錠手順には持ち込みません。",
   },
   {
-    label: "FENCE & LEVER NOSE / 接触部",
+    label: "接触部 / FENCE & LEVER NOSE",
     detail:
       "フェンスとレバーノーズがカムの接触点を読み、全ゲートが整った時だけ落ち込みます。",
   },
   {
-    label: "LOCK BOLT / 錠ボルト",
+    label: "錠ボルト / LOCK BOLT",
     detail:
       "錠ボルトが後退して初めて、扉内のキャリーバーと複数の扉側ボルトをハンドルで動かせます。",
   },
   {
-    label: "RELOCKER / 二次拘束",
+    label: "二次拘束 / RELOCKER",
     detail:
       "リロッカーは異常時にボルトワークを二次的に拘束する保安機構です。このゲームでは安全な観察対象として表示します。",
   },
   {
-    label: "ANTI-PUNCH COLLAR / 保安カラー",
+    label: "保安カラー / ANTI-PUNCH COLLAR",
     detail:
       "アンチパンチカラーはスピンドル周辺を補強する保安部材です。解除対象ではなく、金庫の保護設計として記録します。",
   },
@@ -631,6 +632,7 @@ export class VaultWorld {
       totalDialSteps: metrics?.totalDialSteps ?? 0,
       excessDialSteps: metrics?.excessDialSteps ?? 0,
       falseGateContacts: metrics?.falseGateContacts ?? 0,
+      avoidableFalseGateContacts: metrics?.avoidableFalseGateContacts ?? 0,
       observationAccuracy: metrics?.observationAccuracy ?? 100,
       score: metrics?.score ?? 0,
       opened: this.mechanism.opened,
@@ -697,11 +699,11 @@ export class VaultWorld {
       ctx.fillStyle = "#e8dfc4";
       ctx.font = `700 ${Math.max(18, width * 0.025)}px "DM Mono", monospace`;
       ctx.textAlign = "center";
-      ctx.fillText("MECHANISM DISPLAY RECOVERING", width * 0.5, height * 0.43);
+      ctx.fillText("機構表示を復旧中", width * 0.5, height * 0.43);
       ctx.fillStyle = "#7c9397";
       ctx.font = `500 ${Math.max(13, width * 0.014)}px ${JAPANESE_FONT_STACK}`;
       ctx.fillText(
-        "表示を安全に復旧しています。公式プレイ中のRESETはリタイア扱いです。",
+        "表示を安全に復旧しています。公式プレイ中のリセットはリタイア扱いです。",
         width * 0.5,
         height * 0.52
       );
@@ -1135,11 +1137,17 @@ export class VaultWorld {
               phase === "open"
             ? "boltwork"
             : "preload";
+    const contactLabel =
+      contact === "true-gate"
+        ? "正規ゲート"
+        : contact === "edge"
+          ? "ゲート縁"
+          : "待機";
     const text =
       category === "false-gate"
         ? `浅い切欠き：深さ ${Math.round(this.mechanism.contactDepth * 100)}%。短い反発で、フェンスは座らない。`
         : category === "contact"
-          ? `接触：${contact.toUpperCase()}。深さ ${Math.round(this.mechanism.contactDepth * 100)}%、予圧 ${Math.round(this.mechanism.packResistance * 100)}%。`
+          ? `接触：${contactLabel}。深さ ${Math.round(this.mechanism.contactDepth * 100)}%、予圧 ${Math.round(this.mechanism.packResistance * 100)}%。`
           : category === "boltwork"
             ? `扉ボルト：${this.mechanism.puzzle.vault.boltLayout.label}。${this.mechanism.puzzle.vault.boltLayout.boltRatios.length}本の扉側ボルトとキャリーバーを観察。`
             : `ホイールパック予圧：${this.mechanism.puzzle.vault.preload.label}。基準抵抗 ${Math.round(this.mechanism.puzzle.vault.preload.baseResistance * 100)}%。`;
@@ -1149,7 +1157,7 @@ export class VaultWorld {
       text
     );
     this.mechanism.lastMessage = note.text
-      ? `観察メモを端末内に保存しました。NOTES / O で閲覧できます。`
+      ? `観察メモを端末内に保存しました。メモ / O で閲覧できます。`
       : "保存する観察がありません。";
   }
 
@@ -1723,7 +1731,7 @@ export class VaultWorld {
     ctx.fillStyle = "#83a1a1";
     ctx.font = `600 ${dial.radius * 0.065}px "DM Mono", monospace`;
     ctx.fillText(
-      this.mechanism.lastDirection === "cw" ? "CLOCKWISE" : "COUNTER-CLOCKWISE",
+      this.mechanism.lastDirection === "cw" ? "右回り" : "左回り",
       dial.x,
       dial.y + dial.radius * 0.22
     );
@@ -1742,7 +1750,7 @@ export class VaultWorld {
     ctx.fillStyle = "#c9a963";
     ctx.font = `600 ${unit * 0.82}px "DM Mono", monospace`;
     ctx.fillText(
-      "FRONT DIAL",
+      "正面ダイヤル / FRONT DIAL",
       dial.x - dial.radius * 1.08,
       dial.y - dial.radius * 1.35
     );
@@ -1837,9 +1845,9 @@ export class VaultWorld {
       ctx.fillStyle = treasureGlow;
       ctx.fillRect(left, top, width, height);
       const treasureKey =
-        this.mechanism.puzzle.reward.id === "nocturne-reliquary"
+        this.mechanism.puzzle.vault.id === "reliquary-nocturne"
           ? "treasureReliquary"
-          : this.mechanism.puzzle.reward.id === "pelagic-chronometer"
+          : this.mechanism.puzzle.vault.id === "chronometer-pelagic"
             ? "treasureChronometer"
             : "treasure";
       const treasure = this.images[treasureKey];
@@ -1930,7 +1938,7 @@ export class VaultWorld {
     ctx.font = `700 ${unit * 0.78}px "DM Mono", monospace`;
     ctx.textAlign = "center";
     ctx.fillText(
-      `VAULT INTERIOR / ${this.mechanism.puzzle.reward.title}`,
+      `金庫内部 / ${this.mechanism.puzzle.reward.title}`,
       dial.x,
       dial.y + cavityRadius - unit * 1.25
     );
@@ -2096,9 +2104,7 @@ export class VaultWorld {
     ctx.fillStyle = "#d9c28a";
     ctx.font = `600 ${unit * 0.86}px "DM Mono", monospace`;
     ctx.fillText(
-      layout.compact
-        ? "LOCK MECHANISM / 内部機構"
-        : "LOCK CUTAWAY  /  SIDE VIEW",
+      layout.compact ? "内部機構 / LOCK MECHANISM" : "錠前断面 / LOCK CUTAWAY",
       internal.x + unit * 1.5,
       internal.y + unit * 2.2
     );
@@ -2106,15 +2112,15 @@ export class VaultWorld {
     ctx.font = `500 ${unit * 0.72}px ${JAPANESE_FONT_STACK}`;
     ctx.fillText(
       layout.compact
-        ? `${this.mechanism.puzzle.vault.wheelCount} WHEELS  /  CAM・FLY・FENCE`
-        : `${this.mechanism.puzzle.vault.wheelCount === 2 ? "TWO" : "SIX"} WHEEL PACK  /  CAM・FLY・FENCE を観察`,
+        ? `${this.mechanism.puzzle.vault.wheelCount}輪 / カム・フライ・フェンス`
+        : `${this.mechanism.puzzle.vault.wheelCount}輪パック / カム・フライ・フェンスを観察`,
       internal.x + unit * 1.5,
       internal.y + unit * 3.7
     );
     ctx.fillStyle = "#c9a963";
     ctx.font = `600 ${unit * 0.48}px "DM Mono", monospace`;
     ctx.fillText(
-      `PACK PRELOAD / ${this.mechanism.puzzle.vault.preload.label}`,
+      `ホイールパック予圧 / ${this.mechanism.puzzle.vault.preload.label}`,
       internal.x + unit * 1.5,
       internal.y + unit * 4.65
     );
@@ -2164,10 +2170,10 @@ export class VaultWorld {
     ctx.font = `700 ${unit * 0.69}px "DM Mono", monospace`;
     ctx.fillText(
       this.mechanism.fenceDropped
-        ? "FENCE / SEATED"
+        ? "フェンス / 着座"
         : this.mechanism.phase === "fence-ready"
-          ? "FENCE / PROBING"
-          : "FENCE / REST",
+          ? "フェンス / 検証"
+          : "フェンス / 待機",
       internal.x + unit * 1.5,
       fenceY + unit * 0.45
     );
@@ -2190,8 +2196,8 @@ export class VaultWorld {
     ctx.font = `600 ${unit * 0.68}px "DM Mono", monospace`;
     ctx.fillText(
       this.mechanism.boltworkReleased
-        ? "LOCK BOLT / RETRACTED"
-        : "LOCK BOLT / ENGAGED",
+        ? "ロックボルト / 退避済み"
+        : "ロックボルト / 係合中",
       internal.x + unit * 1.5,
       boltY + unit * 0.85
     );
@@ -2238,10 +2244,10 @@ export class VaultWorld {
     ctx.font = `600 ${unit * 0.48}px "DM Mono", monospace`;
     ctx.fillText(
       this.mechanism.opened
-        ? `DOOR BOLTS / RETRACTED / ${boltLayout.label}`
+        ? `扉ボルト / 退避済み / ${boltLayout.label}`
         : this.mechanism.boltworkReleased
-          ? `BOLTWORK / READY / ${boltLayout.label}`
-          : `DOOR BOLTS / LOCKED / ${boltLayout.label}`,
+          ? `ボルトワーク / 準備完了 / ${boltLayout.label}`
+          : `扉ボルト / 施錠中 / ${boltLayout.label}`,
       internal.x + unit * 1.5,
       carryBottom + unit * 0.7
     );
@@ -2285,8 +2291,16 @@ export class VaultWorld {
         ? "#4de0c0"
         : "#8da4a5";
     ctx.font = `600 ${unit * 0.56}px "DM Mono", monospace`;
+    const resistanceLabel =
+      this.mechanism.resistanceState === "candidate"
+        ? "候補"
+        : this.mechanism.resistanceState === "seated"
+          ? "着座"
+          : this.mechanism.resistanceState === "jammed"
+            ? "噛み込み"
+            : "待機";
     ctx.fillText(
-      `RESISTANCE / ${this.mechanism.resistanceState.toUpperCase()}`,
+      `抵抗 / ${resistanceLabel}`,
       internal.x + unit * 1.5,
       meterY + unit * 0.3
     );
@@ -2451,18 +2465,18 @@ export class VaultWorld {
     ctx.font = `700 ${Math.max(6, Math.min(unit * 0.68, height * 0.34))}px "DM Mono", monospace`;
     const profile =
       this.mechanism.contactProfile === "false-gate" && active
-        ? "FALSE CONTACT"
+        ? "偽ゲート"
         : aligned
-          ? "ALIGNED"
+          ? "正規ゲート"
           : coupled
-            ? "FLY ENGAGED"
+            ? "フライ接続"
             : active
-              ? "WAITING"
+              ? "待機"
               : revealGate
-                ? "FREE"
-                : "SHIELDED";
+                ? "自由"
+                : "遮蔽";
     ctx.fillText(
-      `W${wheel + 1}  ${profile}`,
+      `第${wheel + 1}輪  ${profile}`,
       left + unit * 1.1,
       cy + unit * 0.25
     );
@@ -2488,13 +2502,13 @@ export class VaultWorld {
     ctx.fillStyle = "#c9a963";
     ctx.font = `600 ${unit * 0.48}px "DM Mono", monospace`;
     const stage = this.mechanism.activeStage;
-    const direction = stage?.direction === "cw" ? "CW" : "CCW";
+    const direction = stage?.direction === "cw" ? "右回り" : "左回り";
     const pass =
       this.mechanism.currentPass && this.mechanism.requiredPasses
         ? ` ${this.mechanism.currentPass}/${this.mechanism.requiredPasses}`
         : "";
     ctx.fillText(
-      `DRIVE CAM / ${direction}${pass}`,
+      `駆動カム / ${direction}${pass}`,
       internal.x + unit * 1.5,
       y - unit * 0.6
     );
@@ -2512,10 +2526,10 @@ export class VaultWorld {
     const active = this.mechanism.activeStage;
     const nextAction = active
       ? this.mechanism.puzzle.difficulty.showExactInstruction
-        ? `${active.instruction} / DRIVE CAM → W${active.wheel + 1}`
-        : `DRIVE ${active.direction === "cw" ? "CW" : "CCW"}  /  PICKUP W${active.wheel + 1}  /  PASS ${this.mechanism.currentPass}/${active.passes}`
+        ? `${active.instruction} / 駆動カム → ${active.wheel + 1}輪目`
+        : `${active.direction === "cw" ? "右回り" : "左回り"} / ${active.wheel + 1}輪目を拾う / ${this.mechanism.currentPass}/${active.passes}回目`
       : this.mechanism.protocolInstruction;
-    const hint = `NEXT  /  ${nextAction}`;
+    const hint = `次の操作 / ${nextAction}`;
     const guide = this.getGuideText();
 
     if (
@@ -2555,7 +2569,7 @@ export class VaultWorld {
       ctx.fillStyle = "#d9c28a";
       ctx.font = `600 ${unit * 0.5}px "DM Mono", monospace`;
       ctx.fillText(
-        `PHASE / ${this.mechanism.phase.toUpperCase()}  ·  ${this.mechanism.faultCount}/${this.mechanism.puzzle.difficulty.maxFaults}`,
+        `段階 / ${this.mechanism.phase}  ·  失敗 ${this.mechanism.faultCount}/${this.mechanism.puzzle.difficulty.maxFaults}`,
         pad + unit * 1.1,
         y + unit * 2.28
       );
@@ -2591,14 +2605,14 @@ export class VaultWorld {
     ctx.fillStyle = "#d9c28a";
     ctx.font = `600 ${unit * 0.52}px "DM Mono", monospace`;
     ctx.fillText(
-      `MODE / ${DIFFICULTY_PROFILES[this.difficulty].label}   ${this.tutorialVisible ? `GUIDE / ${guide}` : "GUIDE / OFF"}   ${this.preciseInput ? "PRECISE" : "FREE"}   ${this.haptics.label}`,
+      `モード / ${DIFFICULTY_PROFILES[this.difficulty].label}   ${this.tutorialVisible ? `案内 / ${guide}` : "案内 / OFF"}   ${this.preciseInput ? "精密入力" : "自由入力"}   ${this.haptics.label}`,
       pad + unit * 1.25,
       y + unit * 2.18
     );
     ctx.fillStyle = this.mechanism.faultCount > 0 ? "#d39566" : "#7e9b98";
     ctx.font = `600 ${unit * 0.56}px "DM Mono", monospace`;
     ctx.fillText(
-      `PHASE / ${this.mechanism.phase.toUpperCase()}   FAULT / ${this.mechanism.faultCount}/${this.mechanism.puzzle.difficulty.maxFaults}`,
+      `段階 / ${this.mechanism.phase}   失敗 / ${this.mechanism.faultCount}/${this.mechanism.puzzle.difficulty.maxFaults}`,
       pad + unit * 1.25,
       y + unit * 2.9
     );
@@ -2643,7 +2657,7 @@ export class VaultWorld {
         width: railWidth - unit * 0.35,
         height: railHeight,
       },
-      this.canRecordRun() ? "RESET / RETIRE" : "RESET / R"
+      this.canRecordRun() ? "リセット / リタイア" : "リセット / R"
     );
     if (!this.sessionActive || this.demoMode) {
       this.drawControlButton(
@@ -2654,7 +2668,7 @@ export class VaultWorld {
           width: railWidth - unit * 0.35,
           height: railHeight,
         },
-        "EXAMPLE / DEMO"
+        "お手本 / DEMO"
       );
     }
     this.drawControlButton(
@@ -2665,15 +2679,15 @@ export class VaultWorld {
         width: railWidth - unit * 0.35,
         height: railHeight,
       },
-      this.audio.isMuted ? "SOUND / OFF" : "SOUND / ON"
+      this.audio.isMuted ? "音 / OFF" : "音 / ON"
     );
     const hapticButtonLabel = !this.haptics.isSupported
-      ? "HAPTIC / N/A"
+      ? "振動 / 非対応"
       : this.reducedMotion
-        ? "HAPTIC / PAUSE"
+        ? "振動 / 一時停止"
         : this.haptics.isEnabled
-          ? "HAPTIC / ON"
-          : "HAPTIC / OFF";
+          ? "振動 / ON"
+          : "振動 / OFF";
     this.drawControlButton(
       "haptics",
       {
@@ -2693,7 +2707,7 @@ export class VaultWorld {
         width: railWidth - unit * 0.35,
         height: railHeight,
       },
-      this.tutorialVisible ? "GUIDE / ON" : "GUIDE / OFF"
+      this.tutorialVisible ? "案内 / ON" : "案内 / OFF"
     );
     if (!layout.compact)
       this.drawControlButton(
@@ -2704,7 +2718,7 @@ export class VaultWorld {
           width: railWidth - unit * 0.35,
           height: railHeight,
         },
-        "NOTE / J",
+        "メモ / J",
         "#4de0c0"
       );
   }
@@ -2721,14 +2735,14 @@ export class VaultWorld {
     const isBolt = phase === "fence-seated" || phase === "bolt-test";
     const isHandle = phase === "boltwork-ready" || phase === "handle-test";
     const title = isTension
-      ? "TENSION HANDLE / 抵抗針"
+      ? "テンション / 抵抗針"
       : isFence
-        ? "FENCE LEVER / 座り"
+        ? "フェンス / 着座"
         : isBolt
-          ? "LOCK BOLT TAB / 後退量"
+          ? "ロックボルト / 退避量"
           : isHandle
-            ? "DOOR HANDLE / BOLTWORK"
-            : "CONTACT PIN / 候補メモ";
+            ? "扉ハンドル / ボルトワーク"
+            : "接触記録 / 候補メモ";
     this.drawFrame(
       rect,
       "rgba(6, 15, 19, 0.94)",
@@ -2744,8 +2758,8 @@ export class VaultWorld {
       ctx.font = `600 ${unit * 0.48}px "DM Mono", monospace`;
       ctx.fillText(
         this.audio.isMuted
-          ? "LISTEN / OFF — VISUAL CUES ACTIVE"
-          : "LISTEN / IDLE LOW  ·  EDGE HIGH  ·  PICKUP DOUBLE",
+          ? "音 OFF — 画面の手掛かりを使用"
+          : "聴く / 待機は低音・縁は高音・拾いは二重音",
         rect.x + unit * 1.1,
         rect.y + unit * 1.94
       );
@@ -2760,7 +2774,12 @@ export class VaultWorld {
         2
       );
       if (this.mechanism.puzzle.difficulty.showInternalGatePositions) {
-        const profile = this.mechanism.contactProfile.toUpperCase();
+        const profile =
+          this.mechanism.contactProfile === "false-gate"
+            ? "偽ゲート"
+            : this.mechanism.contactProfile === "true-gate"
+              ? "正規ゲート"
+              : "待機";
         ctx.fillStyle =
           this.mechanism.contactProfile === "false-gate"
             ? "#d39566"
@@ -2769,7 +2788,7 @@ export class VaultWorld {
               : "#8da4a5";
         ctx.font = `600 ${unit * 0.5}px "DM Mono", monospace`;
         ctx.fillText(
-          `CONTACT / ${profile}  DEPTH / ${Math.round(this.mechanism.contactDepth * 100)}%  PACK / ${Math.round(this.mechanism.packResistance * 100)}%`,
+          `接触 / ${profile}  深さ / ${Math.round(this.mechanism.contactDepth * 100)}%  抵抗 / ${Math.round(this.mechanism.packResistance * 100)}%`,
           rect.x + unit * 1.1,
           rect.y + rect.height * 0.52
         );
@@ -3033,8 +3052,8 @@ export class VaultWorld {
     ctx.font = `700 ${unit * (layout.compact ? 0.86 : 1.03)}px "DM Mono", monospace`;
     this.drawWrappedText(
       layout.compact
-        ? `EXPLODED / ${this.inspectionStep + 1}-${INSPECTION_STEPS.length}`
-        : `EXPLODED VIEW  /  ${this.inspectionStep + 1}-${INSPECTION_STEPS.length}`,
+        ? `機構観察 / ${this.inspectionStep + 1}-${INSPECTION_STEPS.length}`
+        : `機構を分解して見る / ${this.inspectionStep + 1}-${INSPECTION_STEPS.length}`,
       panel.x + unit * 1.25,
       panel.y + unit * 1.65,
       panel.width - unit * 2.5,
@@ -3133,7 +3152,7 @@ export class VaultWorld {
         width: compactControls?.previous.width ?? unit * 7.5,
         height: unit * 2.0,
       },
-      "PREV [",
+      "前へ [",
       "#7e9b98"
     );
     this.drawControlButton(
@@ -3144,7 +3163,7 @@ export class VaultWorld {
         width: compactControls?.next.width ?? unit * 7.5,
         height: unit * 2.0,
       },
-      "NEXT ]",
+      "次へ ]",
       "#4de0c0"
     );
     this.drawControlButton(
@@ -3155,7 +3174,7 @@ export class VaultWorld {
         width: compactControls?.close.width ?? unit * 7.9,
         height: unit * 2.0,
       },
-      "CLOSE / I",
+      "閉じる / I",
       "#c9a963"
     );
     ctx.restore();
@@ -3202,7 +3221,7 @@ export class VaultWorld {
     ctx.fillStyle = "#e8dfc4";
     ctx.font = `700 ${unit * (layout.compact ? 0.86 : 1.15)}px "DM Mono", monospace`;
     this.drawWrappedText(
-      "OBSERVATION NOTES / 端末内メモ",
+      "観察メモ / 端末内保存",
       panel.x + unit * 1.4,
       panel.y + unit * (layout.compact ? 1.7 : 2.0),
       panel.width - unit * 2.8,
@@ -3228,7 +3247,7 @@ export class VaultWorld {
         width: unit * 7.6,
         height: unit * 2.05,
       },
-      "CLOSE / O",
+      "閉じる / O",
       "#c9a963"
     );
     this.drawControlButton(
@@ -3239,7 +3258,7 @@ export class VaultWorld {
         width: unit * 7.6,
         height: unit * 2.05,
       },
-      "SAVE / J",
+      "保存 / J",
       "#4de0c0"
     );
 
@@ -3254,7 +3273,7 @@ export class VaultWorld {
       ctx.fillStyle = "#a9b8b5";
       ctx.font = `600 ${unit * 0.78}px ${JAPANESE_FONT_STACK}`;
       this.drawWrappedText(
-        "まだ観察メモがありません。Jキーまたは SAVE / J で現在の接触を記録してください。",
+        "まだ観察メモがありません。Jキーまたは 保存 / J で現在の接触を記録してください。",
         panel.x + unit * 1.4,
         top + unit * 1.5,
         panel.width - unit * 2.8,
@@ -3326,7 +3345,7 @@ export class VaultWorld {
     ctx.fillStyle = "#e8dfc4";
     ctx.font = `700 ${unit * (layout.compact ? 1.15 : 1.45)}px "DM Mono", monospace`;
     this.drawWrappedText(
-      "ARCHIVE LEDGER / 鑑定帳",
+      "鑑定帳 / ARCHIVE LEDGER",
       panel.x + unit * 1.45,
       panel.y + unit * 1.8,
       panel.width - unit * 2.8,
@@ -3347,7 +3366,7 @@ export class VaultWorld {
       ctx.fillStyle = "#c9a963";
       ctx.font = `600 ${unit * 0.5}px "DM Mono", monospace`;
       this.drawWrappedText(
-        "MECHANISM RECORD / CASE COVER · BRIDGE · WHEEL POST · KEY-CHANGE WHEEL · RELOCKER · ANTI-PUNCH",
+        "機構記録 / ケースカバー · 支持枠 · ホイールポスト · 変更式ホイール · 二次拘束 · 保安カラー",
         panel.x + unit * 1.45,
         panel.y + unit * 3.88,
         panel.width - unit * 2.8,
@@ -3364,7 +3383,7 @@ export class VaultWorld {
         width: unit * 8.1,
         height: unit * 2.15,
       },
-      "CLOSE / L",
+      "閉じる / L",
       "#c9a963"
     );
     this.drawControlButton(
@@ -3375,7 +3394,7 @@ export class VaultWorld {
         width: unit * 7.9,
         height: unit * 2.15,
       },
-      "NOTES / O",
+      "メモ / O",
       "#4de0c0"
     );
 
@@ -3488,7 +3507,7 @@ export class VaultWorld {
         unlocked
           ? `${reward.catalogNumber}  /  ${reward.title}`
           : isTarget
-            ? `CURRENT TARGET  /  ${reward.title}`
+            ? `現在の収蔵候補 / ${reward.title}`
             : "RESTRICTED COLLECTION / 未解放",
         textX,
         y + unit * 1.58
@@ -3539,7 +3558,7 @@ export class VaultWorld {
         ctx.font = `500 ${unit * 0.48}px "DM Mono", monospace`;
         ctx.textAlign = "right";
         ctx.fillText(
-          `UNLOCKED × ${record.unlockCount}`,
+          `解放済み × ${record.unlockCount}`,
           panel.x + panel.width - unit * 1.8,
           y + unit * 1.35
         );
@@ -3589,30 +3608,29 @@ export class VaultWorld {
   private getGuideText(): string {
     if (!this.tutorialVisible) return "OFF";
     if (this.mechanism.opened)
-      return `DISCOVER / ${this.mechanism.puzzle.reward.title}`;
+      return `発見 / ${this.mechanism.puzzle.reward.title}`;
     if (this.isBlindMode)
       return this.audio.isMuted || this.blindAssist
-        ? "USE V FOR VISUAL SIGNALS"
-        : "LISTEN FOR IDLE, EDGE, AND PICKUP";
+        ? "Vキーで画面の合図を表示"
+        : "待機・縁・拾い上げの音を聞く";
     if (this.mechanism.phase === "dial")
       return this.mechanism.stage === 0
-        ? "OBSERVE THE FIRST WHEEL"
-        : "FOLLOW THE ACTIVE GATE";
-    if (this.mechanism.phase === "settling")
-      return "STOP AND OBSERVE THE RESPONSE";
+        ? "最初のホイールを観察"
+        : "選択中のゲートを追う";
+    if (this.mechanism.phase === "settling") return "止めて反応を観察";
     if (
       this.mechanism.phase === "tension-ready" ||
       this.mechanism.phase === "tension-test"
     )
-      return "HOLD THE RESISTANCE BAND";
-    if (this.mechanism.phase === "fence-ready") return "SEAT THE FENCE SLOWLY";
+      return "抵抗帯の中で保持";
+    if (this.mechanism.phase === "fence-ready") return "ゆっくりフェンスを着座";
     if (
       this.mechanism.phase === "fence-seated" ||
       this.mechanism.phase === "bolt-test"
     )
-      return "TEST THE BOLT TRAVEL";
-    if (this.mechanism.phase === "jammed") return "RELEASE FORCE AND REASSESS";
-    return "RESET TO REARM THE VAULT";
+      return "ボルトの退避量を確認";
+    if (this.mechanism.phase === "jammed") return "力を抜いて状態を見直す";
+    return "リセットして金庫を再準備";
   }
 
   private get isBlindMode() {
@@ -3641,7 +3659,7 @@ export class VaultWorld {
       ctx.fillStyle = "#4de0c0";
       ctx.font = `700 ${unit * 1.1}px "DM Mono", monospace`;
       ctx.textAlign = "center";
-      ctx.fillText("LOCK BOLT RELEASED", width / 2, height / 2);
+      ctx.fillText("ロックボルト退避済み", width / 2, height / 2);
     } else if (showAssist) {
       const current =
         performance.now() <= this.blindSignalUntil
@@ -3670,7 +3688,7 @@ export class VaultWorld {
       ctx.fillStyle = "#7e9b98";
       ctx.font = `600 ${unit * 0.56}px "DM Mono", monospace`;
       ctx.fillText(
-        `BLIND ASSIST / ${current}   V / HIDE   S / SOUND`,
+        `ブラインド補助 / ${current}   V / 表示   S / 音`,
         width / 2,
         height * 0.59
       );
@@ -3678,7 +3696,7 @@ export class VaultWorld {
       ctx.fillStyle = "rgba(217, 194, 138, 0.16)";
       ctx.font = `600 ${unit * 0.5}px "DM Mono", monospace`;
       ctx.textAlign = "center";
-      ctx.fillText("BLIND / LISTEN", width / 2, height * 0.92);
+      ctx.fillText("ブラインド / 音を聞く", width / 2, height * 0.92);
     }
     ctx.textAlign = "left";
     ctx.restore();

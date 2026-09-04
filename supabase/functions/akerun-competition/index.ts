@@ -1,8 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { replayAkerunTrace } from "./trace-verifier.ts";
 
-const CLIENT_VERSION = "akerun-web-verified-v2";
-const CONTRACT_VERSION = "akerun-play-v2";
+const CLIENT_VERSION = "akerun-web-verified-v3";
+const CONTRACT_VERSION = "akerun-play-v3";
 const MAX_REQUEST_BYTES = 256_000;
 const ALLOWED_ORIGINS = new Set([
   "https://chameleonjp-lab.github.io",
@@ -324,7 +324,10 @@ Deno.serve(async (req: Request) => {
       }
       if (replay.totalDialSteps !== totalDialSteps
         || replay.faultCount !== faultCount
-        || replay.avoidableFalseGateContacts !== falseGateContacts) {
+        || replay.avoidableFalseGateContacts !== falseGateContacts
+        || replay.excessDialSteps !== excessDialSteps
+        || replay.observationAccuracy !== observationAccuracy
+        || replay.score !== score) {
         return json(req, 422, { accepted: false, reason: "trace_metrics_mismatch" });
       }
       const result = await callInternalRpc("akerun_finalize_run_internal", {

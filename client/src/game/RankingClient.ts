@@ -82,8 +82,8 @@ const SUPABASE_PUBLISHABLE_KEY =
 const SUPABASE_MODULE_URL =
   "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.9/+esm";
 export const GAME_SLUG = "akerun";
-export const CLIENT_VERSION = "akerun-web-verified-v2";
-export const CONTRACT_VERSION = "akerun-play-v2";
+export const CLIENT_VERSION = "akerun-web-verified-v3";
+export const CONTRACT_VERSION = "akerun-play-v3";
 export const COMPETITION_FUNCTION = "akerun-competition";
 const REQUEST_TIMEOUT_MS = 8000;
 const CLIENT_INSTANCE_STORAGE_KEY = "akerun-client-instance-v1";
@@ -482,7 +482,7 @@ export class RankingClient {
       typeof limit === "number" && Number.isFinite(limit)
         ? Math.trunc(limit)
         : 10;
-    const response = await client.rpc("get_akerun_ranking_v1", {
+    const response = await client.rpc("get_akerun_ranking_v2", {
       p_limit: Math.max(1, Math.min(100, normalizedLimit)),
     });
     if (response.error) throw response.error;
@@ -497,7 +497,7 @@ export class RankingClient {
     if (!client) throw new Error("ranking client unavailable");
     const day = competitionDayOrNull(competitionDay);
     const response = await client.rpc(
-      "get_akerun_daily_ranking_v1",
+      "get_akerun_daily_ranking_v2",
       day ? { p_competition_day: day } : {}
     );
     if (response.error) throw response.error;

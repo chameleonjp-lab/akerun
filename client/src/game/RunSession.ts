@@ -9,6 +9,11 @@ import {
   type RunTrace,
   type RunTraceKind,
 } from "./RunTrace";
+import {
+  calculateAkerunScore,
+  observationAccuracy,
+  scoreExcessDialSteps,
+} from "../../../shared/akerun/ScoreContract";
 
 export type RunResult = {
   readonly elapsedTime: number;
@@ -55,11 +60,6 @@ const safeNonNegativeInteger = (value: number) =>
     : 0;
 export const MAX_RUN_TIME_SECONDS = 1_800;
 const CHECKPOINT_TIME_EPSILON = 0.001;
-
-const getParDialSteps = (problem: PuzzleDefinition) =>
-  Number.isFinite(problem.parDialSteps) && (problem.parDialSteps ?? 0) >= 0
-    ? (problem.parDialSteps ?? 600)
-    : 600;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -180,35 +180,15 @@ export const calculateRunScore = (
   elapsedTime: number,
   faultCount: number,
   totalDialSteps: number,
-  falseGateContacts: number
-): number => {
-  const parTime =
-    Number.isFinite(problem.parTime) && (problem.parTime ?? 0) >= 0
-      ? (problem.parTime ?? 60)
-      : 60;
-  const parDialSteps = getParDialSteps(problem);
-  const parFaults =
-    Number.isFinite(problem.parFaults) && (problem.parFaults ?? 0) >= 0
-      ? (problem.parFaults ?? 0)
-      : 0;
-  const weight = Number.isFinite(problem.difficultyWeight)
-    ? (problem.difficultyWeight ?? 1)
-    : 1;
-  const safeElapsedTime = Math.min(
-    MAX_RUN_TIME_SECONDS,
-    nonNegative(elapsedTime)
+  avoidableFalseGateContacts: number
+): number =>
+  calculateAkerunScore(
+    problem,
+    Math.min(MAX_RUN_TIME_SECONDS, nonNegative(elapsedTime)),
+    faultCount,
+    totalDialSteps,
+    avoidableFalseGateContacts
   );
-  const safeTotalDialSteps = safeNonNegativeInteger(totalDialSteps);
-  const timePart = Math.round((parTime - safeElapsedTime) * 120);
-  const dialPart = Math.round((parDialSteps - safeTotalDialSteps) * 6);
-  const difficultyPart = Math.round(weight * 1000);
-  const faultPart = Math.round((nonNegative(faultCount) - parFaults) * 650);
-  const falseGatePart = Math.round(nonNegative(falseGateContacts) * 35);
-  return Math.max(
-    0,
-    8000 + difficultyPart + timePart + dialPart - faultPart - falseGatePart
-  );
-};
 
 export class RunSession {
   readonly problem: PuzzleDefinition;
@@ -296,16 +276,15 @@ export class RunSession {
         ? (requestedFaults as number)
         : this.faultCount
     );
-    const parDialSteps = getParDialSteps(this.problem);
-    const excessDialSteps = Math.max(0, this.totalDialSteps - parDialSteps);
+    const excessDialSteps = scoreExcessDialSteps(
+      this.problem,
+      this.totalDialSteps
+    );
     const avoidableContacts = avoidableFalseGateContacts(
       this.problem,
       this.falseGateContacts
     );
-    const observationAccuracy = Math.max(
-      0,
-      Math.min(100, 100 - avoidableContacts * 4 - faultCount * 8)
-    );
+    const accuracy = observationAccuracy(avoidableContacts, faultCount);
     this.result = {
       elapsedTime,
       faultCount,
@@ -313,7 +292,7 @@ export class RunSession {
       excessDialSteps,
       falseGateContacts: this.falseGateContacts,
       avoidableFalseGateContacts: avoidableContacts,
-      observationAccuracy,
+      observationAccuracy: accuracy,
       score: calculateRunScore(
         this.problem,
         elapsedTime,
@@ -348,16 +327,13 @@ export class RunSession {
       elapsedTime: this.result?.elapsedTime ?? this.elapsedTime,
       faultCount: this.result?.faultCount ?? this.faultCount,
       totalDialSteps: this.totalDialSteps,
-      excessDialSteps: Math.max(
-        0,
-        this.totalDialSteps - getParDialSteps(this.problem)
-      ),
+      excessDialSteps: scoreExcessDialSteps(this.problem, this.totalDialSteps),
       falseGateContacts: this.falseGateContacts,
       avoidableFalseGateContacts:
         this.result?.avoidableFalseGateContacts ?? avoidableContacts,
       observationAccuracy:
         this.result?.observationAccuracy ??
-        Math.max(0, 100 - avoidableContacts * 4 - this.faultCount * 8),
+        observationAccuracy(avoidableContacts, this.faultCount),
       score,
       finished: this.finished,
       operationTrace: this.trace.snapshot,

@@ -7,6 +7,7 @@ import {
 } from "./GameDefinitions";
 import { LockMechanism } from "./LockMechanism";
 import { calculateRunScore } from "./RunSession";
+import { scoreTimeReferenceSeconds } from "../../../shared/akerun/ScoreContract";
 
 export const OFFICIAL_PROBLEM_BALANCE_LIMITS = {
   maxBaselineScoreRange: 200,
@@ -23,6 +24,7 @@ export type OfficialProblemBalance = {
   readonly totalPasses: number;
   readonly falseGateCount: number;
   readonly parTime: number;
+  readonly scoreTimeReferenceSeconds: number;
   readonly parDialSteps: number;
   readonly parFaults: number;
   readonly difficulty: ProblemTier;
@@ -169,13 +171,14 @@ export const measureOfficialProblemBalance = (
     totalPasses,
     falseGateCount: puzzle.falseGates.length,
     parTime: definition.parTime,
+    scoreTimeReferenceSeconds: scoreTimeReferenceSeconds(puzzle),
     parDialSteps: definition.parDialSteps,
     parFaults: definition.parFaults,
     difficulty: definition.tier,
     difficultyWeight: definition.difficultyWeight,
     baselineScore: calculateRunScore(
       puzzle,
-      definition.parTime,
+      scoreTimeReferenceSeconds(puzzle),
       definition.parFaults,
       minimumDialSteps,
       0
@@ -302,13 +305,18 @@ const auditProblemShape = (
     }
   }
 
-  const expectedFalseGatesPerWheel = puzzle.vault.personality.falseGatesPerWheel;
-  if (puzzle.falseGates.length !== definition.wheelCount * expectedFalseGatesPerWheel) {
+  const expectedFalseGatesPerWheel =
+    puzzle.vault.personality.falseGatesPerWheel;
+  if (
+    puzzle.falseGates.length !==
+    definition.wheelCount * expectedFalseGatesPerWheel
+  ) {
     addIssue(issues, "FALSE_GATE_COUNT_MISMATCH");
   }
   for (let wheel = 0; wheel < definition.wheelCount; wheel += 1) {
     const count = puzzle.falseGates.filter(gate => gate.wheel === wheel).length;
-    if (count !== expectedFalseGatesPerWheel) addIssue(issues, "FALSE_GATE_PER_WHEEL_MISMATCH");
+    if (count !== expectedFalseGatesPerWheel)
+      addIssue(issues, "FALSE_GATE_PER_WHEEL_MISMATCH");
   }
 
   const route = measureDialRoute(definition.problemId);
@@ -441,7 +449,7 @@ export const renderOfficialProblemBalanceMarkdown = (
 ) => {
   const rows = balances.map(
     balance =>
-      `| ${balance.problemId} | ${balance.problemVersion} | ${vaultLabel(balance.vault)} | ${balance.wheelCount} | ${balance.minimumDialSteps} | ${balance.minimumFalseGateContacts} | ${balance.totalPasses} | ${balance.falseGateCount} | ${balance.parTime} | ${balance.parFaults} | ${tierLabel(balance.difficulty)} | ${balance.baselineScore} |`
+      `| ${balance.problemId} | ${balance.problemVersion} | ${vaultLabel(balance.vault)} | ${balance.wheelCount} | ${balance.minimumDialSteps} | ${balance.minimumFalseGateContacts} | ${balance.totalPasses} | ${balance.falseGateCount} | ${balance.parTime} | ${balance.scoreTimeReferenceSeconds} | ${balance.parFaults} | ${tierLabel(balance.difficulty)} | ${balance.baselineScore} |`
   );
   const status = audit.valid ? "PASS" : "要調整";
   return [
@@ -453,11 +461,11 @@ export const renderOfficialProblemBalanceMarkdown = (
     "",
     `自動監査: **${status}**（開錠可能 ${audit.problems.filter(problem => problem.fullyUnlockable).length}/${audit.problems.length}、基準スコア差 ${audit.scoreRange}点、外れ値 ${audit.outlierProblemIds.length}問）`,
     "",
-    "| 問題ID | Version | 金庫 | ホイール | 最低必要回転数 | 基準偽ゲート接触 | 総通過回数 | 偽ゲート数 | 基準時間(s) | 基準失敗数 | 難易度 | 基準スコア |",
-    "| ------ | ------- | ---- | -------: | -------------: | ---------------: | ---------: | ---------: | ----------: | ---------: | ------ | ---------: |",
+    "| 問題ID | Version | 金庫 | ホイール | 最低必要回転数 | 基準偽ゲート接触 | 総通過回数 | 偽ゲート数 | 機械基準時間(s) | 採点時間基準(s) | 基準失敗数 | 難易度 | 基準スコア |",
+    "| ------ | ------- | ---- | -------: | -------------: | ---------------: | ---------: | ---------: | --------------: | --------------: | ---------: | ------ | ---------: |",
     ...rows,
     "",
-    "基準スコアは問題基準値の補正後に極端な差が出ないよう調整しています。実機プレイ後は、操作速度・観察時間・端末性能を含む実測値で `parTime` を再調整し、問題IDとバージョンを維持したまま改訂します。",
+    "V3の採点時間基準は、機械監査用の `parTime` を10倍した暫定値です。通常の時間項には上限を設け、60秒以内だけ速度ボーナスを加えて人間の観察時間と速度走を分けます。実機プレイ後は操作速度・観察時間・端末性能を含む実測値で時間基準を再調整し、採点契約を変更するときは版を上げます。",
     "",
   ].join("\n");
 };

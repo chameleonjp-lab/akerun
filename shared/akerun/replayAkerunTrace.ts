@@ -1,6 +1,11 @@
 import { createOfficialPuzzle } from "./GameDefinitions.ts";
 import { LockMechanism } from "./LockMechanism.ts";
 import { isCompleteRunTrace, type RunTrace } from "./RunTrace.ts";
+import {
+  calculateAkerunScore,
+  observationAccuracy,
+  scoreExcessDialSteps,
+} from "./ScoreContract.ts";
 
 export type AkerunTraceReplay =
   | {
@@ -11,6 +16,9 @@ export type AkerunTraceReplay =
       readonly faultCount: number;
       readonly falseGateContacts: number;
       readonly avoidableFalseGateContacts: number;
+      readonly excessDialSteps: number;
+      readonly observationAccuracy: number;
+      readonly score: number;
       readonly phase: string;
     }
   | {
@@ -20,7 +28,11 @@ export type AkerunTraceReplay =
 
 const failed = (reason: string): AkerunTraceReplay => ({ ok: false, reason });
 
-const advanceMechanism = (mechanism: LockMechanism, fromMs: number, toMs: number) => {
+const advanceMechanism = (
+  mechanism: LockMechanism,
+  fromMs: number,
+  toMs: number
+) => {
   let cursor = fromMs;
   while (cursor < toMs && !mechanism.opened) {
     const stepMs = Math.min(250, toMs - cursor);
@@ -33,9 +45,13 @@ const advanceMechanism = (mechanism: LockMechanism, fromMs: number, toMs: number
 export const replayAkerunTrace = (
   problemId: string,
   trace: unknown,
-  elapsedTimeMs: number,
+  elapsedTimeMs: number
 ): AkerunTraceReplay => {
-  if (!Number.isInteger(elapsedTimeMs) || elapsedTimeMs < 1000 || elapsedTimeMs > 1_800_000) {
+  if (
+    !Number.isInteger(elapsedTimeMs) ||
+    elapsedTimeMs < 1000 ||
+    elapsedTimeMs > 1_800_000
+  ) {
     return failed("elapsed_time_invalid");
   }
   if (!isCompleteRunTrace(trace)) return failed("trace_invalid");
@@ -54,7 +70,8 @@ export const replayAkerunTrace = (
 
   for (const event of trace.events) {
     const [atMs, kind, value] = event;
-    if (atMs < cursorMs || atMs > elapsedTimeMs) return failed("trace_time_invalid");
+    if (atMs < cursorMs || atMs > elapsedTimeMs)
+      return failed("trace_time_invalid");
     cursorMs = advanceMechanism(mechanism, cursorMs, atMs);
     if (mechanism.opened) return failed("trace_after_open");
     if (kind === "rotate") {
@@ -79,6 +96,10 @@ export const replayAkerunTrace = (
     return failed("trace_did_not_open");
   }
   const unavoidable = Math.max(0, puzzle.parFalseGateContacts ?? 0);
+  const avoidableFalseGateContacts = Math.max(
+    0,
+    falseGateContacts - unavoidable
+  );
   return {
     ok: true,
     elapsedTimeMs,
@@ -86,7 +107,19 @@ export const replayAkerunTrace = (
     totalDialSteps,
     faultCount: mechanism.faultCount,
     falseGateContacts,
-    avoidableFalseGateContacts: Math.max(0, falseGateContacts - unavoidable),
+    avoidableFalseGateContacts,
+    excessDialSteps: scoreExcessDialSteps(puzzle, totalDialSteps),
+    observationAccuracy: observationAccuracy(
+      avoidableFalseGateContacts,
+      mechanism.faultCount
+    ),
+    score: calculateAkerunScore(
+      puzzle,
+      elapsedTimeMs / 1000,
+      mechanism.faultCount,
+      totalDialSteps,
+      avoidableFalseGateContacts
+    ),
     phase: mechanism.phase,
   };
 };

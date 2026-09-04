@@ -65,19 +65,27 @@ describe("official puzzle catalog", () => {
 
   it("starts with beginner problems and advances through unplayed tiers", () => {
     const keys = (problemIds: string[]) =>
-      problemIds.map((problemId) => problemId + "@V1");
-    const beginnerIds = OFFICIAL_PROBLEM_CATALOG
-      .filter((problem) => problem.tier === "beginner")
-      .map((problem) => problem.problemId);
-    const standardIds = OFFICIAL_PROBLEM_CATALOG
-      .filter((problem) => problem.tier === "standard")
-      .map((problem) => problem.problemId);
+      problemIds.map(problemId => problemId + "@V1");
+    const beginnerIds = OFFICIAL_PROBLEM_CATALOG.filter(
+      problem => problem.tier === "beginner"
+    ).map(problem => problem.problemId);
+    const standardIds = OFFICIAL_PROBLEM_CATALOG.filter(
+      problem => problem.tier === "standard"
+    ).map(problem => problem.problemId);
 
     expect(chooseProgressionProblem().problemId).toBe("AKERUN-01-V1");
-    expect(chooseProgressionProblem(keys(["AKERUN-02-V1"])).problemId).toBe("AKERUN-01-V1");
-    expect(chooseProgressionProblem(keys(beginnerIds.slice(0, 1))).problemId).toBe("AKERUN-02-V1");
-    expect(chooseProgressionProblem(keys(beginnerIds)).problemId).toBe("AKERUN-06-V1");
-    expect(chooseProgressionProblem(keys([...beginnerIds, ...standardIds])).problemId).toBe("AKERUN-16-V1");
+    expect(chooseProgressionProblem(keys(["AKERUN-02-V1"])).problemId).toBe(
+      "AKERUN-01-V1"
+    );
+    expect(
+      chooseProgressionProblem(keys(beginnerIds.slice(0, 1))).problemId
+    ).toBe("AKERUN-02-V1");
+    expect(chooseProgressionProblem(keys(beginnerIds)).problemId).toBe(
+      "AKERUN-06-V1"
+    );
+    expect(
+      chooseProgressionProblem(keys([...beginnerIds, ...standardIds])).problemId
+    ).toBe("AKERUN-16-V1");
   });
 
   it("keeps each problem's targets and false gates valid", () => {
@@ -98,6 +106,21 @@ describe("official puzzle catalog", () => {
         expect(gate.position).not.toBe(target);
       });
     });
+  });
+
+  it("keeps problem rewards and wheel-count copy aligned with the catalog", () => {
+    expect(createOfficialPuzzle("AKERUN-01-V1").reward.id).toBe(
+      "aurora-needle"
+    );
+    expect(createOfficialPuzzle("AKERUN-05-V1").reward.id).toBe(
+      "nocturne-port-record"
+    );
+    expect(createOfficialPuzzle("AKERUN-06-V1").reward.id).toBe(
+      "pelagic-salt-compass"
+    );
+    expect(createOfficialPuzzle("AKERUN-01-V1").vault.description).toContain(
+      "4層"
+    );
   });
 
   it("opens every official problem through the existing mechanism", () => {
