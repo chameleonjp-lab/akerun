@@ -19,6 +19,7 @@ describe("calculateScreenLayout", () => {
     const mobileMenuTop = 520 - 10 - (44 * 2 + 6);
 
     expect(workbenchBottom).toBeLessThanOrEqual(mobileMenuTop);
+    expect(layout.compactMechanism).toBeNull();
   });
 
   it("falls back to a finite layout when the surface reports invalid dimensions", () => {
@@ -50,6 +51,19 @@ describe("calculateScreenLayout", () => {
       const workbenchBottom = workbenchTop + Math.min(unit * 9, height * 0.11);
 
       expect(layout.compact).toBe(true);
+      if (height >= 700) {
+        expect(layout.compactMechanism).not.toBeNull();
+        expect(layout.compactMechanism!.y).toBeGreaterThanOrEqual(
+          unit * 10 - 0.001
+        );
+        expect(
+          layout.compactMechanism!.y + layout.compactMechanism!.height
+        ).toBeLessThanOrEqual(
+          layout.dial.y - layout.dial.radius * 1.12 - unit * 0.12 + 0.001
+        );
+      } else {
+        expect(layout.compactMechanism).toBeNull();
+      }
       expect(layout.footerY).toBeGreaterThanOrEqual(
         controlsBottom + unit * 0.7 - 0.001
       );
@@ -73,6 +87,7 @@ describe("calculateScreenLayout", () => {
     expect(
       layout.footerY + Math.min(unit * 10, 844 * 0.115)
     ).toBeLessThanOrEqual(844);
+    expect(layout.compactMechanism).not.toBeNull();
   });
 
   it("retains a separate wide-screen mechanism column", () => {
@@ -81,6 +96,7 @@ describe("calculateScreenLayout", () => {
     expect(layout.compact).toBe(false);
     expect(layout.dial.x).toBeCloseTo(1363 * 0.295, 5);
     expect(layout.internal.x).toBeCloseTo(1363 * 0.61, 5);
+    expect(layout.compactMechanism).toBeNull();
     expect(layout.footerY).toBeCloseTo(936 * 0.855, 5);
   });
 });

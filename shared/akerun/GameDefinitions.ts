@@ -123,6 +123,8 @@ export type OfficialProblemDefinition = {
   readonly problemVersion: string;
   readonly seed: number;
   readonly tier: ProblemTier;
+  /** 初回導線用。ルールと採点は標準のまま、最初の二問だけ観察情報を表示する。 */
+  readonly guided?: boolean;
   readonly vaultId: string;
   readonly wheelCount: number;
   readonly startDirection: TurnDirection;
@@ -525,10 +527,19 @@ const expandBand = (
 const officialDifficulty = (
   tier: ProblemTier,
   personality: VaultPersonality,
+  guided = false,
 ): DifficultyProfile => {
+  const guidedVisibility = guided
+    ? {
+        showExactInstruction: true,
+        showInternalGatePositions: true,
+        showFalseGatePositions: true,
+      }
+    : {};
   if (tier === "beginner") {
     return {
       ...DIFFICULTY_PROFILES.standard,
+      ...guidedVisibility,
       tensionBand: expandBand([0.59, 0.79], personality.toleranceExpansion),
       fenceBand: expandBand([0.6, 0.76], personality.toleranceExpansion),
       tensionHoldSeconds: 0.18,
@@ -539,6 +550,7 @@ const officialDifficulty = (
   if (tier === "advanced") {
     return {
       ...DIFFICULTY_PROFILES.standard,
+      ...guidedVisibility,
       tensionBand: expandBand([0.65, 0.73], personality.toleranceExpansion),
       fenceBand: expandBand([0.645, 0.715], personality.toleranceExpansion),
       tensionHoldSeconds: 0.24,
@@ -548,14 +560,15 @@ const officialDifficulty = (
   }
   return {
     ...DIFFICULTY_PROFILES.standard,
+    ...guidedVisibility,
     tensionBand: expandBand(DIFFICULTY_PROFILES.standard.tensionBand, personality.toleranceExpansion),
     fenceBand: expandBand(DIFFICULTY_PROFILES.standard.fenceBand, personality.toleranceExpansion),
   };
 };
 
 export const OFFICIAL_PROBLEM_CATALOG: readonly OfficialProblemDefinition[] = [
-  { problemId: "AKERUN-01-V1", problemVersion: "V1", seed: 40101, tier: "beginner", vaultId: "museum-aurora", wheelCount: 4, startDirection: "ccw", targets: [18, 61, 35, 82], parTime: 31, parDialSteps: 1198, parFaults: 0, parFalseGateContacts: 24, difficultyWeight: 0.96 },
-  { problemId: "AKERUN-02-V1", problemVersion: "V1", seed: 40102, tier: "beginner", vaultId: "reliquary-nocturne", wheelCount: 4, startDirection: "cw", targets: [72, 24, 57, 9], parTime: 34, parDialSteps: 1201, parFaults: 0, parFalseGateContacts: 35, difficultyWeight: 0.98 },
+  { problemId: "AKERUN-01-V1", problemVersion: "V1", seed: 40101, tier: "beginner", guided: true, vaultId: "museum-aurora", wheelCount: 4, startDirection: "ccw", targets: [18, 61, 35, 82], parTime: 31, parDialSteps: 1198, parFaults: 0, parFalseGateContacts: 24, difficultyWeight: 0.96 },
+  { problemId: "AKERUN-02-V1", problemVersion: "V1", seed: 40102, tier: "beginner", guided: true, vaultId: "reliquary-nocturne", wheelCount: 4, startDirection: "cw", targets: [72, 24, 57, 9], parTime: 34, parDialSteps: 1201, parFaults: 0, parFalseGateContacts: 35, difficultyWeight: 0.98 },
   { problemId: "AKERUN-03-V1", problemVersion: "V1", seed: 40103, tier: "beginner", vaultId: "chronometer-pelagic", wheelCount: 5, startDirection: "ccw", targets: [43, 8, 69, 27, 84], parTime: 40, parDialSteps: 1762, parFaults: 0, parFalseGateContacts: 35, difficultyWeight: 1.0 },
   { problemId: "AKERUN-04-V1", problemVersion: "V1", seed: 40104, tier: "beginner", vaultId: "museum-aurora", wheelCount: 5, startDirection: "cw", targets: [12, 66, 31, 88, 49], parTime: 42, parDialSteps: 1727, parFaults: 0, parFalseGateContacts: 35, difficultyWeight: 1.01 },
   { problemId: "AKERUN-05-V1", problemVersion: "V1", seed: 40105, tier: "beginner", vaultId: "reliquary-nocturne", wheelCount: 6, startDirection: "ccw", targets: [81, 39, 5, 63, 24, 92], parTime: 49, parDialSteps: 2376, parFaults: 0, parFalseGateContacts: 72, difficultyWeight: 1.03 },
@@ -603,7 +616,7 @@ export const createOfficialPuzzle = (problemId: string): PuzzleDefinition => {
     id: problem.problemId,
     seed: problem.seed,
     vault: cloneVault(vault, problem.wheelCount, problem.tier),
-    difficulty: officialDifficulty(problem.tier, vault.personality),
+    difficulty: officialDifficulty(problem.tier, vault.personality, problem.guided),
     stages,
     falseGates: createFalseGates(problem.targets, vault.personality),
     reward: rewardForOfficialProblem(problem.problemId),
