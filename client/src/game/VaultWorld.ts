@@ -184,6 +184,24 @@ export type ScreenLayout = {
   footerY: number;
 };
 
+export type WorkbenchMode =
+  | "tension"
+  | "fence"
+  | "bolt"
+  | "handle"
+  | "recovery"
+  | "notes";
+
+/** フェーズと、作業台が現在表示すべき部品を一対一で対応させる。 */
+export const getWorkbenchMode = (phase: string): WorkbenchMode => {
+  if (phase === "jammed") return "recovery";
+  if (phase === "tension-ready" || phase === "tension-test") return "tension";
+  if (phase === "fence-ready") return "fence";
+  if (phase === "fence-seated" || phase === "bolt-test") return "bolt";
+  if (phase === "boltwork-ready" || phase === "handle-test") return "handle";
+  return "notes";
+};
+
 export const COMPACT_WORKBENCH_ONLY_MAX_HEIGHT = 550;
 
 const INSPECTION_STEPS = [
@@ -903,11 +921,13 @@ export class VaultWorld {
         "停止後の反応を確認してから、テンションへ進みます。";
       return;
     }
-    if (
-      phase === "tension-ready" ||
-      phase === "tension-test" ||
-      phase === "jammed"
-    )
+    if (phase === "jammed") {
+      this.keyboardFocus = "tension";
+      this.mechanism.lastMessage =
+        "噛み込み解除へ焦点を移しました。力を抜く操作で安全に復帰します。";
+      return;
+    }
+    if (phase === "tension-ready" || phase === "tension-test")
       this.keyboardFocus = "tension";
     else if (phase === "fence-ready") this.keyboardFocus = "fence";
     else if (phase === "fence-seated" || phase === "bolt-test")
@@ -951,6 +971,10 @@ export class VaultWorld {
   }
 
   private holdFocusedActuator() {
+    if (this.mechanism.phase === "jammed") {
+      this.setTension(0);
+      return;
+    }
     const tensionBand = this.mechanism.puzzle.difficulty.tensionBand;
     const fenceBand = this.mechanism.puzzle.difficulty.fenceBand;
     if (this.keyboardFocus === "tension")
@@ -2936,26 +2960,27 @@ export class VaultWorld {
     const ctx = this.context;
     const unit = canvasUnit(layout.width, layout.height, layout.compact);
     const phase = this.mechanism.phase;
-    const isTension =
-      phase === "tension-ready" ||
-      phase === "tension-test" ||
-      phase === "jammed";
-    const isFence = phase === "fence-ready";
-    const isBolt = phase === "fence-seated" || phase === "bolt-test";
-    const isHandle = phase === "boltwork-ready" || phase === "handle-test";
-    const title = isTension
-      ? "テンション / 抵抗針"
-      : isFence
-        ? "フェンス / 着座"
-        : isBolt
-          ? "ロックボルト / 退避量"
-          : isHandle
-            ? "扉ハンドル / ボルトワーク"
-            : "接触記録 / 候補メモ";
+    const workbenchMode = getWorkbenchMode(phase);
+    const isTension = workbenchMode === "tension";
+    const isFence = workbenchMode === "fence";
+    const isBolt = workbenchMode === "bolt";
+    const isHandle = workbenchMode === "handle";
+    const title =
+      workbenchMode === "recovery"
+        ? "噛み込み / 復帰"
+        : isTension
+          ? "テンション / 抵抗針"
+          : isFence
+            ? "フェンス / 着座"
+            : isBolt
+              ? "ロックボルト / 退避量"
+              : isHandle
+                ? "扉ハンドル / ボルトワーク"
+                : "接触記録 / 候補メモ";
     this.drawFrame(
       rect,
       "rgba(6, 15, 19, 0.94)",
-      isTension || isFence || isBolt || isHandle
+      workbenchMode === "recovery" || isTension || isFence || isBolt || isHandle
         ? "rgba(77, 224, 192, 0.65)"
         : "rgba(202, 169, 99, 0.42)"
     );
@@ -2995,6 +3020,10 @@ export class VaultWorld {
       rect.y + unit * 1.25
     );
     ctx.restore();
+    if (workbenchMode === "recovery") {
+      this.drawJamRecovery(rect, unit);
+      return;
+    }
     if (!isTension && !isFence && !isBolt) {
       ctx.fillStyle = this.audio.isMuted ? "#d39566" : "#4de0c0";
       ctx.font = `600 ${unit * 0.48}px "DM Mono", monospace`;
@@ -3053,6 +3082,45 @@ export class VaultWorld {
     if (isFence) this.drawFenceLever(rect, unit);
     if (isBolt) this.drawBoltTab(rect, unit);
     if (isHandle) this.drawDoorHandle(rect, unit);
+  }
+
+  /** テンション／フェンスどちらの過負荷でも同じ安全解除操作を示す。 */
+  private drawJamRecovery(rect: Rect, unit: number) {
+    const ctx = this.context;
+    const centerX = rect.x + rect.width * 0.5;
+    const buttonWidth = Math.min(rect.width * 0.62, unit * 15);
+    const buttonHeight = unit * 1.65;
+    const buttonX = centerX - buttonWidth * 0.5;
+    const buttonY = rect.y + rect.height * 0.43;
+    this.roundRect(buttonX, buttonY, buttonWidth, buttonHeight, unit * 0.28);
+    ctx.fillStyle = "rgba(92, 47, 35, 0.94)";
+    ctx.fill();
+    ctx.strokeStyle = "#d39566";
+    ctx.lineWidth = Math.max(1.5, unit * 0.12);
+    ctx.stroke();
+    ctx.fillStyle = "#f0c09b";
+    ctx.font = `700 ${unit * 0.72}px ${JAPANESE_FONT_STACK}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("力を抜いて解除", centerX, buttonY + buttonHeight * 0.5);
+    ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = "#c7d3cf";
+    ctx.font = `500 ${unit * 0.62}px ${JAPANESE_FONT_STACK}`;
+    this.drawWrappedText(
+      "指を離すか、上の表示をタップして離すと、安全な位置へ戻ります。",
+      rect.x + unit * 1.1,
+      rect.y + rect.height * 0.76,
+      rect.width - unit * 2.2,
+      unit * 0.78,
+      2
+    );
+    ctx.textAlign = "left";
+    this.setHitbox("tension-grip", {
+      x: buttonX - unit * 0.8,
+      y: buttonY - unit * 0.8,
+      width: buttonWidth + unit * 1.6,
+      height: buttonHeight + unit * 1.6,
+    });
   }
 
   private drawTensionHandle(rect: Rect, unit: number) {

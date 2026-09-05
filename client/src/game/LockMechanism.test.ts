@@ -507,6 +507,26 @@ describe("LockMechanism", () => {
     expect(lock.faultCount).toBe(0);
   });
 
+  it("フェンスの過負荷も噛み込みになり、解除後は巻き戻し位置へ戻る", () => {
+    const puzzle = createReferencePuzzle("standard");
+    const lock = new LockMechanism(puzzle);
+    alignGates(lock, puzzle);
+
+    const [tensionMinimum, tensionMaximum] = puzzle.difficulty.tensionBand;
+    lock.setTension((tensionMinimum + tensionMaximum) / 2);
+    advance(lock, puzzle.difficulty.tensionHoldSeconds + 0.04);
+    expect(lock.phase).toBe("fence-ready");
+
+    lock.setFenceTravel(0.96);
+    advance(lock, 0.28);
+    expect(lock.phase).toBe("jammed");
+    expect(lock.faultCount).toBe(1);
+    expect(lock.stage).toBe(puzzle.stages.length - 1);
+
+    lock.setTension(0);
+    expect(lock.phase).toBe("dial");
+  });
+
   it("難易度プロファイルにより抵抗帯、座り時間、内部可視性が変わる", () => {
     const observe = createReferencePuzzle("observe").difficulty;
     const standard = createReferencePuzzle("standard").difficulty;
