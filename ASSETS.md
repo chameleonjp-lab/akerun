@@ -4,12 +4,12 @@
 
 ## リポジトリ内の実行時素材
 
-| Name         | Description                                         |        Size | Runtime path                     | Runtime use                                                         |
-| ------------ | --------------------------------------------------- | ----------: | -------------------------------- | ------------------------------------------------------------------- |
-| vault_door   | 金庫扉の正面写真                                    |  960×960 px | `/assets/vault-door.webp`        | Canvas 2Dの円形クリップ内へ下地として描画                           |
-| vault_dial   | 真鍮ダイヤルの写真                                  |  960×960 px | `/assets/vault-dial.webp`        | Canvas 2Dの円形ダイヤル面へ下地として描画                           |
-| lock_cutaway | 6ホイールを基準にした内部機構の断面写真（固定下地） | 1280×853 px | `/assets/lock-cutaway.webp`      | Canvas 2Dの内部機構パネルへ薄く描画。1〜6輪の可変ベクトル機構が正本 |
-| tumbler_mark | 3枚の同心ホイールと開いたゲートを示すブランドマーク |         SVG | `/assets/vault-tumbler-mark.svg` | faviconのみ                                                         |
+| Name         | Description                                          |        Size | Runtime path                     | Runtime use                                                                            |
+| ------------ | ---------------------------------------------------- | ----------: | -------------------------------- | -------------------------------------------------------------------------------------- |
+| vault_door   | 金庫扉の正面写真                                     |  960×960 px | `/assets/vault-door.webp`        | Canvas 2Dの円形クリップ内へ下地として描画                                              |
+| vault_dial   | 真鍮ダイヤルの写真                                   |  960×960 px | `/assets/vault-dial.webp`        | Canvas 2Dの円形ダイヤル面へ下地として描画                                              |
+| lock_cutaway | 6ホイール構成の内部機構の断面写真（6輪問題のみ使用） | 1280×853 px | `/assets/lock-cutaway.webp`      | 6輪問題のパネルへ薄く描画。1〜5輪は写真を隠し、Canvas 2Dの可変ベクトル機構を正本にする |
+| tumbler_mark | 3枚の同心ホイールと開いたゲートを示すブランドマーク  |         SVG | `/assets/vault-tumbler-mark.svg` | faviconのみ                                                                            |
 
 ## 描画オブジェクト
 
