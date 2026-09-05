@@ -507,6 +507,10 @@ describe("LockMechanism", () => {
       }
     }
     expect(lock.phase).toBe("lockout");
+    expect(lock.lastMessage).toContain("RESETを押してください");
+    expect(lock.protocolInstruction).toBe(
+      "安全リンクが拘束。RESETを押してください"
+    );
     expect(lock.snapshot).toMatchObject({
       desiredTorque: 0,
       appliedTorque: 0,
