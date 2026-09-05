@@ -202,6 +202,25 @@ export const getWorkbenchMode = (phase: string): WorkbenchMode => {
   return "notes";
 };
 
+/**
+ * BLIND中のタッチ入力を、現在表示できない作業部品へ対応づける。
+ * ダイヤルと停止待ちはnullにして、横ドラッグのダイヤル操作を維持する。
+ */
+export const getBlindPhysicalInputForPhase = (
+  phase: string
+): PhysicalInput | null => {
+  if (
+    phase === "tension-ready" ||
+    phase === "tension-test" ||
+    phase === "jammed"
+  )
+    return "tension";
+  if (phase === "fence-ready") return "fence";
+  if (phase === "fence-seated" || phase === "bolt-test") return "bolt";
+  if (phase === "boltwork-ready" || phase === "handle-test") return "handle";
+  return null;
+};
+
 export const COMPACT_WORKBENCH_ONLY_MAX_HEIGHT = 550;
 
 const INSPECTION_STEPS = [
@@ -482,6 +501,8 @@ export class VaultWorld {
       getDialLayout: () => this.getLayout().dial,
       getHitboxes: () => this.hitboxes,
       isBlindMode: () => this.isBlindMode,
+      getBlindPhysicalInput: () =>
+        getBlindPhysicalInputForPhase(this.mechanism.phase),
       isInputEnabled: () =>
         (this.sessionActive || this.demoMode) &&
         !this.sessionPaused &&

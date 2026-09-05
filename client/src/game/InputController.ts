@@ -49,6 +49,8 @@ export type InputControllerOptions = {
   readonly getDialLayout: () => InputDialLayout;
   readonly getHitboxes: () => ReadonlyMap<string, InputRect>;
   readonly isBlindMode: () => boolean;
+  /** BLIND中の後半操作。ダイヤル中はnullを返し、従来の横ドラッグを使う。 */
+  readonly getBlindPhysicalInput?: () => PhysicalInput | null;
   readonly isInputEnabled: () => boolean;
   readonly onGesture: () => void;
   readonly onAction: (action: string) => void;
@@ -108,6 +110,14 @@ export class InputController {
       this.options.onGesture();
       const point = this.mapPointer(event);
       if (this.options.isBlindMode()) {
+        const physicalInput = this.options.getBlindPhysicalInput?.() ?? null;
+        if (physicalInput) {
+          this.activePhysicalInput = physicalInput;
+          this.physicalPointerStart = point;
+          this.activePointerId = event.pointerId;
+          this.capturePointer(event.pointerId);
+          return;
+        }
         this.blindPointerX = point.x;
         this.activePointerId = event.pointerId;
         this.capturePointer(event.pointerId);
@@ -157,6 +167,14 @@ export class InputController {
       )
         return;
       const point = this.mapPointer(event);
+      if (this.activePhysicalInput && this.physicalPointerStart) {
+        this.options.onUpdatePhysicalInput(
+          this.activePhysicalInput,
+          this.physicalPointerStart,
+          point
+        );
+        return;
+      }
       if (this.options.isBlindMode() && this.blindPointerX !== null) {
         const requestedSteps = Math.trunc((point.x - this.blindPointerX) / 7);
         const steps = Math.max(-8, Math.min(8, requestedSteps));
@@ -164,14 +182,6 @@ export class InputController {
           this.options.onRotateDial(steps);
           this.blindPointerX += steps * 7;
         }
-        return;
-      }
-      if (this.activePhysicalInput && this.physicalPointerStart) {
-        this.options.onUpdatePhysicalInput(
-          this.activePhysicalInput,
-          this.physicalPointerStart,
-          point
-        );
         return;
       }
       const layout = this.options.getDialLayout();
