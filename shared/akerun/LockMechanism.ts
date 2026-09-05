@@ -442,6 +442,8 @@ export class LockMechanism {
   opened = false;
   /** 直前のrotate呼び出しで通過した偽ゲート数。粗い入力でも中間接触を失わない。 */
   lastRotationFalseGateContacts = 0;
+  /** 直前のrotate呼び出しで最後に触れた偽ゲートの接触深度。感覚フィードバック専用。 */
+  lastRotationFalseGateDepth = 0;
   lastMessage =
     "数字を当てるのではない。ドライブカムがフライを拾う順番を観察してください。";
   private stagePasses = 0;
@@ -498,7 +500,7 @@ export class LockMechanism {
   /** 現在操作中のホイールで触れた、浅い偽ゲート。 */
   get falseGateAtDial() {
     const stage = this.activeStage;
-    if (!stage) return null;
+    if (!stage || this.lastDirection !== stage.direction) return null;
     return (
       this.puzzle.falseGates.find(
         gate => gate.wheel === stage.wheel && gate.position === this.dial
@@ -509,7 +511,12 @@ export class LockMechanism {
   /** 現在のダイヤルから一刻みの位置にある、偽ゲートの縁。 */
   get falseGateEdgeAtDial() {
     const stage = this.activeStage;
-    if (!stage || this.falseGateAtDial) return null;
+    if (
+      !stage ||
+      this.lastDirection !== stage.direction ||
+      this.falseGateAtDial
+    )
+      return null;
     return (
       this.puzzle.falseGates.find(
         gate =>
@@ -524,6 +531,8 @@ export class LockMechanism {
 
   get contactProfile(): ContactProfile {
     if (this.phase !== "dial") return "clear";
+    if (!this.activeStage || this.lastDirection !== this.activeStage.direction)
+      return "clear";
     if (this.falseGateAtDial) return "false-gate";
     if (this.activeStage?.target === this.dial) return "true-gate";
     if (this.falseGateEdgeAtDial) return "false-edge";
@@ -549,13 +558,7 @@ export class LockMechanism {
     if (this.contactProfile === "true-gate")
       return clamp(1 - speedResponse, 0, 1);
     if (this.contactProfile === "false-gate") {
-      return clamp(
-        (this.falseGateAtDial?.depth ?? 0) +
-          personality.falseGateSimilarity * 0.16 -
-          speedResponse * 0.55,
-        0,
-        1
-      );
+      return this.falseGateContactDepth(this.falseGateAtDial?.depth ?? 0);
     }
     if (this.contactProfile === "false-edge") {
       return clamp(
@@ -573,6 +576,19 @@ export class LockMechanism {
         1
       );
     return 0;
+  }
+
+  private falseGateContactDepth(depth: number) {
+    const personality = this.puzzle.vault.personality;
+    const speedResponse =
+      personality.id === "timing"
+        ? this.rotationSpeed * personality.speedSensitivity * 0.12
+        : 0;
+    return clamp(
+      depth + personality.falseGateSimilarity * 0.16 - speedResponse * 0.55,
+      0,
+      1
+    );
   }
 
   /** 金庫固有のホイールパック予圧と、現在の接触から得られる抵抗読み。 */
@@ -836,6 +852,7 @@ export class LockMechanism {
     this.faultCount = snapshot.faultCount;
     this.opened = false;
     this.lastRotationFalseGateContacts = snapshot.lastRotationFalseGateContacts;
+    this.lastRotationFalseGateDepth = 0;
     this.lastMessage = snapshot.lastMessage;
     this.stagePasses = snapshot.stagePasses;
     this.reversalCount = snapshot.reversalCount;
@@ -897,6 +914,7 @@ export class LockMechanism {
 
   rotate(steps: number) {
     this.lastRotationFalseGateContacts = 0;
+    this.lastRotationFalseGateDepth = 0;
     if (
       !Number.isFinite(steps) ||
       steps === 0 ||
@@ -943,6 +961,9 @@ export class LockMechanism {
       const falseGate = this.falseGateAtDial;
       if (falseGate) {
         this.lastRotationFalseGateContacts += 1;
+        this.lastRotationFalseGateDepth = this.falseGateContactDepth(
+          falseGate.depth
+        );
         this.lastMessage = this.puzzle.difficulty.showFalseGatePositions
           ? `輪 ${current.wheel + 1} の浅い偽ゲートに触れました。深さ ${Math.round(falseGate.depth * 100)}%。フェンスは座りません。`
           : "浅い切欠きに触れ、フェンスがわずかに反発しました。音の減衰と戻りを確かめてください。";
@@ -1145,6 +1166,8 @@ export class LockMechanism {
     this.faultCount = 0;
     this.settlingElapsed = 0;
     this.rotationSpeed = 0;
+    this.lastRotationFalseGateContacts = 0;
+    this.lastRotationFalseGateDepth = 0;
     this.opened = false;
     this.lastMessage =
       "ゲートは整列済みです。テンション、フェンス、ロックボルト、扉ハンドルの順に操作してください。";
@@ -1184,6 +1207,7 @@ export class LockMechanism {
     this.rotationSpeed = 0;
     this.faultCount = 0;
     this.lastRotationFalseGateContacts = 0;
+    this.lastRotationFalseGateDepth = 0;
     this.opened = false;
     this.lastMessage =
       "初期化しました。ドライブカムと最初のフライを観察してください。";
