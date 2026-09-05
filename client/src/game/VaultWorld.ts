@@ -1413,14 +1413,26 @@ export class VaultWorld {
       for (let contact = 0; contact < rotationFalseGateContacts; contact += 1)
         this.runSession?.recordFalseGate();
       const falseGate = this.mechanism.falseGateAtDial;
-      if (falseGate) {
+      const rotationDirection: TurnDirection =
+        effectiveSteps > 0 ? "cw" : "ccw";
+      const directionMatchesStage =
+        previousActiveStage?.direction === rotationDirection;
+      if (rotationFalseGateContacts > 0 || falseGate) {
         this.audio.falseGate(
-          this.mechanism.contactDepth,
+          rotationFalseGateContacts > 0
+            ? this.mechanism.lastRotationFalseGateDepth
+            : this.mechanism.contactDepth,
           preload.edgeHardness,
           personality.falseGateSimilarity
         );
         this.haptics.pulse("false-gate");
         this.setBlindSignal("EDGE");
+      } else if (!directionMatchesStage) {
+        // 逆方向ではダイヤルだけが空転する。止まった位置がゲートでも、
+        // 実際の接触イベントがないため候補音・振動を出さない。
+        this.audio.camIdle();
+        this.haptics.pulse("idle");
+        this.setBlindSignal("IDLE");
       } else if (cueStage && this.mechanism.stage === previousStage) {
         if (this.mechanism.contactProfile === "false-edge") {
           this.audio.gateEdge(
