@@ -5,6 +5,7 @@ import {
   getContainedImageRect,
   getCutawayUnderlayAlpha,
   getDemoTurnCount,
+  getWorkbenchMode,
 } from "./VaultWorld";
 
 const compactUnit = (width: number, height: number) =>
@@ -140,6 +141,16 @@ describe("getCutawayUnderlayAlpha", () => {
     expect(getCutawayUnderlayAlpha(5)).toBe(0);
     expect(getCutawayUnderlayAlpha(6)).toBe(0.2);
     expect(getCutawayUnderlayAlpha(2)).toBe(0);
+  });
+});
+
+describe("getWorkbenchMode", () => {
+  it("shows a neutral recovery control after either overload jam", () => {
+    expect(getWorkbenchMode("jammed")).toBe("recovery");
+    expect(getWorkbenchMode("tension-test")).toBe("tension");
+    expect(getWorkbenchMode("fence-ready")).toBe("fence");
+    expect(getWorkbenchMode("bolt-test")).toBe("bolt");
+    expect(getWorkbenchMode("handle-test")).toBe("handle");
   });
 });
 
