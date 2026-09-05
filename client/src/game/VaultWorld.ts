@@ -236,6 +236,15 @@ export const getGuideTextForPhase = (phase: string): string | null => {
   return null;
 };
 
+/**
+ * 成功による段階移行では、前の部品をつかんだ指を次の部品へ持ち越さない。
+ * 噛み込みだけは、指を離すこと自体を復帰操作として扱うため除外する。
+ */
+export const shouldReleaseInputAfterPhaseChange = (
+  previousPhase: string,
+  nextPhase: string
+) => previousPhase !== nextPhase && nextPhase !== "jammed";
+
 export const COMPACT_WORKBENCH_ONLY_MAX_HEIGHT = 550;
 
 const INSPECTION_STEPS = [
@@ -1521,6 +1530,8 @@ export class VaultWorld {
     const phase = this.mechanism.phase;
     if (phase !== this.lastPhysicalPhase) {
       const previous = this.lastPhysicalPhase;
+      if (shouldReleaseInputAfterPhaseChange(previous, phase))
+        this.inputController.release();
       this.lastPhysicalPhase = phase;
       if (phase === "fence-ready") {
         this.audio.tensionCandidate();
