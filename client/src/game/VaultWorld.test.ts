@@ -5,6 +5,7 @@ import {
   getContainedImageRect,
   getBlindPhysicalInputForPhase,
   getCutawayUnderlayAlpha,
+  getGuideTextForPhase,
   getDemoTurnCount,
   getWorkbenchMode,
 } from "./VaultWorld";
@@ -164,6 +165,22 @@ describe("getBlindPhysicalInputForPhase", () => {
     expect(getBlindPhysicalInputForPhase("fence-seated")).toBe("bolt");
     expect(getBlindPhysicalInputForPhase("handle-test")).toBe("handle");
     expect(getBlindPhysicalInputForPhase("jammed")).toBe("tension");
+  });
+});
+
+describe("getGuideTextForPhase", () => {
+  it("keeps the HUD action guide valid through the final actuator stages", () => {
+    expect(getGuideTextForPhase("tension-test")).toBe("抵抗帯の中で保持");
+    expect(getGuideTextForPhase("fence-ready")).toBe("ゆっくりフェンスを着座");
+    expect(getGuideTextForPhase("bolt-test")).toBe("ボルトの退避量を確認");
+    expect(getGuideTextForPhase("boltwork-ready")).toBe(
+      "扉ハンドルでボルトワークを後退"
+    );
+    expect(getGuideTextForPhase("handle-test")).toBe(
+      "扉ハンドルでボルトワークを後退"
+    );
+    expect(getGuideTextForPhase("jammed")).toBe("力を抜いて状態を見直す");
+    expect(getGuideTextForPhase("open")).toBeNull();
   });
 });
 

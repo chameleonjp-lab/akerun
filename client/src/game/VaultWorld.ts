@@ -221,6 +221,19 @@ export const getBlindPhysicalInputForPhase = (
   return null;
 };
 
+/** 後半の各段階で、HUDの案内に表示する次の行動を返す。 */
+export const getGuideTextForPhase = (phase: string): string | null => {
+  if (phase === "tension-ready" || phase === "tension-test")
+    return "抵抗帯の中で保持";
+  if (phase === "fence-ready") return "ゆっくりフェンスを着座";
+  if (phase === "fence-seated" || phase === "bolt-test")
+    return "ボルトの退避量を確認";
+  if (phase === "boltwork-ready" || phase === "handle-test")
+    return "扉ハンドルでボルトワークを後退";
+  if (phase === "jammed") return "力を抜いて状態を見直す";
+  return null;
+};
+
 export const COMPACT_WORKBENCH_ONLY_MAX_HEIGHT = 550;
 
 const INSPECTION_STEPS = [
@@ -4024,18 +4037,8 @@ export class VaultWorld {
         ? "最初のホイールを観察"
         : "選択中のゲートを追う";
     if (this.mechanism.phase === "settling") return "止めて反応を観察";
-    if (
-      this.mechanism.phase === "tension-ready" ||
-      this.mechanism.phase === "tension-test"
-    )
-      return "抵抗帯の中で保持";
-    if (this.mechanism.phase === "fence-ready") return "ゆっくりフェンスを着座";
-    if (
-      this.mechanism.phase === "fence-seated" ||
-      this.mechanism.phase === "bolt-test"
-    )
-      return "ボルトの退避量を確認";
-    if (this.mechanism.phase === "jammed") return "力を抜いて状態を見直す";
+    const phaseGuide = getGuideTextForPhase(this.mechanism.phase);
+    if (phaseGuide) return phaseGuide;
     return "リセットして金庫を再準備";
   }
 
