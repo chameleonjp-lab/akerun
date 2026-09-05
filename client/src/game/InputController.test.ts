@@ -89,6 +89,52 @@ describe("InputController", () => {
     expect(options.onRotateDial).toHaveBeenCalled();
   });
 
+  it("does not let a blocked physical hitbox swallow a dial gesture", () => {
+    const canvas = new TestCanvas();
+    const windowTarget = new EventTarget();
+    const options = {
+      ...baseOptions(
+        canvas,
+        windowTarget,
+        new Map([["tension-grip", { x: 40, y: 40, width: 20, height: 20 }]])
+      ),
+      onBeginPhysicalInput: vi.fn(() => "blocked" as const),
+    };
+    new InputController(options);
+
+    canvas.dispatchEvent(pointerEvent("pointerdown", 1, 50, 50));
+    canvas.dispatchEvent(pointerEvent("pointermove", 1, 70, 50));
+    canvas.dispatchEvent(pointerEvent("pointermove", 1, 50, 70));
+
+    expect(options.onBeginPhysicalInput).toHaveBeenCalledWith("tension-grip");
+    expect(options.onRotateDial).toHaveBeenCalled();
+  });
+
+  it("ignores zero and non-finite wheel deltas instead of rotating", () => {
+    const canvas = new TestCanvas();
+    const windowTarget = new EventTarget();
+    const options = baseOptions(canvas, windowTarget, new Map());
+    new InputController(options);
+
+    const zeroDelta = new Event("wheel", {
+      bubbles: true,
+      cancelable: true,
+    }) as Event & Partial<WheelEvent>;
+    Object.assign(zeroDelta, { deltaY: 0 });
+    canvas.dispatchEvent(zeroDelta);
+
+    const invalidDelta = new Event("wheel", {
+      bubbles: true,
+      cancelable: true,
+    }) as Event & Partial<WheelEvent>;
+    Object.assign(invalidDelta, { deltaY: Number.NaN });
+    canvas.dispatchEvent(invalidDelta);
+
+    expect(options.onRotateDial).not.toHaveBeenCalled();
+    expect(options.onGesture).not.toHaveBeenCalled();
+    expect(zeroDelta.defaultPrevented).toBe(false);
+  });
+
   it("accepts both rotation directions and a drag that starts at the hub", () => {
     const canvas = new TestCanvas();
     const windowTarget = new EventTarget();
