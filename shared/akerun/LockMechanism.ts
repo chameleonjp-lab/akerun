@@ -456,6 +456,7 @@ export class LockMechanism {
 
   constructor(puzzle: PuzzleDefinition = createReferencePuzzle()) {
     this.puzzle = puzzle;
+    this.lastDirection = puzzle.stages[0]?.direction ?? "cw";
     this.tumblerValues = this.createInitialWheelValues();
     this.locked = puzzle.stages.map(() => false);
   }
@@ -1162,7 +1163,7 @@ export class LockMechanism {
       this.locked.length,
       ...this.puzzle.stages.map(() => false)
     );
-    this.lastDirection = "cw";
+    this.lastDirection = this.puzzle.stages[0]?.direction ?? "cw";
     this.phase = "dial";
     this.stagePasses = 0;
     this.reversalCount = 0;

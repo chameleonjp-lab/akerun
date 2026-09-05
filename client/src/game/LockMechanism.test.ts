@@ -55,6 +55,22 @@ const solve = (puzzle: PuzzleDefinition) => {
 };
 
 describe("LockMechanism", () => {
+  it("starts and resets with the problem's first rotation direction", () => {
+    const leftFirst = new LockMechanism(createReferencePuzzle("standard"));
+    expect(leftFirst.lastDirection).toBe("ccw");
+    expect(leftFirst.snapshot.reversalCount).toBe(0);
+
+    leftFirst.rotate(-1);
+    expect(leftFirst.lastDirection).toBe("ccw");
+    leftFirst.rotate(1);
+    expect(leftFirst.lastDirection).toBe("cw");
+    leftFirst.reset();
+    expect(leftFirst.lastDirection).toBe("ccw");
+
+    const rightFirst = new LockMechanism(createOfficialPuzzle("AKERUN-02-V1"));
+    expect(rightFirst.lastDirection).toBe("cw");
+  });
+
   it("同一seedから同一の可変パズルを生成する", () => {
     const first = createPuzzleFromSeed(90210);
     const second = createPuzzleFromSeed(90210);
