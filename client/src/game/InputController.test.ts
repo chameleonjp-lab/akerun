@@ -198,6 +198,47 @@ describe("InputController", () => {
     expect(options.onRotateDial).not.toHaveBeenCalled();
   });
 
+  it("routes blind post-dial touch drags to the active physical input", () => {
+    const canvas = new TestCanvas();
+    const windowTarget = new EventTarget();
+    const options = {
+      ...baseOptions(canvas, windowTarget, new Map()),
+      isBlindMode: () => true,
+      getBlindPhysicalInput: () => "fence" as const,
+    };
+    const controller = new InputController(options);
+
+    canvas.dispatchEvent(pointerEvent("pointerdown", 4, 50, 70));
+    canvas.dispatchEvent(pointerEvent("pointermove", 4, 50, 50));
+    expect(options.onUpdatePhysicalInput).toHaveBeenCalledWith(
+      "fence",
+      { x: 50, y: 70 },
+      { x: 50, y: 50 }
+    );
+    expect(options.onRotateDial).not.toHaveBeenCalled();
+
+    canvas.dispatchEvent(pointerEvent("pointerup", 4, 50, 50));
+    expect(options.onEndPhysicalInput).toHaveBeenCalledWith("fence");
+    controller.dispose();
+  });
+
+  it("retains blind horizontal dial input during the dial phase", () => {
+    const canvas = new TestCanvas();
+    const windowTarget = new EventTarget();
+    const options = {
+      ...baseOptions(canvas, windowTarget, new Map()),
+      isBlindMode: () => true,
+      getBlindPhysicalInput: () => null,
+    };
+    const controller = new InputController(options);
+
+    canvas.dispatchEvent(pointerEvent("pointerdown", 5, 50, 50));
+    canvas.dispatchEvent(pointerEvent("pointermove", 5, 64, 50));
+    expect(options.onRotateDial).toHaveBeenCalledWith(2);
+    expect(options.onUpdatePhysicalInput).not.toHaveBeenCalled();
+    controller.dispose();
+  });
+
   it("releases an active physical input on pointer end and dispose", () => {
     const canvas = new TestCanvas();
     const windowTarget = new EventTarget();

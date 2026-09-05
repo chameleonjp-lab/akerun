@@ -3,6 +3,7 @@ import {
   COMPACT_WORKBENCH_ONLY_MAX_HEIGHT,
   calculateScreenLayout,
   getContainedImageRect,
+  getBlindPhysicalInputForPhase,
   getCutawayUnderlayAlpha,
   getDemoTurnCount,
   getWorkbenchMode,
@@ -151,6 +152,18 @@ describe("getWorkbenchMode", () => {
     expect(getWorkbenchMode("fence-ready")).toBe("fence");
     expect(getWorkbenchMode("bolt-test")).toBe("bolt");
     expect(getWorkbenchMode("handle-test")).toBe("handle");
+  });
+});
+
+describe("getBlindPhysicalInputForPhase", () => {
+  it("keeps blind dial input horizontal until the post-dial phase", () => {
+    expect(getBlindPhysicalInputForPhase("dial")).toBeNull();
+    expect(getBlindPhysicalInputForPhase("settling")).toBeNull();
+    expect(getBlindPhysicalInputForPhase("tension-ready")).toBe("tension");
+    expect(getBlindPhysicalInputForPhase("fence-ready")).toBe("fence");
+    expect(getBlindPhysicalInputForPhase("fence-seated")).toBe("bolt");
+    expect(getBlindPhysicalInputForPhase("handle-test")).toBe("handle");
+    expect(getBlindPhysicalInputForPhase("jammed")).toBe("tension");
   });
 });
 
