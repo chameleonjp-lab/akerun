@@ -169,8 +169,9 @@ describe("getCutawayUnderlayAlpha", () => {
 });
 
 describe("getWorkbenchMode", () => {
-  it("shows a neutral recovery control after either overload jam", () => {
+  it("maps overload phases to distinct workbench controls", () => {
     expect(getWorkbenchMode("jammed")).toBe("recovery");
+    expect(getWorkbenchMode("lockout")).toBe("lockout");
     expect(getWorkbenchMode("tension-test")).toBe("tension");
     expect(getWorkbenchMode("fence-ready")).toBe("fence");
     expect(getWorkbenchMode("bolt-test")).toBe("bolt");

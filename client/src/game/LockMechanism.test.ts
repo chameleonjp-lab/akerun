@@ -507,6 +507,27 @@ describe("LockMechanism", () => {
       }
     }
     expect(lock.phase).toBe("lockout");
+    expect(lock.snapshot).toMatchObject({
+      desiredTorque: 0,
+      appliedTorque: 0,
+      desiredFenceTravel: 0,
+      fenceTravel: 0,
+      desiredBoltTravel: 0,
+      boltTravel: 0,
+      desiredHandleTurn: 0,
+      handleTurn: 0,
+      tensionHold: 0,
+      fenceHold: 0,
+      boltHold: 0,
+      handleHold: 0,
+      overloadHold: 0,
+    });
+    expect(
+      new LockMechanism(puzzle).restore({
+        ...lock.snapshot,
+        desiredTorque: 0.96,
+      })
+    ).toBe(false);
     lock.reset();
     expect(lock.phase).toBe("dial");
     expect(lock.faultCount).toBe(0);
