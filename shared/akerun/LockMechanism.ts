@@ -267,7 +267,13 @@ export const isCoherentLockMechanismSnapshot = (
   // ロックアウトはテンション／フェンス検証後にしか発生しない。
   // stageを飛ばした保存値を再開可能にすると、機構状態と操作履歴の
   // 対応が崩れる。
-  if (value.phase === "lockout" && value.stage !== stageCount) return false;
+  if (
+    value.phase === "lockout" &&
+    (value.stage !== stageCount ||
+      value.faultCount < puzzle.difficulty.maxFaults ||
+      !hasNoActuatorState(value))
+  )
+    return false;
 
   if (value.phase === "settling") {
     if (
@@ -1286,14 +1292,7 @@ export class LockMechanism {
     }
   }
 
-  private registerJam(message: string, rollback: boolean) {
-    this.faultCount += 1;
-    if (this.faultCount >= this.puzzle.difficulty.maxFaults) {
-      this.phase = "lockout";
-      this.lastMessage = `${message} 安全リンクが拘束しました。RESETで再開してください。`;
-      return;
-    }
-    if (rollback) this.rollbackStages();
+  private clearActuatorState() {
     this.desiredTorque = 0;
     this.appliedTorque = 0;
     this.desiredFenceTravel = 0;
@@ -1307,6 +1306,17 @@ export class LockMechanism {
     this.boltHold = 0;
     this.handleHold = 0;
     this.overloadHold = 0;
+  }
+
+  private registerJam(message: string, rollback: boolean) {
+    this.faultCount += 1;
+    this.clearActuatorState();
+    if (this.faultCount >= this.puzzle.difficulty.maxFaults) {
+      this.phase = "lockout";
+      this.lastMessage = `${message} 安全リンクが拘束しました。RESETで再開してください。`;
+      return;
+    }
+    if (rollback) this.rollbackStages();
     this.phase = "jammed";
     this.lastMessage = `${message} 力を抜くと安全に復帰できます。`;
   }

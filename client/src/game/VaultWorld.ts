@@ -192,11 +192,13 @@ export type WorkbenchMode =
   | "bolt"
   | "handle"
   | "recovery"
+  | "lockout"
   | "notes";
 
 /** フェーズと、作業台が現在表示すべき部品を一対一で対応させる。 */
 export const getWorkbenchMode = (phase: string): WorkbenchMode => {
   if (phase === "jammed") return "recovery";
+  if (phase === "lockout") return "lockout";
   if (phase === "tension-ready" || phase === "tension-test") return "tension";
   if (phase === "fence-ready") return "fence";
   if (phase === "fence-seated" || phase === "bolt-test") return "bolt";
@@ -3012,24 +3014,29 @@ export class VaultWorld {
     const isFence = workbenchMode === "fence";
     const isBolt = workbenchMode === "bolt";
     const isHandle = workbenchMode === "handle";
+    const isLockout = workbenchMode === "lockout";
     const title =
       workbenchMode === "recovery"
         ? "噛み込み / 復帰"
-        : isTension
-          ? "テンション / 抵抗針"
-          : isFence
-            ? "フェンス / 着座"
-            : isBolt
-              ? "ロックボルト / 退避量"
-              : isHandle
-                ? "扉ハンドル / ボルトワーク"
-                : "接触記録 / 候補メモ";
+        : isLockout
+          ? "安全停止 / RESET"
+          : isTension
+            ? "テンション / 抵抗針"
+            : isFence
+              ? "フェンス / 着座"
+              : isBolt
+                ? "ロックボルト / 退避量"
+                : isHandle
+                  ? "扉ハンドル / ボルトワーク"
+                  : "接触記録 / 候補メモ";
     this.drawFrame(
       rect,
       "rgba(6, 15, 19, 0.94)",
       workbenchMode === "recovery" || isTension || isFence || isBolt || isHandle
         ? "rgba(77, 224, 192, 0.65)"
-        : "rgba(202, 169, 99, 0.42)"
+        : isLockout
+          ? "rgba(211, 149, 102, 0.86)"
+          : "rgba(202, 169, 99, 0.42)"
     );
     ctx.fillStyle = "#e8dfc4";
     ctx.font = `700 ${unit * 0.67}px "DM Mono", monospace`;
@@ -3052,13 +3059,16 @@ export class VaultWorld {
     const holdLabel =
       phase === "jammed"
         ? "力を抜いて復帰"
-        : holdingPhase
-          ? this.getActuatorHoldLabel(holdProgress)
-          : isTension || isFence || isBolt || isHandle
-            ? "位置を探す"
-            : "記録待ち";
+        : phase === "lockout"
+          ? "RESETで再開"
+          : holdingPhase
+            ? this.getActuatorHoldLabel(holdProgress)
+            : isTension || isFence || isBolt || isHandle
+              ? "位置を探す"
+              : "記録待ち";
     ctx.save();
-    ctx.fillStyle = phase === "jammed" ? "#d39566" : "#4de0c0";
+    ctx.fillStyle =
+      phase === "jammed" || phase === "lockout" ? "#d39566" : "#4de0c0";
     ctx.font = `600 ${unit * 0.5}px "DM Mono", monospace`;
     ctx.textAlign = "right";
     ctx.fillText(
@@ -3069,6 +3079,10 @@ export class VaultWorld {
     ctx.restore();
     if (workbenchMode === "recovery") {
       this.drawJamRecovery(rect, unit);
+      return;
+    }
+    if (isLockout) {
+      this.drawLockoutPanel(rect, unit);
       return;
     }
     if (!isTension && !isFence && !isBolt) {
@@ -3185,6 +3199,26 @@ export class VaultWorld {
       width: buttonWidth + unit * 1.6,
       height: buttonHeight + unit * 1.6,
     });
+  }
+
+  private drawLockoutPanel(rect: Rect, unit: number) {
+    const ctx = this.context;
+    const centerX = rect.x + rect.width * 0.5;
+    ctx.fillStyle = "#d39566";
+    ctx.font = `700 ${unit * 1.0}px ${JAPANESE_FONT_STACK}`;
+    ctx.textAlign = "center";
+    ctx.fillText("安全停止", centerX, rect.y + rect.height * 0.42);
+    ctx.fillStyle = "#c7d3cf";
+    ctx.font = `500 ${unit * 0.64}px ${JAPANESE_FONT_STACK}`;
+    this.drawWrappedText(
+      "過負荷が上限に達しました。RESETで最初から再開してください。",
+      rect.x + unit * 1.1,
+      rect.y + rect.height * 0.68,
+      rect.width - unit * 2.2,
+      unit * 0.78,
+      2
+    );
+    ctx.textAlign = "left";
   }
 
   private drawTensionHandle(rect: Rect, unit: number) {
