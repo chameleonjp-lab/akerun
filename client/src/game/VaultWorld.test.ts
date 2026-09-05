@@ -8,6 +8,7 @@ import {
   getGuideTextForPhase,
   getDemoTurnCount,
   getWorkbenchMode,
+  shouldAdvanceRunClock,
   shouldReleaseInputAfterPhaseChange,
 } from "./VaultWorld";
 
@@ -123,7 +124,19 @@ describe("shouldReleaseInputAfterPhaseChange", () => {
     expect(shouldReleaseInputAfterPhaseChange("fence-ready", "jammed")).toBe(
       false
     );
+    expect(shouldReleaseInputAfterPhaseChange("fence-ready", "lockout")).toBe(
+      true
+    );
     expect(shouldReleaseInputAfterPhaseChange("dial", "dial")).toBe(false);
+  });
+});
+
+describe("shouldAdvanceRunClock", () => {
+  it("stops the run clock while safety lockout waits for RESET", () => {
+    expect(shouldAdvanceRunClock(true, false, "tension-test")).toBe(true);
+    expect(shouldAdvanceRunClock(true, false, "lockout")).toBe(false);
+    expect(shouldAdvanceRunClock(false, false, "dial")).toBe(false);
+    expect(shouldAdvanceRunClock(true, true, "open")).toBe(false);
   });
 });
 
@@ -203,6 +216,7 @@ describe("getGuideTextForPhase", () => {
       "扉ハンドルでボルトワークを後退"
     );
     expect(getGuideTextForPhase("jammed")).toBe("力を抜いて状態を見直す");
+    expect(getGuideTextForPhase("lockout")).toBe("安全停止。RESETを押す");
     expect(getGuideTextForPhase("open")).toBeNull();
   });
 });

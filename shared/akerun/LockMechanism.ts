@@ -873,7 +873,7 @@ export class LockMechanism {
       return `ハンドルを保持し、扉側ボルトが受け金から抜けるまで回す（必要回転 ${Math.round(this.requiredHandleTurn * 100)}%）`;
     if (this.phase === "jammed") return "力を抜いてから、整列の仮説を見直す";
     if (this.phase === "lockout")
-      return "安全リンクが拘束。RESETで最初から再開";
+      return "安全リンクが拘束。RESETを押してください";
     return "扉側ボルトが退避。ボルトワーク解放済み";
   }
 
@@ -1313,7 +1313,7 @@ export class LockMechanism {
     this.clearActuatorState();
     if (this.faultCount >= this.puzzle.difficulty.maxFaults) {
       this.phase = "lockout";
-      this.lastMessage = `${message} 安全リンクが拘束しました。RESETで再開してください。`;
+      this.lastMessage = `${message} 安全リンクが拘束しました。RESETを押してください。`;
       return;
     }
     if (rollback) this.rollbackStages();

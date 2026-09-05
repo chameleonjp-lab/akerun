@@ -235,6 +235,7 @@ export const getGuideTextForPhase = (phase: string): string | null => {
   if (phase === "boltwork-ready" || phase === "handle-test")
     return "扉ハンドルでボルトワークを後退";
   if (phase === "jammed") return "力を抜いて状態を見直す";
+  if (phase === "lockout") return "安全停止。RESETを押す";
   return null;
 };
 
@@ -246,6 +247,13 @@ export const shouldReleaseInputAfterPhaseChange = (
   previousPhase: string,
   nextPhase: string
 ) => previousPhase !== nextPhase && nextPhase !== "jammed";
+
+/** 安全停止後は時計を進めず、RESETを押すまで終端状態を保つ。 */
+export const shouldAdvanceRunClock = (
+  sessionActive: boolean,
+  opened: boolean,
+  phase: string
+) => sessionActive && !opened && phase !== "lockout";
 
 export const COMPACT_WORKBENCH_ONLY_MAX_HEIGHT = 550;
 
@@ -563,7 +571,13 @@ export class VaultWorld {
       Number.isFinite(gameDelta) && gameDelta > 0 ? gameDelta : 0;
     // The timer and the deterministic mechanism now advance over the same interval.
     // This keeps the server replay aligned with the browser at frame boundaries.
-    if (this.sessionActive && !this.mechanism.opened) {
+    if (
+      shouldAdvanceRunClock(
+        this.sessionActive,
+        this.mechanism.opened,
+        this.mechanism.phase
+      )
+    ) {
       const trackedDelta = Math.min(
         safeDelta,
         Math.max(0, MAX_RUN_TIME_SECONDS - this.runElapsed)
@@ -1558,6 +1572,10 @@ export class VaultWorld {
         this.haptics.pulse("fault");
         this.setBlindSignal("JAM");
       }
+      if (phase === "lockout") {
+        this.haptics.pulse("fault");
+        this.setBlindSignal("JAM");
+      }
       if (previous === "tension-test" && phase === "tension-ready")
         this.audio.tensionStop();
       if (
@@ -1570,6 +1588,7 @@ export class VaultWorld {
           "boltwork-ready",
           "handle-test",
           "jammed",
+          "lockout",
           "open",
         ].includes(phase)
       )
@@ -3060,7 +3079,9 @@ export class VaultWorld {
       phase === "jammed"
         ? "力を抜いて復帰"
         : phase === "lockout"
-          ? "RESETで再開"
+          ? this.canRecordRun()
+            ? "RESETで終了"
+            : "RESETで再開"
           : holdingPhase
             ? this.getActuatorHoldLabel(holdProgress)
             : isTension || isFence || isBolt || isHandle
@@ -3204,6 +3225,9 @@ export class VaultWorld {
   private drawLockoutPanel(rect: Rect, unit: number) {
     const ctx = this.context;
     const centerX = rect.x + rect.width * 0.5;
+    const detail = this.canRecordRun()
+      ? "安全停止です。RESETでこの公式プレイを終了し、記録を破棄します。"
+      : "安全停止です。RESETで最初から再開できます。";
     ctx.fillStyle = "#d39566";
     ctx.font = `700 ${unit * 1.0}px ${JAPANESE_FONT_STACK}`;
     ctx.textAlign = "center";
@@ -3211,7 +3235,7 @@ export class VaultWorld {
     ctx.fillStyle = "#c7d3cf";
     ctx.font = `500 ${unit * 0.64}px ${JAPANESE_FONT_STACK}`;
     this.drawWrappedText(
-      "過負荷が上限に達しました。RESETで最初から再開してください。",
+      `過負荷が上限に達しました。${detail}`,
       rect.x + unit * 1.1,
       rect.y + rect.height * 0.68,
       rect.width - unit * 2.2,
@@ -4111,6 +4135,10 @@ export class VaultWorld {
         ? "最初のホイールを観察"
         : "選択中のゲートを追う";
     if (this.mechanism.phase === "settling") return "止めて反応を観察";
+    if (this.mechanism.phase === "lockout")
+      return this.canRecordRun()
+        ? "RESETでこの公式プレイを終了"
+        : "RESETで最初から再開";
     const phaseGuide = getGuideTextForPhase(this.mechanism.phase);
     if (phaseGuide) return phaseGuide;
     return "リセットして金庫を再準備";
