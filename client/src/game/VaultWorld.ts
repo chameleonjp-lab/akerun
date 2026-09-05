@@ -65,6 +65,8 @@ type ActuatorMeterOptions = {
   readonly band?: readonly [number, number];
   readonly threshold?: number;
   readonly holdProgress?: number;
+  /** 数値帯を隠す難易度でも、保持判定へ進める状態だけを色で示す。 */
+  readonly stable?: boolean;
   /** observeのみ正確な安定帯を表示し、標準以上では反応から探す余地を残す。 */
   readonly showBand?: boolean;
 };
@@ -3040,7 +3042,7 @@ export class VaultWorld {
       phase === "jammed"
         ? "力を抜いて復帰"
         : holdingPhase
-          ? `保持 ${Math.round(holdProgress * 100)}%`
+          ? this.getActuatorHoldLabel(holdProgress)
           : isTension || isFence || isBolt || isHandle
             ? "位置を探す"
             : "記録待ち";
@@ -3116,6 +3118,23 @@ export class VaultWorld {
     if (isFence) this.drawFenceLever(rect, unit);
     if (isBolt) this.drawBoltTab(rect, unit);
     if (isHandle) this.drawDoorHandle(rect, unit);
+  }
+
+  private getActuatorHoldLabel(holdProgress: number) {
+    const stable =
+      this.mechanism.phase === "tension-test"
+        ? this.mechanism.tensionStable
+        : this.mechanism.phase === "fence-ready"
+          ? this.mechanism.fenceStable
+          : this.mechanism.phase === "bolt-test"
+            ? this.mechanism.boltStable
+            : this.mechanism.phase === "handle-test"
+              ? this.mechanism.handleStable
+              : false;
+    const progress = Math.round(clamp(holdProgress, 0, 1) * 100);
+    if (stable) return `帯域内 / 保持 ${progress}%`;
+    if (progress > 0) return `要調整 / 保持 ${progress}%`;
+    return "位置を調整";
   }
 
   /** テンション／フェンスどちらの過負荷でも同じ安全解除操作を示す。 */
@@ -3194,6 +3213,7 @@ export class VaultWorld {
       {
         band: this.mechanism.puzzle.difficulty.tensionBand,
         holdProgress: this.mechanism.tensionHoldProgress,
+        stable: this.mechanism.tensionStable,
         showBand: this.mechanism.puzzle.difficulty.showInternalGatePositions,
       }
     );
@@ -3228,6 +3248,7 @@ export class VaultWorld {
       {
         band: this.mechanism.puzzle.difficulty.fenceBand,
         holdProgress: this.mechanism.fenceHoldProgress,
+        stable: this.mechanism.fenceStable,
         showBand: this.mechanism.puzzle.difficulty.showInternalGatePositions,
       }
     );
@@ -3286,6 +3307,7 @@ export class VaultWorld {
       {
         threshold: 0.72,
         holdProgress: this.mechanism.boltHoldProgress,
+        stable: this.mechanism.boltStable,
       }
     );
     const tabX = x + trackWidth * travel;
@@ -3351,6 +3373,7 @@ export class VaultWorld {
       {
         threshold: this.mechanism.requiredHandleTurn,
         holdProgress: this.mechanism.handleHoldProgress,
+        stable: this.mechanism.handleStable,
       }
     );
     ctx.fillStyle = "#8da4a5";
@@ -3424,18 +3447,24 @@ export class VaultWorld {
       ctx.stroke();
     }
     ctx.strokeStyle =
-      state === "candidate" || state === "seated"
+      options.stable === true
         ? "#4de0c0"
-        : state === "jammed"
-          ? "#d39566"
-          : "#7e9b98";
+        : options.stable === false
+          ? "#d9c28a"
+          : state === "candidate" || state === "seated"
+            ? "#4de0c0"
+            : state === "jammed"
+              ? "#d39566"
+              : "#7e9b98";
     ctx.stroke();
     if (options.holdProgress !== undefined) {
       const progress = clamp(options.holdProgress, 0, 1);
       ctx.fillStyle =
         state === "jammed"
           ? "rgba(211, 149, 102, 0.72)"
-          : "rgba(77, 224, 192, 0.82)";
+          : options.stable === false
+            ? "rgba(217, 194, 138, 0.72)"
+            : "rgba(77, 224, 192, 0.82)";
       this.roundRect(
         x + resolvedUnit * 0.18,
         y + resolvedUnit * 0.07,
