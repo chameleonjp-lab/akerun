@@ -132,13 +132,12 @@ export class InputController {
       )) {
         if (!contains(rect, point)) continue;
         const physicalInput = this.options.onBeginPhysicalInput(action);
+        if (physicalInput === "blocked") continue;
         if (physicalInput !== "not-physical") {
-          if (physicalInput !== "blocked") {
-            this.activePhysicalInput = physicalInput;
-            this.physicalPointerStart = point;
-            this.activePointerId = event.pointerId;
-            this.capturePointer(event.pointerId);
-          }
+          this.activePhysicalInput = physicalInput;
+          this.physicalPointerStart = point;
+          this.activePointerId = event.pointerId;
+          this.capturePointer(event.pointerId);
           return;
         }
         this.options.onAction(action);
@@ -224,6 +223,9 @@ export class InputController {
 
     const onWheel = (event: WheelEvent) => {
       if (!this.options.isInputEnabled()) return;
+      // 横スクロールや合成イベントではdeltaYが0になることがある。
+      // それを左回転へ丸めると、操作していないのにダイヤルが動く。
+      if (!Number.isFinite(event.deltaY) || event.deltaY === 0) return;
       event.preventDefault();
       this.options.onGesture();
       const magnitude = Math.min(
