@@ -8,6 +8,7 @@ import {
   getGuideTextForPhase,
   getDemoTurnCount,
   getWorkbenchMode,
+  shouldReleaseInputAfterPhaseChange,
 } from "./VaultWorld";
 
 const compactUnit = (width: number, height: number) =>
@@ -102,6 +103,27 @@ describe("calculateScreenLayout", () => {
     expect(layout.internal.x).toBeCloseTo(1363 * 0.61, 5);
     expect(layout.compactMechanism).toBeNull();
     expect(layout.footerY).toBeCloseTo(936 * 0.855, 5);
+  });
+});
+
+describe("shouldReleaseInputAfterPhaseChange", () => {
+  it("releases the previous gesture when a successful phase changes the part", () => {
+    expect(
+      shouldReleaseInputAfterPhaseChange("tension-test", "fence-ready")
+    ).toBe(true);
+    expect(
+      shouldReleaseInputAfterPhaseChange("bolt-test", "boltwork-ready")
+    ).toBe(true);
+    expect(shouldReleaseInputAfterPhaseChange("handle-test", "open")).toBe(
+      true
+    );
+  });
+
+  it("keeps jam recovery under the player's release control", () => {
+    expect(shouldReleaseInputAfterPhaseChange("fence-ready", "jammed")).toBe(
+      false
+    );
+    expect(shouldReleaseInputAfterPhaseChange("dial", "dial")).toBe(false);
   });
 });
 
