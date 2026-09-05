@@ -353,6 +353,44 @@ describe("LockMechanism", () => {
     expect(lock.lastMessage).toContain("偽ゲート");
   });
 
+  it("粗い回転で途中の偽ゲートに触れた場合も、接触深度をフィードバック用に保持する", () => {
+    const puzzle = createReferencePuzzle("observe");
+    const lock = new LockMechanism(puzzle);
+    const stage = puzzle.stages[0];
+    const falseGate = puzzle.falseGates.find(
+      gate => gate.wheel === stage.wheel
+    );
+    expect(falseGate).toBeDefined();
+
+    const direction = stage.direction === "cw" ? 1 : -1;
+    lock.dial = (falseGate!.position - direction + 100) % 100;
+    lock.rotate(direction * 3);
+
+    expect(lock.dial).not.toBe(falseGate!.position);
+    expect(lock.lastRotationFalseGateContacts).toBe(1);
+    expect(lock.lastRotationFalseGateDepth).toBeGreaterThan(0);
+    expect(lock.contactProfile).toBe("clear");
+  });
+
+  it("逆方向でゲート位置に止まっても、実接触として表示しない", () => {
+    const puzzle = createReferencePuzzle("observe");
+    const lock = new LockMechanism(puzzle);
+    const stage = puzzle.stages[0];
+    const falseGate = puzzle.falseGates.find(
+      gate => gate.wheel === stage.wheel
+    );
+    expect(falseGate).toBeDefined();
+
+    const wrongDirection = stage.direction === "cw" ? -1 : 1;
+    lock.dial = (falseGate!.position - wrongDirection + 100) % 100;
+    lock.rotate(wrongDirection);
+
+    expect(lock.dial).toBe(falseGate!.position);
+    expect(lock.lastRotationFalseGateContacts).toBe(0);
+    expect(lock.contactProfile).toBe("clear");
+    expect(lock.lastMessage).toContain("空転");
+  });
+
   it("偽ゲートの一刻み手前と後ろを、通常の空転と区別できる", () => {
     const puzzle = createReferencePuzzle("observe");
     const lock = new LockMechanism(puzzle);
