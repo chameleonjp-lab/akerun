@@ -697,6 +697,26 @@ export class LockMechanism {
     return this.holdProgress(this.handleHold, 0.2);
   }
 
+  /**
+   * 現在の入力が、保持判定へ進める状態かを返す。
+   * 数値の正解帯そのものは公開せず、作業台の反応表示だけが利用する。
+   */
+  get tensionStable(): boolean {
+    return this.phase === "tension-test" && this.isTensionStable();
+  }
+
+  get fenceStable(): boolean {
+    return this.phase === "fence-ready" && this.isFenceStable();
+  }
+
+  get boltStable(): boolean {
+    return this.phase === "bolt-test" && this.isBoltStable();
+  }
+
+  get handleStable(): boolean {
+    return this.phase === "handle-test" && this.isHandleStable();
+  }
+
   get resistanceState(): ResistanceState {
     if (this.phase === "jammed" || this.phase === "lockout") return "jammed";
     if (
@@ -719,6 +739,33 @@ export class LockMechanism {
 
   private holdProgress(value: number, duration: number): number {
     return duration > 0 ? clamp(value / duration, 0, 1) : 0;
+  }
+
+  private isTensionStable() {
+    const [minimum, maximum] = this.puzzle.difficulty.tensionBand;
+    return (
+      this.desiredTorque >= minimum &&
+      this.desiredTorque <= maximum &&
+      this.appliedTorque >= minimum
+    );
+  }
+
+  private isFenceStable() {
+    const [minimum, maximum] = this.puzzle.difficulty.fenceBand;
+    return (
+      this.desiredFenceTravel >= minimum &&
+      this.desiredFenceTravel <= maximum &&
+      this.fenceTravel >= minimum
+    );
+  }
+
+  private isBoltStable() {
+    return this.desiredBoltTravel >= 0.72 && this.boltTravel >= 0.72;
+  }
+
+  private isHandleStable() {
+    const required = this.requiredHandleTurn;
+    return this.desiredHandleTurn >= required && this.handleTurn >= required;
   }
 
   get snapshot(): LockMechanismSnapshot {
@@ -1149,11 +1196,7 @@ export class LockMechanism {
   }
 
   private advanceTension(delta: number) {
-    const [minimum, maximum] = this.puzzle.difficulty.tensionBand;
-    const stable =
-      this.desiredTorque >= minimum &&
-      this.desiredTorque <= maximum &&
-      this.appliedTorque >= minimum;
+    const stable = this.isTensionStable();
     this.tensionHold = stable
       ? this.tensionHold + delta
       : Math.max(0, this.tensionHold - delta * 2);
@@ -1189,11 +1232,7 @@ export class LockMechanism {
   }
 
   private advanceFence(delta: number) {
-    const [minimum, maximum] = this.puzzle.difficulty.fenceBand;
-    const stable =
-      this.desiredFenceTravel >= minimum &&
-      this.desiredFenceTravel <= maximum &&
-      this.fenceTravel >= minimum;
+    const stable = this.isFenceStable();
     this.fenceHold = stable
       ? this.fenceHold + delta
       : Math.max(0, this.fenceHold - delta * 2);
@@ -1218,7 +1257,7 @@ export class LockMechanism {
   }
 
   private advanceBolt(delta: number) {
-    const stable = this.desiredBoltTravel >= 0.72 && this.boltTravel >= 0.72;
+    const stable = this.isBoltStable();
     this.boltHold = stable
       ? this.boltHold + delta
       : Math.max(0, this.boltHold - delta * 2);
@@ -1233,9 +1272,7 @@ export class LockMechanism {
   }
 
   private advanceHandle(delta: number) {
-    const required = this.requiredHandleTurn;
-    const stable =
-      this.desiredHandleTurn >= required && this.handleTurn >= required;
+    const stable = this.isHandleStable();
     this.handleHold = stable
       ? this.handleHold + delta
       : Math.max(0, this.handleHold - delta * 2);

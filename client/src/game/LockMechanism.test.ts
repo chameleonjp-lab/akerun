@@ -220,9 +220,11 @@ describe("LockMechanism", () => {
 
     const [tensionMin, tensionMax] = puzzle.difficulty.tensionBand;
     lock.setTension((tensionMin + tensionMax) / 2);
+    expect(lock.tensionStable).toBe(true);
     lock.tick(0.04);
     expect(lock.tensionHoldProgress).toBeCloseTo(0.04 / 0.12, 5);
     lock.setTension(0);
+    expect(lock.tensionStable).toBe(false);
     expect(lock.tensionHoldProgress).toBe(0);
     lock.setTension((tensionMin + tensionMax) / 2);
     advance(lock, puzzle.difficulty.tensionHoldSeconds + 0.04);
@@ -230,18 +232,21 @@ describe("LockMechanism", () => {
 
     const [fenceMin, fenceMax] = puzzle.difficulty.fenceBand;
     lock.setFenceTravel((fenceMin + fenceMax) / 2);
+    expect(lock.fenceStable).toBe(true);
     lock.tick(0.04);
     expect(lock.fenceHoldProgress).toBeCloseTo(0.04 / 0.12, 5);
     advance(lock, puzzle.difficulty.fenceHoldSeconds + 0.04);
     expect(lock.phase).toBe("fence-seated");
 
     lock.setBoltTravel(0.84);
+    expect(lock.boltStable).toBe(true);
     lock.tick(0.09);
     expect(lock.boltHoldProgress).toBeCloseTo(0.09 / 0.18, 5);
     advance(lock, 0.12);
     expect(lock.phase).toBe("boltwork-ready");
 
     lock.setHandleTurn(lock.requiredHandleTurn);
+    expect(lock.handleStable).toBe(true);
     lock.tick(0.1);
     expect(lock.handleHoldProgress).toBeCloseTo(0.1 / 0.2, 5);
   });
