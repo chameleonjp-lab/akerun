@@ -41,6 +41,17 @@ export const isCurrentResultSubmission = (
   submissionKey: string
 ) => Boolean(submissionKey) && activeSubmissionKey === submissionKey;
 
+/**
+ * タイトル画面からの未送信記録の再送結果は、開始済みのプレイへ
+ * ステータス表示を持ち越してはいけない。再送処理自身の世代と、現在の
+ * 画面がまだタイトルであることを同時に確認する。
+ */
+export const isCurrentPendingRetry = (
+  activeRetryId: number,
+  retryId: number,
+  currentScreen: string
+) => retryId > 0 && activeRetryId === retryId && currentScreen === "title";
+
 export const shouldForfeitOfficialReset = (context: CompetitiveResetContext) =>
   context.sessionActive &&
   !context.demoMode &&
