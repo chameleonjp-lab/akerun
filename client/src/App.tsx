@@ -29,7 +29,10 @@ import {
   isResultSubmissionPending,
 } from "./game/RunLifecycle";
 import { isCompleteRunTrace } from "./game/RunTrace";
-import { getStartCountdownSteps } from "./game/StartCountdown";
+import {
+  getStartCountdownSteps,
+  shouldAbortStartCountdown,
+} from "./game/StartCountdown";
 import { isDialTrainingComplete } from "./game/TrainingProgress";
 
 type Screen =
@@ -208,6 +211,8 @@ export default function App() {
   const submittingKeyRef = useRef("");
   const startingOfficialRef = useRef(false);
   const countdownRunRef = useRef(0);
+  const countdownActiveRef = useRef(false);
+  const countdownInterruptedRef = useRef(false);
   const retryingPendingRef = useRef(false);
   const gameHandleRef = useRef<GameHandle | null>(null);
   const activeRunContextRef = useRef<{
@@ -390,6 +395,18 @@ export default function App() {
   );
 
   const onVisibilityPause = useCallback(() => {
+    if (screen === "countdown" || countdownActiveRef.current) {
+      // The server run may already have been issued while the puzzle is
+      // loading. Do not let a hidden tab turn that time into an unaccounted
+      // pre-game window; the start routines will abandon any token they hold.
+      countdownInterruptedRef.current = true;
+      countdownRunRef.current += 1;
+      setCountdownValue(null);
+      setCountdownMessage("");
+      setScreen("title");
+      setSubmitStatus("画面を離れたため、プレイ開始を取り消しました。");
+      return;
+    }
     // 競技は停止中に考える抜け道を作らない。画面離脱も同じ扱いにする。
     if (mode === "competition" && screen === "play") {
       retireActiveRun("競技中に画面を離れたため、今回はランキング対象外です。");
@@ -529,6 +546,8 @@ export default function App() {
   const startGameCountdown = useCallback(() => {
     const runId = countdownRunRef.current + 1;
     countdownRunRef.current = runId;
+    countdownActiveRef.current = true;
+    countdownInterruptedRef.current = false;
     setCountdownMessage("問題と開始情報を読み込んでいます…");
     setCountdownValue(3);
     setScreen("countdown");
@@ -714,9 +733,19 @@ export default function App() {
       const problemId = chosen.problemId ?? chosen.id;
       const problemVersion = chosen.problemVersion ?? "V1";
       const countdownReady = await countdownPromise;
-      if (!countdownReady) {
+      if (
+        shouldAbortStartCountdown(
+          countdownReady,
+          countdownInterruptedRef.current,
+          document.hidden
+        )
+      ) {
         abandonUnclaimedOfficialRun(unclaimedRunToken);
         unclaimedRunToken = null;
+        if (countdownInterruptedRef.current || document.hidden) {
+          setScreen("title");
+          setSubmitStatus("画面を離れたため、プレイ開始を取り消しました。");
+        }
         return;
       }
       store.saveActiveRun(
@@ -766,6 +795,7 @@ export default function App() {
       setScreen("title");
       setSubmitStatus("問題の準備に失敗しました。もう一度お試しください。");
     } finally {
+      countdownActiveRef.current = false;
       startingOfficialRef.current = false;
       setStartingOfficial(false);
     }
@@ -904,9 +934,19 @@ export default function App() {
 
       const problemId = chosen.problemId ?? chosen.id;
       const countdownReady = await countdownPromise;
-      if (!countdownReady) {
+      if (
+        shouldAbortStartCountdown(
+          countdownReady,
+          countdownInterruptedRef.current,
+          document.hidden
+        )
+      ) {
         abandonUnclaimedOfficialRun(unclaimedRunToken);
         unclaimedRunToken = null;
+        if (countdownInterruptedRef.current || document.hidden) {
+          setScreen("title");
+          setSubmitStatus("画面を離れたため、プレイ開始を取り消しました。");
+        }
         return;
       }
       store.saveActiveRun(
@@ -957,6 +997,7 @@ export default function App() {
         "本日の競技の準備に失敗しました。もう一度お試しください。"
       );
     } finally {
+      countdownActiveRef.current = false;
       startingOfficialRef.current = false;
       setStartingOfficial(false);
     }
