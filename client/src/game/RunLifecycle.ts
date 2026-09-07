@@ -16,8 +16,10 @@ export type CompetitiveResetContext = {
   readonly recordable?: boolean;
 };
 
-export const isOfficialProblemIdentity = (problemId: string, problemVersion: string) =>
-  /^AKERUN-\d{2}-V\d+$/.test(problemId) && /^V\d+$/.test(problemVersion);
+export const isOfficialProblemIdentity = (
+  problemId: string,
+  problemVersion: string
+) => /^AKERUN-\d{2}-V\d+$/.test(problemId) && /^V\d+$/.test(problemVersion);
 
 /** 開錠済みの演出中にRESETで結果状態を消さない。 */
 export const canResetMechanism = (opened: boolean) => !opened;
@@ -30,10 +32,19 @@ export const canResetMechanism = (opened: boolean) => !opened;
 export const isResultSubmissionPending = (status: string) =>
   status === "送信中…" || status === "再送中…";
 
+/**
+ * 非同期の送信結果は、画面遷移後に別の結果へ適用してはいけない。
+ * 空文字は現在の送信を所有していない状態として扱う。
+ */
+export const isCurrentResultSubmission = (
+  activeSubmissionKey: string,
+  submissionKey: string
+) => Boolean(submissionKey) && activeSubmissionKey === submissionKey;
+
 export const shouldForfeitOfficialReset = (context: CompetitiveResetContext) =>
-  context.sessionActive
-    && !context.demoMode
-    && !context.trainingContract
-    && !context.developmentSeed
-    && context.recordable !== false
-    && isOfficialProblemIdentity(context.problemId, context.problemVersion);
+  context.sessionActive &&
+  !context.demoMode &&
+  !context.trainingContract &&
+  !context.developmentSeed &&
+  context.recordable !== false &&
+  isOfficialProblemIdentity(context.problemId, context.problemVersion);

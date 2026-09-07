@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canResetMechanism,
+  isCurrentResultSubmission,
   isOfficialProblemIdentity,
   isResultSubmissionPending,
   shouldForfeitOfficialReset,
@@ -30,14 +31,22 @@ describe("RunLifecycle", () => {
   it("waits for a verified result submission before replaying the same problem", () => {
     expect(isResultSubmissionPending("送信中…")).toBe(true);
     expect(isResultSubmissionPending("再送中…")).toBe(true);
-    expect(isResultSubmissionPending("ランキングへ送信しました。")).toBe(
-      false
-    );
+    expect(isResultSubmissionPending("ランキングへ送信しました。")).toBe(false);
     expect(
       isResultSubmissionPending(
         "ランキング受付なし。プレイ結果は端末内へ保存します。"
       )
     ).toBe(false);
+  });
+
+  it("does not let a stale submission callback own a later result", () => {
+    expect(isCurrentResultSubmission("run-2:result", "run-1:result")).toBe(
+      false
+    );
+    expect(isCurrentResultSubmission("run-2:result", "run-2:result")).toBe(
+      true
+    );
+    expect(isCurrentResultSubmission("", "")).toBe(false);
   });
 
   it("forfeits RESET during a ranked official run", () => {
