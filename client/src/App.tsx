@@ -24,6 +24,7 @@ import {
 import { competitionDayForDate } from "./game/CompetitionSchedule";
 import { isCoherentLockMechanismSnapshot } from "./game/LockMechanism";
 import type { RunCheckpoint } from "./game/RunSession";
+import { isResultSubmissionPending } from "./game/RunLifecycle";
 import { isCompleteRunTrace } from "./game/RunTrace";
 import { getStartCountdownSteps } from "./game/StartCountdown";
 import { isDialTrainingComplete } from "./game/TrainingProgress";
@@ -965,6 +966,7 @@ export default function App() {
 
   const startSameProblem = () => {
     if (!problem) return;
+    if (mode === "official" && isResultSubmissionPending(submitStatus)) return;
     if (mode === "practice") {
       startPractice(problem.problemId ?? problem.id);
       return;
@@ -1764,7 +1766,12 @@ export default function App() {
               <Button
                 tone="primary"
                 onClick={startSameProblem}
-                disabled={!problem || startingOfficial}
+                disabled={
+                  !problem ||
+                  startingOfficial ||
+                  (mode === "official" &&
+                    isResultSubmissionPending(submitStatus))
+                }
               >
                 同じ問題でもう一度
               </Button>
