@@ -24,7 +24,10 @@ import {
 import { competitionDayForDate } from "./game/CompetitionSchedule";
 import { isCoherentLockMechanismSnapshot } from "./game/LockMechanism";
 import type { RunCheckpoint } from "./game/RunSession";
-import { isResultSubmissionPending } from "./game/RunLifecycle";
+import {
+  isCurrentResultSubmission,
+  isResultSubmissionPending,
+} from "./game/RunLifecycle";
 import { isCompleteRunTrace } from "./game/RunTrace";
 import { getStartCountdownSteps } from "./game/StartCountdown";
 import { isDialTrainingComplete } from "./game/TrainingProgress";
@@ -472,22 +475,30 @@ export default function App() {
     void rankingClient
       .submit(playerName, result, rankingRunToken)
       .then(() => {
-        setRetryAvailable(false);
-        setSubmitStatus(
-          mode === "competition"
-            ? "本日の競技結果を送信しました。"
-            : "ランキングへ送信しました。"
-        );
+        if (isCurrentResultSubmission(submittedKeyRef.current, key)) {
+          setRetryAvailable(false);
+          setSubmitStatus(
+            mode === "competition"
+              ? "本日の競技結果を送信しました。"
+              : "ランキングへ送信しました。"
+          );
+        }
         store.removePendingForResult(result, rankingRunToken);
       })
       .catch(() => {
-        setRetryAvailable(true);
-        store.enqueueRanking(playerName, result, rankingRunToken);
-        setSubmitStatus(
-          mode === "competition"
-            ? "本日の競技結果の送信に失敗しました。タイトルから再送できます。"
-            : "送信に失敗しました。結果画面の再送ボタンを押してください。"
+        const isCurrent = isCurrentResultSubmission(
+          submittedKeyRef.current,
+          key
         );
+        store.enqueueRanking(playerName, result, rankingRunToken);
+        if (isCurrent) {
+          setRetryAvailable(true);
+          setSubmitStatus(
+            mode === "competition"
+              ? "本日の競技結果の送信に失敗しました。タイトルから再送できます。"
+              : "送信に失敗しました。結果画面の再送ボタンを押してください。"
+          );
+        }
       })
       .finally(() => {
         if (submittingKeyRef.current === key) submittingKeyRef.current = "";
