@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canResetMechanism,
+  isCurrentPendingRetry,
   isCurrentResultSubmission,
   isOfficialProblemIdentity,
   isResultSubmissionPending,
@@ -47,6 +48,13 @@ describe("RunLifecycle", () => {
       true
     );
     expect(isCurrentResultSubmission("", "")).toBe(false);
+  });
+
+  it("keeps pending retry status on the title screen that started it", () => {
+    expect(isCurrentPendingRetry(3, 3, "title")).toBe(true);
+    expect(isCurrentPendingRetry(4, 3, "title")).toBe(false);
+    expect(isCurrentPendingRetry(3, 3, "play")).toBe(false);
+    expect(isCurrentPendingRetry(0, 0, "title")).toBe(false);
   });
 
   it("forfeits RESET during a ranked official run", () => {

@@ -25,6 +25,7 @@ import { competitionDayForDate } from "./game/CompetitionSchedule";
 import { isCoherentLockMechanismSnapshot } from "./game/LockMechanism";
 import type { RunCheckpoint } from "./game/RunSession";
 import {
+  isCurrentPendingRetry,
   isCurrentResultSubmission,
   isResultSubmissionPending,
 } from "./game/RunLifecycle";
@@ -210,10 +211,13 @@ export default function App() {
   const submittedKeyRef = useRef("");
   const submittingKeyRef = useRef("");
   const startingOfficialRef = useRef(false);
+  const screenRef = useRef(screen);
+  screenRef.current = screen;
   const countdownRunRef = useRef(0);
   const countdownActiveRef = useRef(false);
   const countdownInterruptedRef = useRef(false);
   const retryingPendingRef = useRef(false);
+  const pendingRetryRunRef = useRef(0);
   const gameHandleRef = useRef<GameHandle | null>(null);
   const activeRunContextRef = useRef<{
     playerName: string;
@@ -575,6 +579,9 @@ export default function App() {
     requestedProblemId?: string,
     replayRunToken?: string | null
   ) => {
+    // タイトル画面の未送信記録再送が完了しても、開始済みの公式プレイの
+    // ステータスを上書きできないよう、再送処理の世代を切り替える。
+    pendingRetryRunRef.current += 1;
     if (!store.trainingComplete) {
       if (!validateName()) return;
       setTutorialStep(1);
@@ -802,6 +809,7 @@ export default function App() {
   };
 
   const startTraining = () => {
+    pendingRetryRunRef.current += 1;
     if (!handle) return;
     if (!validateName()) {
       setScreen("title");
@@ -826,6 +834,7 @@ export default function App() {
   };
 
   const startPractice = (problemId: string) => {
+    pendingRetryRunRef.current += 1;
     if (!handle) return;
     let practicePuzzle: PuzzleDefinition;
     try {
@@ -850,6 +859,7 @@ export default function App() {
   };
 
   const startCompetition = async () => {
+    pendingRetryRunRef.current += 1;
     if (!store.trainingComplete) {
       if (!validateName()) return;
       setTutorialStep(1);
@@ -1004,6 +1014,7 @@ export default function App() {
   };
 
   const startDemo = () => {
+    pendingRetryRunRef.current += 1;
     if (!handle) return;
     activeRunContextRef.current = null;
     lastCheckpointSavedAtRef.current = 0;
@@ -1219,14 +1230,27 @@ export default function App() {
   const retryPending = async () => {
     if (retryingPendingRef.current) return;
     retryingPendingRef.current = true;
+    const retryId = pendingRetryRunRef.current + 1;
+    pendingRetryRunRef.current = retryId;
+    const setRetryStatus = (message: string) => {
+      if (
+        isCurrentPendingRetry(
+          pendingRetryRunRef.current,
+          retryId,
+          screenRef.current
+        )
+      ) {
+        setSubmitStatus(message);
+      }
+    };
     const pending = store.getPendingRankings();
     if (!pending.length) {
-      setSubmitStatus("再送する記録はありません。");
+      setRetryStatus("再送する記録はありません。");
       retryingPendingRef.current = false;
       return;
     }
     try {
-      setSubmitStatus("未送信記録を送信中…");
+      setRetryStatus("未送信記録を送信中…");
       let sent = 0;
       let unavailable = 0;
       for (const item of pending) {
@@ -1246,7 +1270,7 @@ export default function App() {
           // 残った記録は次回の再送対象として維持する。
         }
       }
-      setSubmitStatus(
+      setRetryStatus(
         unavailable
           ? `${sent}/${pending.length}件を送信しました。旧形式の${unavailable}件は再送契約がなく、同じ問題を再プレイしてください。`
           : sent === pending.length
