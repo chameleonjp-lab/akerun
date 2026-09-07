@@ -22,6 +22,14 @@ export const isOfficialProblemIdentity = (problemId: string, problemVersion: str
 /** 開錠済みの演出中にRESETで結果状態を消さない。 */
 export const canResetMechanism = (opened: boolean) => !opened;
 
+/**
+ * 完了済みの検証トークンは、結果送信が完了してから同じ問題の再挑戦へ
+ * 引き渡せる。送信中に再挑戦を始めると、サーバーはまだ完了していない
+ * トークンを replayRunToken として認めない。
+ */
+export const isResultSubmissionPending = (status: string) =>
+  status === "送信中…" || status === "再送中…";
+
 export const shouldForfeitOfficialReset = (context: CompetitiveResetContext) =>
   context.sessionActive
     && !context.demoMode

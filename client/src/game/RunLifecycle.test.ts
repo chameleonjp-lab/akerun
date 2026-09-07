@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canResetMechanism,
   isOfficialProblemIdentity,
+  isResultSubmissionPending,
   shouldForfeitOfficialReset,
 } from "./RunLifecycle";
 
@@ -24,6 +25,19 @@ describe("RunLifecycle", () => {
     expect(isOfficialProblemIdentity("AKERUN-01-V1", "V1")).toBe(true);
     expect(isOfficialProblemIdentity("AKERUN-1-V1", "V1")).toBe(false);
     expect(isOfficialProblemIdentity("AKERUN-01", "DEV")).toBe(false);
+  });
+
+  it("waits for a verified result submission before replaying the same problem", () => {
+    expect(isResultSubmissionPending("送信中…")).toBe(true);
+    expect(isResultSubmissionPending("再送中…")).toBe(true);
+    expect(isResultSubmissionPending("ランキングへ送信しました。")).toBe(
+      false
+    );
+    expect(
+      isResultSubmissionPending(
+        "ランキング受付なし。プレイ結果は端末内へ保存します。"
+      )
+    ).toBe(false);
   });
 
   it("forfeits RESET during a ranked official run", () => {
