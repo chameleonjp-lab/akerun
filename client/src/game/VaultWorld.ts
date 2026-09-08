@@ -180,6 +180,13 @@ export type GameSnapshot = {
   readonly opened: boolean;
   readonly wheelCount: number;
   readonly activeWheel: number | null;
+  /** HTMLの行動表示へ渡す安全な操作情報。隠し難度の正解位置はnullにする。 */
+  readonly activeDirection: TurnDirection | null;
+  readonly activeTarget: number | null;
+  readonly currentPass: number | null;
+  readonly requiredPasses: number | null;
+  readonly targetStopPending: boolean;
+  readonly protocolInstruction: string;
   readonly stage: number;
   readonly stageCount: number;
   readonly difficulty: string;
@@ -195,6 +202,8 @@ export type ScreenLayout = {
   width: number;
   height: number;
   compact: boolean;
+  /** 高さが短い横画面。下部レールを省き、実寸内へ収める。 */
+  shortViewport: boolean;
   dial: { x: number; y: number; radius: number; deadZoneRadius: number };
   internal: Rect;
   /** 縦長画面で、ダイヤルと内部機構の因果を残すための要約表示。 */
@@ -380,6 +389,7 @@ export const calculateScreenLayout = (
   const safeWidth = Number.isFinite(width) && width > 0 ? width : 1;
   const safeHeight = Number.isFinite(height) && height > 0 ? height : 1;
   const compact = safeWidth / safeHeight < 1.12;
+  const shortViewport = safeHeight < 560;
   if (compact) {
     const unit = canvasUnit(safeWidth, safeHeight, compact);
     const bottomReserve = trainingContract
@@ -395,11 +405,14 @@ export const calculateScreenLayout = (
       unit * 4.5 + radius * 1.12,
       // iPhoneのsafe-area上端でReact HUDが下がっても、機構ストリップを
       // HUDへ食い込ませないため、十分な縦長画面ではダイヤルを少し下げる。
-      safeHeight * 0.34,
+      safeHeight * 0.37,
       unit * 8 + radius * 1.12
     );
     const dialTop = dialY - radius * 1.12;
-    const compactMechanismHeight = unit * 2.15;
+    // 以前の見出しは最小7px程度になり、横幅のあるiPhoneでも読めなかった。
+    // 2行の見出しと輪番号を置ける最低高さを確保し、実寸へ収まらない場合は
+    // 機構ストリップを出さずにダイヤルを優先する。
+    const compactMechanismHeight = Math.max(58, unit * 3.6);
     const compactMechanismY = Math.max(
       unit * 10.0,
       dialTop - compactMechanismHeight - unit * 0.25
@@ -428,6 +441,7 @@ export const calculateScreenLayout = (
       width: safeWidth,
       height: safeHeight,
       compact,
+      shortViewport,
       dial: {
         x: safeWidth * 0.5,
         y: dialY,
@@ -448,23 +462,27 @@ export const calculateScreenLayout = (
     width: safeWidth,
     height: safeHeight,
     compact,
+    shortViewport,
     dial: (() => {
-      const radius = Math.min(safeWidth * 0.235, safeHeight * 0.293);
+      const radius = Math.min(
+        safeWidth * 0.235,
+        safeHeight * (shortViewport ? 0.15 : 0.293)
+      );
       return {
         x: safeWidth * 0.295,
-        y: safeHeight * 0.545,
+        y: safeHeight * (shortViewport ? 0.53 : 0.545),
         radius,
         deadZoneRadius: radius * 0.42,
       };
     })(),
     internal: {
       x: safeWidth * 0.61,
-      y: safeHeight * 0.18,
+      y: safeHeight * (shortViewport ? 0.08 : 0.18),
       width: safeWidth * 0.345,
-      height: safeHeight * 0.63,
+      height: safeHeight * (shortViewport ? 0.4 : 0.63),
     },
     compactMechanism: null,
-    footerY: safeHeight * 0.855,
+    footerY: safeHeight * (shortViewport ? 0.84 : 0.855),
   };
 };
 
@@ -820,7 +838,31 @@ export class VaultWorld {
       score: metrics?.score ?? 0,
       opened: this.mechanism.opened,
       wheelCount: this.mechanism.puzzle.vault.wheelCount,
-      activeWheel: this.mechanism.activeStage?.wheel ?? null,
+      activeWheel: this.isBlindMode
+        ? null
+        : (this.mechanism.activeStage?.wheel ?? null),
+      activeDirection:
+        this.isBlindMode || !this.mechanism.activeStage
+          ? null
+          : this.mechanism.activeStage.direction,
+      activeTarget:
+        this.isBlindMode || !this.mechanism.puzzle.difficulty.showExactInstruction
+          ? null
+          : (this.mechanism.activeStage?.target ?? null),
+      currentPass:
+        this.isBlindMode || this.mechanism.phase !== "dial"
+          ? null
+          : this.mechanism.currentPass,
+      requiredPasses:
+        this.isBlindMode || this.mechanism.phase !== "dial"
+          ? null
+          : this.mechanism.requiredPasses,
+      targetStopPending: this.isBlindMode
+        ? false
+        : this.mechanism.targetStopPending,
+      protocolInstruction: this.isBlindMode
+        ? "ブラインドモード：音と振動の合図を聞いて操作します。"
+        : this.mechanism.protocolInstruction,
       stage: this.mechanism.stage,
       stageCount: this.mechanism.puzzle.stages.length,
       difficulty:
@@ -1985,7 +2027,7 @@ export class VaultWorld {
       dial.y + dial.radius * 0.085
     );
     ctx.fillStyle = "#83a1a1";
-    ctx.font = `600 ${dial.radius * 0.065}px "DM Mono", monospace`;
+    ctx.font = `600 ${Math.max(12, dial.radius * 0.065)}px ${JAPANESE_FONT_STACK}`;
     ctx.fillText(
       this.mechanism.lastDirection === "cw" ? "右回り" : "左回り",
       dial.x,
@@ -2016,7 +2058,7 @@ export class VaultWorld {
       );
     }
     ctx.fillStyle = "#799095";
-    ctx.font = `500 ${unit * 0.72}px ${JAPANESE_FONT_STACK}`;
+    ctx.font = `500 ${Math.max(14, unit * 0.72)}px ${JAPANESE_FONT_STACK}`;
     ctx.fillText(
       "ドラッグ / ホイール / ← →",
       dial.x - dial.radius * 1.08,
@@ -2585,16 +2627,24 @@ export class VaultWorld {
     const activeStage = this.mechanism.activeStage;
     const activeWheel = activeStage?.wheel ?? -1;
     const header = activeStage
-      ? `機構 / ${wheelCount}輪   駆動カム → 第${activeWheel + 1}輪   ${activeStage.direction === "cw" ? "右" : "左"} ${this.mechanism.currentPass}/${activeStage.passes}`
+      ? `機構 / ${wheelCount}輪  → 第${activeWheel + 1}輪`
       : `機構 / ${wheelCount}輪   ${this.mechanism.opened ? "扉ボルト / 退避済み" : "後半機構を確認"}`;
+    const headerDetail = activeStage
+      ? `${activeStage.direction === "cw" ? "右" : "左"}回り · ${this.mechanism.currentPass}/${activeStage.passes}回目`
+      : this.mechanism.opened
+        ? "扉ボルト / 退避済み"
+        : "後半機構を確認";
 
     this.drawFrame(panel, "rgba(5, 15, 19, 0.9)", "rgba(77, 224, 192, 0.48)");
     ctx.fillStyle = "#d9c28a";
-    ctx.font = `600 ${unit * 0.52}px "DM Mono", monospace`;
-    ctx.fillText(header, panel.x + unit * 0.75, panel.y + unit * 0.78);
+    ctx.font = `600 ${Math.max(14, unit * 0.78)}px ${JAPANESE_FONT_STACK}`;
+    ctx.fillText(header, panel.x + unit * 0.75, panel.y + unit * 1.1);
+    ctx.fillStyle = "#9db3ae";
+    ctx.font = `500 ${Math.max(12, unit * 0.62)}px ${JAPANESE_FONT_STACK}`;
+    ctx.fillText(headerDetail, panel.x + unit * 0.75, panel.y + unit * 2.0);
 
-    const cellTop = panel.y + unit * 1.02;
-    const cellHeight = panel.height - unit * 1.28;
+    const cellTop = panel.y + Math.max(unit * 2.35, 32);
+    const cellHeight = Math.max(16, panel.height - (cellTop - panel.y) - unit * 0.25);
     const gap = unit * 0.25;
     const cellWidth =
       (panel.width - unit * 1.5 - gap * Math.max(0, wheelCount - 1)) /
@@ -2673,9 +2723,13 @@ export class VaultWorld {
       }
 
       ctx.fillStyle = aligned ? "#05201e" : "#e8dfc4";
-      ctx.font = `700 ${Math.max(5, unit * 0.42)}px "DM Mono", monospace`;
+      ctx.font = `700 ${Math.max(14, unit * 0.72)}px "DM Mono", monospace`;
       ctx.textAlign = "center";
-      ctx.fillText(String(wheel + 1), centerX, cell.y + cell.height * 0.5);
+      ctx.fillText(
+        String(wheel + 1),
+        centerX,
+        cell.y + cell.height * 0.5 + unit * 0.25
+      );
       ctx.textAlign = "left";
     }
   }
@@ -2971,31 +3025,21 @@ export class VaultWorld {
         "rgba(146, 181, 177, 0.3)"
       );
       ctx.fillStyle = "#4de0c0";
-      ctx.font = `700 ${unit * 0.66}px "DM Mono", monospace`;
+      ctx.font = `700 ${Math.max(14, unit * 0.66)}px ${JAPANESE_FONT_STACK}`;
       this.drawWrappedText(
-        hint,
+        "操作の詳細は画面上部の「現在の操作」を確認",
         pad + unit * 1.1,
-        y + unit * 1.42,
+        y + unit * 1.3,
         messageWidth - unit * 2.2,
-        unit * 0.9,
+        Math.max(16, unit * 0.9),
         1
       );
       ctx.fillStyle = "#d9c28a";
-      ctx.font = `600 ${unit * 0.5}px "DM Mono", monospace`;
+      ctx.font = `600 ${Math.max(14, unit * 0.5)}px ${JAPANESE_FONT_STACK}`;
       ctx.fillText(
-        `段階 / ${this.mechanism.phase}  ·  失敗 ${this.mechanism.faultCount}/${this.mechanism.puzzle.difficulty.maxFaults}`,
+        `状態 / ${this.mechanism.phase}  ·  失敗 ${this.mechanism.faultCount}`,
         pad + unit * 1.1,
-        y + unit * 2.28
-      );
-      ctx.fillStyle = "#d5d9cc";
-      ctx.font = `500 ${unit * 0.64}px ${JAPANESE_FONT_STACK}`;
-      this.drawWrappedText(
-        this.mechanism.lastMessage,
-        pad + unit * 1.1,
-        y + unit * 3.12,
-        messageWidth - unit * 2.2,
-        unit * 0.82,
-        2
+        y + unit * 2.32
       );
       const bench = {
         x: pad,
@@ -3005,6 +3049,36 @@ export class VaultWorld {
       };
       this.drawPhysicalWorkbench(bench, layout);
       // ポートレートではHTMLのモバイルメニューを使うため、補助レールは描かない。
+      return;
+    }
+
+    if (layout.shortViewport) {
+      this.drawFrame(
+        { x: pad, y, width: messageWidth, height: unit * 5.35 },
+        "rgba(11, 20, 26, 0.9)",
+        "rgba(146, 181, 177, 0.3)"
+      );
+      ctx.fillStyle = "#4de0c0";
+      ctx.font = `700 ${Math.max(14, unit * 0.72)}px ${JAPANESE_FONT_STACK}`;
+      ctx.fillText(
+        "操作の詳細は画面上部の「現在の操作」を確認",
+        pad + unit * 1.25,
+        y + unit * 1.6
+      );
+      ctx.fillStyle = "#9db3ae";
+      ctx.font = `500 ${Math.max(14, unit * 0.64)}px ${JAPANESE_FONT_STACK}`;
+      ctx.fillText(
+        "下の作業台は、抵抗・着座・退避の反応を示します。",
+        pad + unit * 1.25,
+        y + unit * 2.65
+      );
+      const bench = {
+        x: layout.width * 0.61,
+        y: y + unit * 0.4,
+        width: layout.width * 0.35,
+        height: unit * 6.0,
+      };
+      this.drawPhysicalWorkbench(bench, layout);
       return;
     }
 

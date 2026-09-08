@@ -105,6 +105,20 @@ describe("calculateScreenLayout", () => {
     expect(layout.compactMechanism).toBeNull();
     expect(layout.footerY).toBeCloseTo(936 * 0.855, 5);
   });
+
+  it("fits the dial, mechanism and workbench inside an actual short landscape surface", () => {
+    const layout = calculateScreenLayout(874, 402, false);
+    const unit = Math.max(10, Math.min(874, 402) / 85);
+    const controlsBottom =
+      layout.dial.y + layout.dial.radius * 1.42 + unit * 2.35;
+    const benchBottom =
+      layout.footerY + unit * 0.4 + unit * 6.0;
+
+    expect(layout.shortViewport).toBe(true);
+    expect(layout.compact).toBe(false);
+    expect(controlsBottom).toBeLessThanOrEqual(layout.footerY);
+    expect(benchBottom).toBeLessThanOrEqual(layout.height);
+  });
 });
 
 describe("shouldReleaseInputAfterPhaseChange", () => {

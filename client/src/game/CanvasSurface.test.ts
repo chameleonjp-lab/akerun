@@ -20,8 +20,9 @@ describe("CanvasSurface", () => {
     expect(capped.pixelWidth).toBe(retina.pixelWidth);
   });
 
-  it("normalizes invalid and small surfaces to the playable minimum", () => {
+  it("uses a safe fallback only when the browser has not reported a size", () => {
     expect(getLogicalCanvasSize(0, Number.NaN)).toEqual({ width: 320, height: 520 });
+    expect(getLogicalCanvasSize(240, 400)).toEqual({ width: 240, height: 400 });
     expect(getCanvasPixelRatio(undefined)).toBe(1);
     expect(getCanvasPixelRatio(0.5)).toBe(1);
   });
