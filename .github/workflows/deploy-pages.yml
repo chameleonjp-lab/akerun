@@ -25,6 +25,8 @@ jobs:
         uses: actions/configure-pages@v5
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.1
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -53,3 +55,9 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
+        uses: actions/checkout@v4
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+      - name: Verify published files
+        run: node scripts/verify-published-site.mjs "${{ steps.deployment.outputs.page_url }}"
