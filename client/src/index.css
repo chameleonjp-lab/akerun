@@ -74,6 +74,28 @@
   z-index: 10;
 }
 
+.akerun-canvas-error {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  border: 0;
+  padding: max(18px, env(safe-area-inset-top))
+    max(18px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom))
+    max(18px, env(safe-area-inset-left));
+  overflow: auto;
+  background: #071218;
+}
+
+.akerun-canvas-error[open] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .akerun-screen {
   display: flex;
   align-items: center;

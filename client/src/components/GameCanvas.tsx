@@ -2,9 +2,9 @@
  * Vault Tumbler Lab — 2Dキャンバスを保持し、画面遷移はReactへ返す。
  */
 import { useEffect, useRef, useState } from "react";
-import { createGameScene, type GameHandle } from "@/game/scene";
+import type { GameHandle } from "@/game/scene";
 import type { GameSnapshot } from "@/game/VaultWorld";
-import { createRenderLoopController } from "@/game/RenderLoopController";
+import { mountGameCanvas } from "@/game/GameCanvasLifecycle";
 
 type GameCanvasProps = {
   readonly onReady?: (handle: GameHandle | null) => void;
@@ -18,8 +18,10 @@ export default function GameCanvas({
   onVisibilityPause,
 }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const startedRef = useRef(false);
+  const errorDialogRef = useRef<HTMLDialogElement>(null);
   const callbacksRef = useRef({ onReady, onSnapshot, onVisibilityPause });
+  const [attempt, setAttempt] = useState(0);
+  const [initializationFailed, setInitializationFailed] = useState(false);
   const [liveStatus, setLiveStatus] =
     useState("タイトルから問題を開始してください。");
 
@@ -27,83 +29,28 @@ export default function GameCanvas({
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || startedRef.current) return;
-    startedRef.current = true;
-
-    const context = canvas.getContext("2d", {
-      alpha: false,
-      desynchronized: true,
-    });
-    if (!context) {
-      console.error(
-        "Vault Tumbler Labの2D描画コンテキストを作成できませんでした。"
-      );
-      return;
-    }
-
-    let handle: GameHandle | null = null;
-    let disposed = false;
-    let renderLoop: ReturnType<typeof createRenderLoopController> | null = null;
-    let lastSnapshotMessage = "";
-
-    const animationFrameTarget = {
-      requestAnimationFrame: (callback: (timestamp: number) => void) =>
-        window.requestAnimationFrame(callback),
-      cancelAnimationFrame: (frameId: number) =>
-        window.cancelAnimationFrame(frameId),
-    };
-
-    createGameScene(canvas, context, setLiveStatus, snapshot => {
-      // The world emits a snapshot on every frame, while transition cues
-      // use onStatusChange. Only publish a changed snapshot message so the
-      // live region stays current without making screen readers repeat the
-      // same sentence dozens of times per second.
-      if (snapshot.message && snapshot.message !== lastSnapshotMessage) {
-        lastSnapshotMessage = snapshot.message;
-        setLiveStatus(snapshot.message);
-      }
-      callbacksRef.current.onSnapshot?.(snapshot);
-    })
-      .then((nextHandle: GameHandle) => {
-        if (disposed) {
-          nextHandle.dispose();
-          return;
-        }
-        handle = nextHandle;
-        callbacksRef.current.onReady?.(nextHandle);
-        renderLoop = createRenderLoopController(animationFrameTarget, delta =>
-          nextHandle.update(delta)
-        );
-        renderLoop.start();
-      })
-      .catch((error: unknown) => {
+    if (!canvas) return;
+    return mountGameCanvas(canvas, {
+      onReady: handle => callbacksRef.current.onReady?.(handle),
+      onSnapshot: snapshot => callbacksRef.current.onSnapshot?.(snapshot),
+      onStatus: setLiveStatus,
+      onVisibilityPause: () => callbacksRef.current.onVisibilityPause?.(),
+      onError: error => {
         console.error("Vault Tumbler Labの初期化に失敗しました。", error);
-      });
+        setInitializationFailed(true);
+        setLiveStatus(
+          "ゲーム画面を準備できませんでした。もう一度お試しください。"
+        );
+      },
+    });
+  }, [attempt]);
 
-    const onResize = () => handle?.update(0);
-    const onVisibilityChange = () => {
-      if (document.hidden) {
-        if (!handle) return;
-        renderLoop?.stop();
-        handle.setPaused(true);
-        callbacksRef.current.onVisibilityPause?.();
-        return;
-      }
-      renderLoop?.start();
-    };
-    window.addEventListener("resize", onResize);
-    document.addEventListener("visibilitychange", onVisibilityChange);
-
-    return () => {
-      disposed = true;
-      window.removeEventListener("resize", onResize);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-      callbacksRef.current.onReady?.(null);
-      renderLoop?.dispose();
-      handle?.dispose();
-      startedRef.current = false;
-    };
-  }, []);
+  useEffect(() => {
+    const dialog = errorDialogRef.current;
+    if (!initializationFailed || !dialog) return;
+    dialog.showModal();
+    return () => dialog.close();
+  }, [initializationFailed]);
 
   return (
     <>
@@ -118,6 +65,35 @@ export default function GameCanvas({
       <p className="sr-only" aria-live="polite" aria-atomic="true">
         {liveStatus}
       </p>
+      {initializationFailed ? (
+        <dialog
+          ref={errorDialogRef}
+          className="akerun-canvas-error"
+          role="alertdialog"
+          aria-labelledby="canvas-error-title"
+          aria-describedby="canvas-error-description"
+          onCancel={event => event.preventDefault()}
+        >
+          <section className="akerun-modal-card">
+            <h2 id="canvas-error-title">ゲーム画面を準備できませんでした</h2>
+            <p id="canvas-error-description">
+              もう一度、画面を準備し直してください。保存した記録は残ります。
+            </p>
+            <button
+              type="button"
+              className="akerun-button akerun-button-primary"
+              autoFocus
+              onClick={() => {
+                setInitializationFailed(false);
+                setLiveStatus("ゲーム画面を準備しています。");
+                setAttempt(current => current + 1);
+              }}
+            >
+              もう一度試す
+            </button>
+          </section>
+        </dialog>
+      ) : null}
     </>
   );
 }

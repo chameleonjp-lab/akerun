@@ -246,7 +246,11 @@ export const getGuideTextForPhase = (phase: string): string | null => {
 export const shouldReleaseInputAfterPhaseChange = (
   previousPhase: string,
   nextPhase: string
-) => previousPhase !== nextPhase && nextPhase !== "jammed";
+) => {
+  if (previousPhase === nextPhase || nextPhase === "jammed") return false;
+  if (nextPhase === "open" || nextPhase === "lockout") return true;
+  return getWorkbenchMode(previousPhase) !== getWorkbenchMode(nextPhase);
+};
 
 /** 安全停止後は時計を進めず、RESETを押すまで終端状態を保つ。 */
 export const shouldAdvanceRunClock = (
@@ -304,6 +308,42 @@ const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
 const easeOut = (value: number) => 1 - (1 - value) * (1 - value);
+
+/** 描画した回転後の握りを、そのままタッチ領域の基準にする。 */
+export const getTensionHandleGeometry = (
+  rect: Rect,
+  unit: number,
+  torque: number
+) => {
+  const center = {
+    x: rect.x + rect.width * 0.52,
+    y: rect.y + rect.height * 0.62,
+  };
+  const angle = (-32 + clamp(torque, 0, 1) * 32) * (Math.PI / 180);
+  const arm = Math.min(rect.width * 0.26, unit * 8.2);
+  const at = (fraction: number) => ({
+    x: center.x + Math.cos(angle) * arm * fraction,
+    y: center.y + Math.sin(angle) * arm * fraction,
+  });
+  const gripStart = at(0.62);
+  const gripEnd = at(1);
+  const padding = Math.max(22, unit * 1.2);
+  const left = Math.min(center.x, gripStart.x, gripEnd.x);
+  const top = Math.min(center.y, gripStart.y, gripEnd.y);
+  return {
+    center,
+    angle,
+    arm,
+    gripStart,
+    gripEnd,
+    hitbox: {
+      x: left - padding,
+      y: top - padding,
+      width: Math.max(center.x, gripStart.x, gripEnd.x) - left + padding * 2,
+      height: Math.max(center.y, gripStart.y, gripEnd.y) - top + padding * 2,
+    },
+  };
+};
 const JAPANESE_FONT_STACK =
   '"Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Gothic ProN", -apple-system, BlinkMacSystemFont, "Yu Gothic", sans-serif';
 
@@ -554,7 +594,13 @@ export class VaultWorld {
       onKeyDown: event => this.handleKeyDown(event),
       onKeyUp: event => this.handleKeyUp(event),
     });
-    this.draw();
+    try {
+      this.draw();
+    } catch (error) {
+      // 初回描画で失敗した世界の入力を残さず、再試行で二重登録しない。
+      this.dispose();
+      throw error;
+    }
   }
 
   update(delta: number) {
@@ -1560,7 +1606,7 @@ export class VaultWorld {
       const previous = this.lastPhysicalPhase;
       if (shouldReleaseInputAfterPhaseChange(previous, phase))
         this.inputController.release();
-      this.lastPhysicalPhase = phase;
+      this.lastPhysicalPhase = this.mechanism.phase;
       if (phase === "fence-ready") {
         this.audio.tensionCandidate();
         this.haptics.pulse("tension");
@@ -3118,7 +3164,7 @@ export class VaultWorld {
       this.drawLockoutPanel(rect, unit);
       return;
     }
-    if (!isTension && !isFence && !isBolt) {
+    if (workbenchMode === "notes") {
       ctx.fillStyle = this.audio.isMuted ? "#d39566" : "#4de0c0";
       ctx.font = `600 ${unit * 0.48}px "DM Mono", monospace`;
       ctx.fillText(
@@ -3172,10 +3218,24 @@ export class VaultWorld {
       }
       return;
     }
-    if (isTension) this.drawTensionHandle(rect, unit);
-    if (isFence) this.drawFenceLever(rect, unit);
-    if (isBolt) this.drawBoltTab(rect, unit);
-    if (isHandle) this.drawDoorHandle(rect, unit);
+    switch (workbenchMode) {
+      case "tension":
+        this.drawTensionHandle(rect, unit);
+        return;
+      case "fence":
+        this.drawFenceLever(rect, unit);
+        return;
+      case "bolt":
+        this.drawBoltTab(rect, unit);
+        return;
+      case "handle":
+        this.drawDoorHandle(rect, unit);
+        return;
+      default: {
+        const unhandledMode: never = workbenchMode;
+        throw new Error(`Unknown workbench mode: ${unhandledMode}`);
+      }
+    }
   }
 
   private getActuatorHoldLabel(holdProgress: number) {
@@ -3259,12 +3319,13 @@ export class VaultWorld {
 
   private drawTensionHandle(rect: Rect, unit: number) {
     const ctx = this.context;
-    const centerX = rect.x + rect.width * 0.52;
-    const centerY = rect.y + rect.height * 0.62;
-    const angle = (-32 + this.mechanism.appliedTorque * 32) * (Math.PI / 180);
-    const arm = Math.min(rect.width * 0.26, unit * 8.2);
+    const { center, angle, arm, hitbox } = getTensionHandleGeometry(
+      rect,
+      unit,
+      this.mechanism.appliedTorque
+    );
     ctx.save();
-    ctx.translate(centerX, centerY);
+    ctx.translate(center.x, center.y);
     ctx.rotate(angle);
     ctx.strokeStyle = "#20292c";
     ctx.lineWidth = Math.max(unit * 0.82, 9);
@@ -3298,12 +3359,7 @@ export class VaultWorld {
         showBand: this.mechanism.puzzle.difficulty.showInternalGatePositions,
       }
     );
-    this.setHitbox("tension-grip", {
-      x: centerX - unit * 2.4,
-      y: centerY - unit * 2.4,
-      width: arm + unit * 5.0,
-      height: unit * 4.8,
-    });
+    this.setHitbox("tension-grip", hitbox);
   }
 
   private drawFenceLever(rect: Rect, unit: number) {
