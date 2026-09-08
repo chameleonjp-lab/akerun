@@ -38,6 +38,8 @@ jobs:
           VITE_BASE_PATH: /akerun/
           VITE_BUILD_COMMIT: ${{ github.sha }}
           REQUIRE_BUILD_COMMIT: "1"
+      - name: Release gate
+        run: pnpm verify:release
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
@@ -51,9 +53,3 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
-      - name: Verify published files
-        run: node scripts/verify-published-site.mjs "${{ steps.deployment.outputs.page_url }}"
