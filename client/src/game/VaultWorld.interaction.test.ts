@@ -5,6 +5,7 @@ import {
   type PuzzleDefinition,
 } from "./GameDefinitions";
 import { VaultWorld, calculateScreenLayout, type Rect } from "./VaultWorld";
+import { DIAL_STOP_CONFIRM_SECONDS } from "./LockMechanism";
 
 // Only browser facilities are substituted. InputController, drawing/hitboxes,
 // VaultWorld, the mechanism and result creation all execute normally.
@@ -194,6 +195,15 @@ function setup(
       x: dial.x + Math.cos(angle) * dial.radius * 0.8,
       y: dial.y + Math.sin(angle) * dial.radius * 0.8,
     });
+    const mechanism = (
+      world as unknown as {
+        mechanism: {
+          activeStage: { target: number; direction: "cw" | "ccw" } | null;
+          dial: number;
+          lastDirection: "cw" | "ccw";
+        };
+      }
+    ).mechanism;
     pointer("pointerdown", point());
     for (
       let turns = 0;
@@ -205,6 +215,18 @@ function setup(
       angle += ((direction * Math.PI * 2) / 100) * 1.00000001;
       pointer("pointermove", point());
       world.update(1 / 60);
+      const activeStage = mechanism.activeStage;
+      if (
+        activeStage &&
+        mechanism.dial === activeStage.target &&
+        mechanism.lastDirection === activeStage.direction
+      ) {
+        const stopFrames = Math.ceil(DIAL_STOP_CONFIRM_SECONDS * 60) + 2;
+        for (let frame = 0; frame < stopFrames; frame += 1) {
+          pointer("pointermove", point());
+          world.update(1 / 60);
+        }
+      }
     }
     pointer("pointerup", point());
     expect(world.getSnapshot().stage).toBe(puzzle.stages.length);
@@ -262,6 +284,39 @@ describe("rendered touch controls → mechanism → result", () => {
       expect(game.world.getSnapshot().recordable).toBe(!training);
     }
   );
+  it("does not write hidden gate truth into an observation note", () => {
+    const puzzle = createOfficialPuzzle("AKERUN-03-V1");
+    const game = setup(puzzle, false);
+    const internals = game.world as unknown as {
+      mechanism: {
+        dial: number;
+        activeStage: { wheel: number } | null;
+        lastDirection: "cw" | "ccw";
+        puzzle: typeof puzzle;
+      };
+      captureObservation: () => void;
+      observations: { recent: ReadonlyArray<Record<string, unknown>> };
+    };
+    const stage = internals.mechanism.activeStage;
+    const falseGate = puzzle.falseGates.find(
+      gate => gate.wheel === stage?.wheel
+    );
+    expect(falseGate).toBeDefined();
+    internals.mechanism.dial = falseGate!.position;
+    internals.captureObservation();
+    const note = internals.observations.recent[0];
+    expect(note).toMatchObject({
+      category: "contact",
+      problemId: "AKERUN-03-V1",
+      problemVersion: "V1",
+      wheel: (stage?.wheel ?? 0) + 1,
+      dial: falseGate!.position,
+      direction: puzzle.stages[0]?.direction,
+      pass: 1,
+      signal: "rebound",
+    });
+    expect(String(note?.text)).not.toMatch(/正規|偽ゲート/);
+  });
   it("recovers from a tension jam on release and stops at the fault limit", () => {
     const puzzle = createOfficialPuzzle("AKERUN-01-V1");
     const game = setup(puzzle, false, true);

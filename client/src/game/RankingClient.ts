@@ -82,8 +82,9 @@ const SUPABASE_PUBLISHABLE_KEY =
 const SUPABASE_MODULE_URL =
   "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.9/+esm";
 export const GAME_SLUG = "akerun";
-export const CLIENT_VERSION = "akerun-web-verified-v3";
-export const CONTRACT_VERSION = "akerun-play-v3";
+/** PR2の停止・周回ルールを含む送信契約。採点式そのものはV3を維持する。 */
+export const CLIENT_VERSION = "akerun-web-verified-v4";
+export const CONTRACT_VERSION = "akerun-play-v4";
 export const COMPETITION_FUNCTION = "akerun-competition";
 const REQUEST_TIMEOUT_MS = 8000;
 const CLIENT_INSTANCE_STORAGE_KEY = "akerun-client-instance-v1";

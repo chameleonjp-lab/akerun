@@ -5,7 +5,7 @@ import {
   OFFICIAL_PROBLEM_CATALOG,
   createTrainingPuzzle,
 } from "./GameDefinitions";
-import { LockMechanism } from "./LockMechanism";
+import { DIAL_STOP_CONFIRM_SECONDS, LockMechanism } from "./LockMechanism";
 import { OFFICIAL_PROBLEM_BALANCE } from "./OfficialProblemBalance";
 
 const advance = (lock: LockMechanism, seconds: number) => {
@@ -21,6 +21,7 @@ const solve = (problemId: string) => {
     let guard = 0;
     while (lock.stage === index && guard < 2400) {
       lock.rotate(stage.direction === "cw" ? 1 : -1);
+      advance(lock, DIAL_STOP_CONFIRM_SECONDS + 0.01);
       guard += 1;
     }
     expect(lock.stage).toBe(index + 1);

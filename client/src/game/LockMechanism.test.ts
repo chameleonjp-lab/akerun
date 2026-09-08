@@ -6,7 +6,7 @@ import {
   createReferencePuzzle,
   type PuzzleDefinition,
 } from "./GameDefinitions";
-import { LockMechanism } from "./LockMechanism";
+import { DIAL_STOP_CONFIRM_SECONDS, LockMechanism } from "./LockMechanism";
 
 const advance = (lock: LockMechanism, seconds: number) => {
   const frames = Math.ceil(seconds * 90);
@@ -19,6 +19,7 @@ const alignGates = (lock: LockMechanism, puzzle: PuzzleDefinition) => {
     let guard = 0;
     while (lock.stage === index && guard < 900) {
       lock.rotate(stage.direction === "cw" ? 1 : -1);
+      advance(lock, DIAL_STOP_CONFIRM_SECONDS + 0.01);
       guard += 1;
     }
     expect(lock.stage).toBe(index + 1);
@@ -120,6 +121,7 @@ describe("LockMechanism", () => {
     let guard = 0;
     while (lock.stage === 0 && guard < 900) {
       lock.rotate(firstStage.direction === "cw" ? 1 : -1);
+      advance(lock, DIAL_STOP_CONFIRM_SECONDS + 0.01);
       guard += 1;
     }
     expect(lock.stage).toBe(1);
@@ -154,6 +156,7 @@ describe("LockMechanism", () => {
       let guard = 0;
       while (lock.stage === index && guard < 900) {
         lock.rotate(stage.direction === "cw" ? 1 : -1);
+        advance(lock, DIAL_STOP_CONFIRM_SECONDS + 0.01);
         guard += 1;
       }
       expect(lock.stage).toBe(index + 1);
@@ -308,6 +311,7 @@ describe("LockMechanism", () => {
     let guard = 0;
     while (lock.currentPass === 1 && guard < 140) {
       lock.rotate(first.direction === "cw" ? 1 : -1);
+      advance(lock, DIAL_STOP_CONFIRM_SECONDS + 0.01);
       guard += 1;
     }
     expect(lock.currentPass).toBe(2);
@@ -322,6 +326,7 @@ describe("LockMechanism", () => {
 
     while (lock.stage === 0 && guard < 900) {
       lock.rotate(first.direction === "cw" ? 1 : -1);
+      advance(lock, DIAL_STOP_CONFIRM_SECONDS + 0.01);
       guard += 1;
     }
     expect(lock.locked[5]).toBe(true);
@@ -436,7 +441,43 @@ describe("LockMechanism", () => {
     stopped.dial = (stage.target - direction + 100) % 100;
     stopped.rotate(direction);
     expect(stopped.dial).toBe(stage.target);
-    expect(stopped.currentPass).toBe(2);
+    expect(stopped.currentPass).toBe(1);
+    advance(stopped, DIAL_STOP_CONFIRM_SECONDS - 0.02);
+    expect(stopped.currentPass).toBe(1);
+    const checkpoint = stopped.snapshot;
+    const resumed = new LockMechanism(puzzle);
+    expect(resumed.restore(checkpoint)).toBe(true);
+    advance(resumed, 0.03);
+    expect(resumed.currentPass).toBe(2);
+  });
+
+  it("requires a full correct-direction revolution between repeated passes", () => {
+    const puzzle = createReferencePuzzle("observe");
+    const stage = puzzle.stages[0];
+    const direction = stage.direction === "cw" ? 1 : -1;
+    const lock = new LockMechanism(puzzle);
+
+    lock.dial = (stage.target - direction + 100) % 100;
+    lock.rotate(direction);
+    advance(lock, DIAL_STOP_CONFIRM_SECONDS + 0.01);
+    expect(lock.currentPass).toBe(2);
+
+    // Returning by one reverse step and one correct step reaches the target,
+    // but is not a full revolution and must not advance the pass counter.
+    lock.rotate(-direction);
+    lock.rotate(direction);
+    advance(lock, DIAL_STOP_CONFIRM_SECONDS + 0.01);
+    expect(lock.currentPass).toBe(2);
+
+    for (let step = 0; step < 99; step += 1) lock.rotate(direction);
+    expect(lock.dial).not.toBe(stage.target);
+    const checkpoint = lock.snapshot;
+    const resumed = new LockMechanism(puzzle);
+    expect(resumed.restore(checkpoint)).toBe(true);
+    resumed.rotate(direction);
+    expect(resumed.dial).toBe(stage.target);
+    advance(resumed, DIAL_STOP_CONFIRM_SECONDS + 0.01);
+    expect(resumed.currentPass).toBe(3);
   });
 
   it("偽ゲート訓練契約は二輪の短い手順で、浅い接触を反証して開錠できる", () => {
@@ -526,13 +567,18 @@ describe("LockMechanism", () => {
       let guard = 0;
       while (lock.stage === index && guard < 900) {
         lock.rotate(stage.direction === "cw" ? 1 : -1);
+        advance(lock, DIAL_STOP_CONFIRM_SECONDS + 0.01);
         guard += 1;
       }
     }
     expect(lock.phase).toBe("settling");
     lock.setTension(0.68);
     expect(lock.lastMessage).toContain("停止後の反応");
-    advance(lock, puzzle.vault.personality.settlingDelaySeconds - 0.02);
+    const settlingElapsed = lock.snapshot.settlingElapsed;
+    const remainingSettling =
+      puzzle.vault.personality.settlingDelaySeconds - settlingElapsed;
+    expect(remainingSettling).toBeGreaterThan(0.02);
+    advance(lock, remainingSettling - 0.02);
     expect(lock.phase).toBe("settling");
     advance(lock, 0.04);
     expect(lock.phase).toBe("tension-ready");

@@ -50,8 +50,8 @@ describe("RankingClient", () => {
     const fetch = vi.fn(
       async (_input: RequestInfo | URL, init?: RequestInit) => {
         const body = JSON.parse(String(init?.body));
-        expect(body.clientVersion).toBe("akerun-web-verified-v3");
-        expect(body.contractVersion).toBe("akerun-play-v3");
+        expect(body.clientVersion).toBe("akerun-web-verified-v4");
+        expect(body.contractVersion).toBe("akerun-play-v4");
         expect(body.clientInstanceId).toEqual(expect.any(String));
         expect(body.action).toBe("finish");
         expect(body.runToken).toBe("run-token-1");
@@ -133,8 +133,8 @@ describe("RankingClient", () => {
     const fetch = vi.fn(
       async (_input: RequestInfo | URL, init?: RequestInit) => {
         const body = JSON.parse(String(init?.body));
-        expect(body.clientVersion).toBe("akerun-web-verified-v3");
-        expect(body.contractVersion).toBe("akerun-play-v3");
+        expect(body.clientVersion).toBe("akerun-web-verified-v4");
+        expect(body.contractVersion).toBe("akerun-play-v4");
         expect(body.action).toBe("abandon");
         expect(body.runToken).toBe("run-token-orphan");
         return new Response(

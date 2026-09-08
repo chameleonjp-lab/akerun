@@ -1,8 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { replayAkerunTrace } from "./trace-verifier.ts";
 
-const CLIENT_VERSION = "akerun-web-verified-v3";
-const CONTRACT_VERSION = "akerun-play-v3";
+const CLIENT_VERSION = "akerun-web-verified-v4";
+const CONTRACT_VERSION = "akerun-play-v4";
 const MAX_REQUEST_BYTES = 256_000;
 const ALLOWED_ORIGINS = new Set([
   "https://chameleonjp-lab.github.io",
