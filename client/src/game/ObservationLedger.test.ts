@@ -68,4 +68,61 @@ describe("ObservationLedger", () => {
     expect(ledger.recent[0]?.text).toBe("有効な観察");
     vi.unstubAllGlobals();
   });
+
+  it("stores problem and dial metadata while keeping old notes readable", () => {
+    const store = new Map<string, string>();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => store.get(key) ?? null,
+        setItem: (key: string, value: string) => store.set(key, value),
+      },
+    });
+
+    const ledger = new ObservationLedger();
+    const note = ledger.add("chronometer-pelagic", "contact", "深さを観察", {
+      problemId: "AKERUN-03-V1",
+      problemVersion: "V1",
+      wheel: 5,
+      dial: 43,
+      direction: "ccw",
+      pass: 1,
+      signal: "depth",
+    });
+    expect(note).toMatchObject({
+      problemId: "AKERUN-03-V1",
+      problemVersion: "V1",
+      wheel: 5,
+      dial: 43,
+      direction: "ccw",
+      pass: 1,
+      signal: "depth",
+    });
+
+    const restored = new ObservationLedger();
+    expect(restored.recent[0]).toMatchObject(note);
+
+    store.set(
+      "vault-tumbler-lab-observations",
+      JSON.stringify([
+        {
+          id: "legacy",
+          vaultId: "vault",
+          category: "contact",
+          text: "旧形式の観察",
+          createdAt: new Date().toISOString(),
+        },
+      ])
+    );
+    const legacy = new ObservationLedger();
+    expect(legacy.recent[0]).toMatchObject({
+      problemId: null,
+      problemVersion: null,
+      wheel: null,
+      dial: null,
+      direction: null,
+      pass: null,
+      signal: null,
+    });
+    vi.unstubAllGlobals();
+  });
 });

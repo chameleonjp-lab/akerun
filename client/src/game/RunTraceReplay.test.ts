@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { createOfficialPuzzle } from "./GameDefinitions";
-import { LockMechanism } from "./LockMechanism";
+import { DIAL_STOP_CONFIRM_SECONDS, LockMechanism } from "./LockMechanism";
 import { replayAkerunTrace } from "../../../shared/akerun/replayAkerunTrace";
 import type { RunTrace, RunTraceEvent } from "./RunTrace";
 import { calculateRunScore } from "./RunSession";
 
-const buildOpeningTrace = () => {
+const buildOpeningTrace = (notificationSteps = 1, confirmStops = true) => {
   const puzzle = createOfficialPuzzle("AKERUN-01-V1");
   const mechanism = new LockMechanism(puzzle);
   const events: RunTraceEvent[] = [];
@@ -37,10 +37,14 @@ const buildOpeningTrace = () => {
           ? (stage.target - mechanism.dial + 100) % 100
           : (mechanism.dial - stage.target + 100) % 100;
       const steps = distance === 0 ? 100 : distance;
-      for (let step = 0; step < steps; step += 1) {
-        apply("rotate", stage.direction === "cw" ? 1 : -1);
-        atMs += 1;
+      let remaining = steps;
+      while (remaining > 0) {
+        const notification = Math.min(notificationSteps, remaining);
+        apply("rotate", (stage.direction === "cw" ? 1 : -1) * notification);
+        atMs += notification;
+        remaining -= notification;
       }
+      if (confirmStops) wait(Math.ceil(DIAL_STOP_CONFIRM_SECONDS * 1000) + 20);
     }
   }
 
@@ -87,6 +91,39 @@ describe("replayAkerunTrace", () => {
         replay.avoidableFalseGateContacts
       )
     );
+  });
+
+  it("keeps the result when the same route uses coarser rotation notifications", () => {
+    const fineInput = buildOpeningTrace(1);
+    const fine = replayAkerunTrace(
+      "AKERUN-01-V1",
+      fineInput.trace,
+      fineInput.elapsedTimeMs
+    );
+    const coarseInput = buildOpeningTrace(8);
+    const coarse = replayAkerunTrace(
+      "AKERUN-01-V1",
+      coarseInput.trace,
+      coarseInput.elapsedTimeMs
+    );
+
+    expect(fine.ok).toBe(true);
+    expect(coarse).toMatchObject({
+      ok: true,
+      totalDialSteps: fine.ok ? fine.totalDialSteps : -1,
+      faultCount: fine.ok ? fine.faultCount : -1,
+      avoidableFalseGateContacts: fine.ok
+        ? fine.avoidableFalseGateContacts
+        : -1,
+      excessDialSteps: fine.ok ? fine.excessDialSteps : -1,
+    });
+  });
+
+  it("rejects a trace that only touches targets without confirming a stop", () => {
+    const input = buildOpeningTrace(1, false);
+    expect(
+      replayAkerunTrace("AKERUN-01-V1", input.trace, input.elapsedTimeMs)
+    ).toMatchObject({ ok: false, reason: "trace_did_not_open" });
   });
 
   it("rejects a trace changed after recording", () => {

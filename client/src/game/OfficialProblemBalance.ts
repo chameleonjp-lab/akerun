@@ -5,7 +5,7 @@ import {
   type ProblemTier,
   type TurnDirection,
 } from "./GameDefinitions";
-import { LockMechanism } from "./LockMechanism";
+import { DIAL_STOP_CONFIRM_SECONDS, LockMechanism } from "./LockMechanism";
 import { calculateRunScore } from "./RunSession";
 import { scoreTimeReferenceSeconds } from "../../../shared/akerun/ScoreContract";
 
@@ -99,6 +99,7 @@ const measureDialRoute = (problemId: string): DialRouteResult => {
     if (!stage) break;
     const stageBefore = lock.stage;
     lock.rotate(stage.direction === "cw" ? 1 : -1);
+    advance(lock, DIAL_STOP_CONFIRM_SECONDS + 0.01);
     steps += 1;
     falseGateContacts += lock.lastRotationFalseGateContacts;
     if (lock.stage < stageBefore) break;

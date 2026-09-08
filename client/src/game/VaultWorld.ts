@@ -24,6 +24,7 @@ import { ArchiveLedger } from "./ArchiveLedger";
 import {
   ObservationLedger,
   type ObservationCategory,
+  type ObservationNote,
 } from "./ObservationLedger";
 import {
   MAX_RUN_TIME_SECONDS,
@@ -58,6 +59,21 @@ const ASSETS = {
 
 const DEMO_DIAL_INTERVAL_SECONDS = 0.045;
 const DEMO_ACTION_INTERVAL_SECONDS = 0.08;
+
+const formatObservationMetadata = (note: ObservationNote) => {
+  const problem =
+    note.problemId && note.problemVersion
+      ? `${note.problemId}@${note.problemVersion}`
+      : "旧形式";
+  const location =
+    note.wheel !== null && note.dial !== null
+      ? `W${note.wheel}/${String(note.dial).padStart(2, "0")}`
+      : "W-/--";
+  const direction = note.direction ? note.direction.toUpperCase() : "方向なし";
+  const pass = note.pass === null ? "P-" : `P${note.pass}`;
+  const signal = note.signal ? note.signal.toUpperCase() : "SIGNAL-";
+  return `${problem} · ${location} · ${direction} · ${pass} · ${signal}`;
+};
 
 export type Rect = { x: number; y: number; width: number; height: number };
 
@@ -636,6 +652,8 @@ export class VaultWorld {
     }
     const previousFaults = this.mechanism.faultCount;
     const wasOpened = this.mechanism.opened;
+    const previousDialStage = this.mechanism.stage;
+    const previousDialPass = this.mechanism.currentPass;
     let remainingDelta = safeDelta;
     while (remainingDelta > 0 && !this.mechanism.opened) {
       const step = Math.min(0.25, remainingDelta);
@@ -654,6 +672,9 @@ export class VaultWorld {
         this.mechanism.phase !== "jammed"
       );
     }
+    // 通過確定は停止待ちのtickで起きるため、rotateDialの呼び出し直後
+    // だけを見ているとフライの取得音・振動を失う。
+    this.syncDialProgress(previousDialStage, previousDialPass);
     if (!wasOpened && this.mechanism.opened) this.completeUnlock();
     this.syncPhysicalFeedback();
     const targetOpening = this.mechanism.opened ? 1 : 0;
@@ -1295,7 +1316,8 @@ export class VaultWorld {
   private captureObservation() {
     const phase = this.mechanism.phase;
     const contact = this.mechanism.contactProfile;
-    const category: ObservationCategory =
+    const puzzle = this.mechanism.puzzle;
+    const rawCategory: ObservationCategory =
       contact === "false-gate"
         ? "false-gate"
         : contact === "true-gate" ||
@@ -1307,6 +1329,12 @@ export class VaultWorld {
               phase === "open"
             ? "boltwork"
             : "preload";
+    const hidesGateClassification = !puzzle.difficulty.showFalseGatePositions;
+    // 隠し難度では、内部だけが知る「偽ゲート」という分類をメモへ渡さない。
+    const category: ObservationCategory =
+      hidesGateClassification && rawCategory === "false-gate"
+        ? "contact"
+        : rawCategory;
     const contactLabel =
       contact === "true-gate"
         ? "正規ゲート"
@@ -1316,18 +1344,39 @@ export class VaultWorld {
             ? "ゲート縁"
             : "待機";
     const text =
-      category === "false-gate"
-        ? `浅い切欠き：深さ ${Math.round(this.mechanism.contactDepth * 100)}%。短い反発で、フェンスは座らない。`
-        : category === "contact"
-          ? `接触：${contactLabel}。深さ ${Math.round(this.mechanism.contactDepth * 100)}%、予圧 ${Math.round(this.mechanism.packResistance * 100)}%。`
-          : category === "boltwork"
-            ? `扉ボルト：${this.mechanism.puzzle.vault.boltLayout.label}。${this.mechanism.puzzle.vault.boltLayout.boltRatios.length}本の扉側ボルトとキャリーバーを観察。`
-            : `ホイールパック予圧：${this.mechanism.puzzle.vault.preload.label}。基準抵抗 ${Math.round(this.mechanism.puzzle.vault.preload.baseResistance * 100)}%。`;
-    const note = this.observations.add(
-      this.mechanism.puzzle.vault.id,
-      category,
-      text
-    );
+      rawCategory === "false-gate"
+        ? hidesGateClassification
+          ? "接触反応：短い反発。音の減衰と戻りを観察。"
+          : `浅い切欠き：深さ ${Math.round(this.mechanism.contactDepth * 100)}%。短い反発で、フェンスは座らない。`
+        : rawCategory === "contact"
+          ? hidesGateClassification
+            ? "接触反応：深さと予圧の変化。候補同士の反応を比べる。"
+            : `接触：${contactLabel}。深さ ${Math.round(this.mechanism.contactDepth * 100)}%、予圧 ${Math.round(this.mechanism.packResistance * 100)}%。`
+          : rawCategory === "boltwork"
+            ? `扉ボルト：${puzzle.vault.boltLayout.label}。${puzzle.vault.boltLayout.boltRatios.length}本の扉側ボルトとキャリーバーを観察。`
+            : `ホイールパック予圧：${puzzle.vault.preload.label}。基準抵抗 ${Math.round(puzzle.vault.preload.baseResistance * 100)}%。`;
+    const activeStage = this.mechanism.activeStage;
+    const signal =
+      rawCategory === "false-gate"
+        ? "rebound"
+        : rawCategory === "contact"
+          ? contact === "true-gate"
+            ? "depth"
+            : "edge"
+          : rawCategory === "boltwork"
+            ? "release"
+            : rawCategory === "preload"
+              ? "load"
+              : "idle";
+    const note = this.observations.add(puzzle.vault.id, category, text, {
+      problemId: puzzle.problemId ?? puzzle.id,
+      problemVersion: puzzle.problemVersion ?? "DEV",
+      wheel: phase === "dial" && activeStage ? activeStage.wheel + 1 : null,
+      dial: phase === "dial" ? this.mechanism.dial : null,
+      direction: phase === "dial" ? this.mechanism.lastDirection : null,
+      pass: phase === "dial" ? this.mechanism.currentPass : null,
+      signal,
+    });
     this.mechanism.lastMessage = note.text
       ? `観察メモを端末内に保存しました。メモ / O で閲覧できます。`
       : "保存する観察がありません。";
@@ -1345,7 +1394,9 @@ export class VaultWorld {
       );
       for (
         let turn = 0;
-        turn < turns && this.mechanism.phase === "dial";
+        turn < turns &&
+        this.mechanism.phase === "dial" &&
+        !this.mechanism.targetStopPending;
         turn += 1
       ) {
         const stage = this.mechanism.activeStage;
@@ -1519,6 +1570,10 @@ export class VaultWorld {
       this.mechanism.dial !== previousDial
     )
       this.audio.flyRelease();
+    this.syncDialProgress(previousStage, previousPass);
+  }
+
+  private syncDialProgress(previousStage: number, previousPass: number) {
     if (
       this.mechanism.stage === previousStage &&
       this.mechanism.currentPass > previousPass
@@ -3899,12 +3954,15 @@ export class VaultWorld {
         panel.x + unit * 1.7,
         y + unit * 0.95
       );
+      const metadata = formatObservationMetadata(note);
       ctx.fillStyle = "#c7d3cf";
-      ctx.font = `500 ${unit * 0.68}px ${JAPANESE_FONT_STACK}`;
+      ctx.font = `500 ${unit * 0.48}px "DM Mono", monospace`;
+      ctx.fillText(metadata, panel.x + unit * 1.7, y + unit * 1.48);
+      ctx.font = `500 ${unit * 0.64}px ${JAPANESE_FONT_STACK}`;
       this.drawWrappedText(
         note.text,
         panel.x + unit * 1.7,
-        y + unit * 1.75,
+        y + unit * 2.08,
         panel.width - unit * 3.4,
         unit * 0.82,
         layout.compact ? 2 : Number.POSITIVE_INFINITY

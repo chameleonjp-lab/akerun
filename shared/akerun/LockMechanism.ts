@@ -64,6 +64,11 @@ export type LockMechanismSnapshot = {
   readonly overloadHold: number;
   readonly settlingElapsed: number;
   readonly rotationSpeed: number;
+  /** PR2の一周判定。旧チェックポイントでは未設定なら0として扱う。 */
+  readonly rotationSincePass?: number;
+  /** 目標位置で停止確認を待っている状態。旧形式では再観察させる。 */
+  readonly pendingTargetStop?: boolean;
+  readonly pendingStopElapsed?: number;
 };
 
 /** 後方互換のため、既存の基準手順を公開する。 */
@@ -76,6 +81,10 @@ const clamp = (value: number, min = 0, max = 1) =>
 const clampUnit = (value: number) =>
   Number.isFinite(value) ? clamp(value) : 0;
 
+/** 正規ゲートに触れてから、実際に止まったと認めるまでの時間。 */
+export const DIAL_STOP_CONFIRM_SECONDS = 0.16;
+const FULL_DIAL_REVOLUTION_STEPS = 100;
+
 const signedDistance = (from: number, to: number) => {
   const raw = normalize(to - from);
   return raw > 50 ? raw - 100 : raw;
@@ -84,16 +93,16 @@ const signedDistance = (from: number, to: number) => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-const isUnitNumber = (value: unknown) =>
+const isUnitNumber = (value: unknown): value is number =>
   typeof value === "number" &&
   Number.isFinite(value) &&
   value >= 0 &&
   value <= 1;
 
-const isNonNegativeNumber = (value: unknown) =>
+const isNonNegativeNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value) && value >= 0;
 
-const isNonNegativeInteger = (value: unknown) =>
+const isNonNegativeInteger = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 
 const PROTOCOL_PHASES: readonly ProtocolPhase[] = [
@@ -157,7 +166,16 @@ export const isLockMechanismSnapshot = (
     isNonNegativeNumber(value.handleHold) &&
     isNonNegativeNumber(value.overloadHold) &&
     isNonNegativeNumber(value.settlingElapsed) &&
-    isUnitNumber(value.rotationSpeed)
+    isUnitNumber(value.rotationSpeed) &&
+    (value.rotationSincePass === undefined ||
+      (isNonNegativeInteger(value.rotationSincePass) &&
+        value.rotationSincePass <= FULL_DIAL_REVOLUTION_STEPS)) &&
+    (value.pendingTargetStop === undefined ||
+      typeof value.pendingTargetStop === "boolean") &&
+    (value.pendingStopElapsed === undefined ||
+      (isNonNegativeNumber(value.pendingStopElapsed) &&
+        value.pendingStopElapsed <=
+          DIAL_STOP_CONFIRM_SECONDS + SNAPSHOT_EPSILON))
   );
 };
 
@@ -208,6 +226,28 @@ export const isCoherentLockMechanismSnapshot = (
     value.boltTravel > value.desiredBoltTravel + SNAPSHOT_EPSILON ||
     value.handleTurn > value.desiredHandleTurn + SNAPSHOT_EPSILON
   ) {
+    return false;
+  }
+
+  const rotationSincePass = value.rotationSincePass ?? 0;
+  const pendingTargetStop = value.pendingTargetStop === true;
+  const pendingStopElapsed = value.pendingStopElapsed ?? 0;
+  if (
+    value.phase !== "dial" &&
+    (rotationSincePass !== 0 || pendingTargetStop || pendingStopElapsed !== 0)
+  ) {
+    return false;
+  }
+  if (pendingTargetStop) {
+    const activeStage = puzzle.stages[value.stage];
+    if (
+      !activeStage ||
+      value.dial !== activeStage.target ||
+      value.lastDirection !== activeStage.direction
+    ) {
+      return false;
+    }
+  } else if (pendingStopElapsed !== 0) {
     return false;
   }
 
@@ -455,6 +495,10 @@ export class LockMechanism {
   private overloadHold = 0;
   private settlingElapsed = 0;
   private rotationSpeed = 0;
+  /** 前回確定したゲートから、正しい方向へ進んだ実効目盛り数。 */
+  private rotationSincePass = 0;
+  private pendingTargetStop = false;
+  private pendingStopElapsed = 0;
 
   constructor(puzzle: PuzzleDefinition = createReferencePuzzle()) {
     this.puzzle = puzzle;
@@ -477,6 +521,11 @@ export class LockMechanism {
     return this.phase === "dial"
       ? Math.min(this.activeStage?.passes ?? 0, this.stagePasses + 1)
       : 0;
+  }
+
+  /** 正規ゲート上で停止確認を待っているか。デモと表示同期だけが利用する。 */
+  get targetStopPending(): boolean {
+    return this.phase === "dial" && this.pendingTargetStop;
   }
 
   get requiredPasses(): number {
@@ -820,6 +869,9 @@ export class LockMechanism {
       overloadHold: this.overloadHold,
       settlingElapsed: this.settlingElapsed,
       rotationSpeed: this.rotationSpeed,
+      rotationSincePass: this.rotationSincePass,
+      pendingTargetStop: this.pendingTargetStop,
+      pendingStopElapsed: this.pendingStopElapsed,
     };
   }
 
@@ -863,6 +915,15 @@ export class LockMechanism {
     this.overloadHold = snapshot.overloadHold;
     this.settlingElapsed = snapshot.settlingElapsed;
     this.rotationSpeed = clamp(snapshot.rotationSpeed);
+    this.rotationSincePass = Math.min(
+      FULL_DIAL_REVOLUTION_STEPS,
+      snapshot.rotationSincePass ?? 0
+    );
+    this.pendingTargetStop =
+      snapshot.phase === "dial" && snapshot.pendingTargetStop === true;
+    this.pendingStopElapsed = this.pendingTargetStop
+      ? Math.min(DIAL_STOP_CONFIRM_SECONDS, snapshot.pendingStopElapsed ?? 0)
+      : 0;
     return true;
   }
 
@@ -905,6 +966,14 @@ export class LockMechanism {
       return;
     const seconds = Math.min(0.25, delta);
     this.rotationSpeed = Math.max(0, this.rotationSpeed - seconds * 2.4);
+    if (this.phase === "dial" && this.pendingTargetStop) {
+      this.pendingStopElapsed += seconds;
+      if (this.pendingStopElapsed >= DIAL_STOP_CONFIRM_SECONDS) {
+        this.pendingTargetStop = false;
+        this.pendingStopElapsed = 0;
+        this.confirmTargetStop();
+      }
+    }
     if (this.phase === "settling") this.advanceSettling(seconds);
     if (this.phase === "tension-test") this.advanceTension(seconds);
     if (this.phase === "fence-ready") this.advanceFence(seconds);
@@ -927,6 +996,10 @@ export class LockMechanism {
         "今はダイヤルを回さない。前に出た物理部品の反応を確かめてください。";
       return;
     }
+
+    // 動きが再開したら、直前の接触は「停止」として確定しない。
+    this.pendingTargetStop = false;
+    this.pendingStopElapsed = 0;
 
     const direction: TurnDirection = steps > 0 ? "cw" : "ccw";
     const count = Math.min(32, Math.max(1, Math.round(Math.abs(steps))));
@@ -955,6 +1028,10 @@ export class LockMechanism {
       }
 
       this.dial = normalize(this.dial + delta);
+      this.rotationSincePass = Math.min(
+        FULL_DIAL_REVOLUTION_STEPS,
+        this.rotationSincePass + 1
+      );
       for (const wheel of this.coupledWheels)
         this.tumblerValues[wheel] = this.dial;
 
@@ -991,7 +1068,36 @@ export class LockMechanism {
         : "正規ゲートを通過しましたが、止めた位置が目標ではないため通過として数えません。候補の位置で止めて反応を比べてください。";
       return;
     }
+    // 正規ゲートに触れた時点では、まだ停止を確定しない。次のフレーム
+    // から一定時間目標位置が保たれた場合だけ、通過候補として扱う。
+    this.pendingTargetStop = true;
+    this.pendingStopElapsed = 0;
+  }
+
+  private confirmTargetStop() {
+    if (this.phase !== "dial") return;
+    const current = this.activeStage;
+    if (
+      !current ||
+      this.dial !== current.target ||
+      this.lastDirection !== current.direction
+    )
+      return;
+    const target = current.target;
+    const targetWheel = current.wheel;
+    const targetPasses = current.passes;
+    if (
+      this.stagePasses > 0 &&
+      this.rotationSincePass < FULL_DIAL_REVOLUTION_STEPS
+    ) {
+      this.lastMessage = this.puzzle.difficulty.showExactInstruction
+        ? "正規ゲートで止まりましたが、前回の通過から一周していません。正しい方向へもう一周してから止めてください。"
+        : "正規ゲートで止まりましたが、まだ一周分の反応がありません。正しい方向へ回してから、もう一度止めてください。";
+      return;
+    }
+
     this.stagePasses += 1;
+    this.rotationSincePass = 0;
     if (this.stagePasses < targetPasses) {
       this.lastMessage = this.puzzle.difficulty.showExactInstruction
         ? `輪 ${targetWheel + 1} はまだフライの遊びの中です。${this.stagePasses + 1}回目に ${String(target).padStart(2, "0")} を通過します。`
@@ -1166,6 +1272,9 @@ export class LockMechanism {
     this.faultCount = 0;
     this.settlingElapsed = 0;
     this.rotationSpeed = 0;
+    this.rotationSincePass = 0;
+    this.pendingTargetStop = false;
+    this.pendingStopElapsed = 0;
     this.lastRotationFalseGateContacts = 0;
     this.lastRotationFalseGateDepth = 0;
     this.opened = false;
@@ -1205,6 +1314,9 @@ export class LockMechanism {
     this.overloadHold = 0;
     this.settlingElapsed = 0;
     this.rotationSpeed = 0;
+    this.rotationSincePass = 0;
+    this.pendingTargetStop = false;
+    this.pendingStopElapsed = 0;
     this.faultCount = 0;
     this.lastRotationFalseGateContacts = 0;
     this.lastRotationFalseGateDepth = 0;
