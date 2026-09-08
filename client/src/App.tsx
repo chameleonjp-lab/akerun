@@ -35,6 +35,7 @@ import {
   shouldAbortStartCountdown,
 } from "./game/StartCountdown";
 import { isDialTrainingComplete } from "./game/TrainingProgress";
+import { getActionPrompt } from "./game/ActionPrompt";
 
 type Screen =
   | "title"
@@ -82,24 +83,6 @@ const getShareUrl = () => {
   url.search = "";
   url.hash = "";
   return url.toString();
-};
-
-const phaseLabel = (phase: string) => {
-  const labels: Record<string, string> = {
-    dial: "ダイヤル観察",
-    settling: "停止後の反応を観察",
-    "tension-ready": "テンション待機",
-    "tension-test": "抵抗を保持",
-    "fence-ready": "フェンス確認",
-    "fence-seated": "フェンス着座",
-    "bolt-test": "ロックボルト確認",
-    "boltwork-ready": "扉ボルト準備",
-    "handle-test": "扉ハンドル",
-    jammed: "噛み込みから復帰",
-    lockout: "安全停止",
-    open: "開扉",
-  };
-  return labels[phase] ?? phase;
 };
 
 const rarityLabel: Record<string, string> = {
@@ -1567,6 +1550,7 @@ export default function App() {
     const canvasOverlayOpen =
       snapshot?.canvasOverlay !== undefined &&
       snapshot.canvasOverlay !== "none";
+    const actionPrompt = getActionPrompt(snapshot);
     const performCanvasAction = (action: string) => {
       handle?.performAction(action);
       const nextSnapshot = handle?.getSnapshot();
@@ -1605,7 +1589,31 @@ export default function App() {
                 </Button>
               </div>
             </div>
-            <div className="akerun-live-panel" aria-live="polite">
+            <section
+              className="akerun-action-prompt"
+              aria-label="現在の操作"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              <p className="akerun-action-kicker">現在の操作</p>
+              <strong className="akerun-action-title">
+                {actionPrompt.title}
+              </strong>
+              <div className="akerun-action-details">
+                {actionPrompt.details.map(detail => (
+                  <span className="akerun-action-detail" key={detail}>
+                    {detail}
+                  </span>
+                ))}
+              </div>
+              <p className="akerun-action-instruction">
+                {actionPrompt.instruction}
+              </p>
+              <p className="akerun-action-feedback" aria-hidden="true">
+                {snapshot?.message ?? "反応を観察してください。"}
+              </p>
+            </section>
+            <section className="akerun-live-panel" aria-label="プレイ状況">
               <div className="akerun-live-stats">
                 <Stat
                   label="時間"
@@ -1622,12 +1630,7 @@ export default function App() {
                   }
                 />
               </div>
-              <p>
-                <strong>次の操作：</strong>
-                {phaseLabel(snapshot?.phase ?? "dial")}
-              </p>
-              <p>{snapshot?.message ?? "反応を観察してください。"}</p>
-            </div>
+            </section>
             <nav className="akerun-mobile-menu" aria-label="プレイ中メニュー">
               <Button onClick={() => performCanvasAction("notes")}>
                 観察メモ

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createOfficialPuzzle,
+  createPuzzleFromSeed,
   createTrainingPuzzle,
   type PuzzleDefinition,
 } from "./GameDefinitions";
@@ -110,8 +111,8 @@ function setup(
     Object.assign(event, {
       pointerId: id,
       pointerType: "touch",
-      clientX: (point.x * width) / Math.max(320, width),
-      clientY: (point.y * height) / Math.max(520, height),
+      clientX: (point.x * width) / Math.max(1, width),
+      clientY: (point.y * height) / Math.max(1, height),
     });
     canvas.dispatchEvent(event);
   };
@@ -187,7 +188,7 @@ function setup(
   const solveDial = () => {
     const dial = calculateScreenLayout(
       Math.max(320, width),
-      Math.max(520, height),
+      Math.max(1, height),
       training
     ).dial;
     let angle = 0;
@@ -252,6 +253,38 @@ function setup(
 }
 
 describe("rendered touch controls → mechanism → result", () => {
+  it("publishes readable action metadata without leaking hidden targets", () => {
+    const guided = setup(createOfficialPuzzle("AKERUN-01-V1"), false);
+    expect(guided.world.getSnapshot()).toMatchObject({
+      activeWheel: 3,
+      activeDirection: "ccw",
+      activeTarget: 18,
+      currentPass: 1,
+      requiredPasses: 5,
+      targetStopPending: false,
+    });
+
+    const hidden = setup(createOfficialPuzzle("AKERUN-03-V1"), false);
+    expect(hidden.world.getSnapshot()).toMatchObject({
+      activeTarget: null,
+      activeDirection: "ccw",
+      currentPass: 1,
+      requiredPasses: expect.any(Number),
+    });
+    expect(hidden.world.getSnapshot().protocolInstruction).not.toContain("目標");
+
+    const blind = setup(createPuzzleFromSeed(20260908, "blind"), false);
+    expect(blind.world.getSnapshot()).toMatchObject({
+      activeWheel: null,
+      activeDirection: null,
+      activeTarget: null,
+      currentPass: null,
+      requiredPasses: null,
+      targetStopPending: false,
+      protocolInstruction: "ブラインドモード：音と振動の合図を聞いて操作します。",
+    });
+  });
+
   it.each([
     [402, 874, 0.81],
     [402, 874, 1],

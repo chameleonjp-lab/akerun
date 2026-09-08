@@ -24,10 +24,23 @@ export const MAX_CANVAS_PIXEL_RATIO = 2;
 const positiveFinite = (value: number) =>
   Number.isFinite(value) && value > 0 ? value : 0;
 
-export function getLogicalCanvasSize(clientWidth: number, clientHeight: number): LogicalCanvasSize {
+/**
+ * Canvasの論理座標を、実際に表示されているCSSの面積へ合わせる。
+ *
+ * 以前は小さい画面を常に320×520へ引き上げていたため、iPhoneの横画面
+ * （例: 874×402）では高さ520の絵を402pxへ縮めていた。寸法が取得できる
+ * 場合は実寸を正本にし、初期化直後など0/NaNのときだけ安全なフォールバック
+ * を使う。これで描画・ヒットボックス・ポインター座標が同じ比率になる。
+ */
+export function getLogicalCanvasSize(
+  clientWidth: number,
+  clientHeight: number
+): LogicalCanvasSize {
+  const width = positiveFinite(clientWidth);
+  const height = positiveFinite(clientHeight);
   return {
-    width: Math.max(MIN_CANVAS_WIDTH, Math.floor(positiveFinite(clientWidth))),
-    height: Math.max(MIN_CANVAS_HEIGHT, Math.floor(positiveFinite(clientHeight))),
+    width: width > 0 ? Math.floor(width) : MIN_CANVAS_WIDTH,
+    height: height > 0 ? Math.floor(height) : MIN_CANVAS_HEIGHT,
   };
 }
 
