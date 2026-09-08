@@ -1221,3 +1221,15 @@
     bottom: max(6px, env(safe-area-inset-bottom));
     left: max(14px, env(safe-area-inset-left));
     display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    width: min(520px, calc(100% - 28px));
+    gap: 4px;
+  }
+
+  .akerun-mobile-menu .akerun-button {
+    min-height: 44px;
+    padding: 5px 3px;
+    font-size: 0.66rem;
+    line-height: 1.15;
+  }
+}
