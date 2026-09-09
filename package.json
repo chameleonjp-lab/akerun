@@ -13,7 +13,8 @@
     "generate:problem-balance": "node --import tsx/esm scripts/generate-official-problem-balance.ts",
     "format": "prettier --write .",
     "build:pages": "vite build && node scripts/verify-static-build.mjs dist/public",
-    "verify:static-build": "node scripts/verify-static-build.mjs dist/public"
+    "verify:static-build": "node scripts/verify-static-build.mjs dist/public",
+    "verify:release": "node scripts/verify-release-gate.mjs dist/public"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

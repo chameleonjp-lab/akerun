@@ -161,5 +161,6 @@ GitHub Actionsでも型検査、ルールテスト、本番ビルド、GitHub Pa
 - V3採点契約migrationとEdge Functionを同時に配置し、版・旧記録隔離・スコア再計算の本番読み取り確認を行う
 - ランキングを有効化する前に、同じ問題の再挑戦、送信失敗からの再送、期限切れ、二重送信、ランキング取得を実環境で確認する
 - VaultWorld.ts を入力、描画、セッションへ段階的に分割する
-- 公開後にiPhone Safariの縦画面で全導線を確認する
+- `pnpm verify:release` と `docs/pr4-release-gate.md` の自動・手動ゲートを公開前に完了する
+- 公開後にiPhone Safariの縦画面・横画面で全導線を確認する
 - ブラウザ自動操作、公開URLの表示確認、iPhone 17 Proで15分連続プレイを追加検証する

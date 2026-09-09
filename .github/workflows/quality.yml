@@ -33,3 +33,5 @@ jobs:
           VITE_BASE_PATH: /akerun/
           VITE_BUILD_COMMIT: ${{ github.sha }}
           REQUIRE_BUILD_COMMIT: "1"
+      - name: Release gate
+        run: pnpm verify:release

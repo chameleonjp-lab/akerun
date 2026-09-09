@@ -64,6 +64,18 @@
   inset: 0;
   overflow: hidden;
   background: #091018;
+  /* ゲーム中の長押しメニューとページ側のジェスチャーを抑え、
+     ダイヤルの一回の入力をSafariの別操作へ変換させない。 */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.akerun-shell input,
+.akerun-shell textarea {
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
 }
 
 .akerun-screen,
