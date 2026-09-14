@@ -388,14 +388,27 @@ export const calculateScreenLayout = (
 ): ScreenLayout => {
   const safeWidth = Number.isFinite(width) && width > 0 ? width : 1;
   const safeHeight = Number.isFinite(height) && height > 0 ? height : 1;
-  const compact = safeWidth / safeHeight < 1.12;
+  // 縦向きスマートフォンでは、HTMLの予約帯を差し引いたCanvasだけが
+  // 320px前後の高さになる。幅/高さ比だけで判定すると横長レイアウトへ
+  // 切り替わり、右側の機構列が小さな操作帯へ押し込まれるため、端末幅の
+  // 目安も使ってcompactを維持する（短い横画面の幅480px超は従来判定）。
+  const compact =
+    safeWidth / safeHeight < 1.12 ||
+    (safeWidth <= 430 && safeHeight <= 620);
   const shortViewport = safeHeight < 560;
   if (compact) {
     const unit = canvasUnit(safeWidth, safeHeight, compact);
     const bottomReserve = trainingContract
       ? Math.min(300, Math.max(230, safeHeight * 0.33))
       : Math.min(175, Math.max(120, safeHeight * 0.18));
-    const contentHeight = Math.max(unit * 30, safeHeight - bottomReserve);
+    // モバイルではCSSがCanvasをHUDと下部メニューの間へ縮めるため、
+    // 旧来のunit*30の下限を使うと、実寸が320px前後の操作帯で
+    // ダイヤル半径だけが大きくなり、作業台がCanvas外へ押し出される。
+    // 最小限の機構描画に必要な高さだけを確保し、残りは実寸へ合わせる。
+    const contentHeight = Math.max(
+      trainingContract ? unit * 10 : unit * 12,
+      safeHeight - bottomReserve
+    );
     const radius = trainingContract
       ? Math.min(safeWidth * 0.27, contentHeight * 0.17)
       : Math.min(safeWidth * 0.255, contentHeight * 0.15);

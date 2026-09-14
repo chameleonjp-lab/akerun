@@ -1233,3 +1233,173 @@
     line-height: 1.15;
   }
 }
+
+/*
+ * スマートフォンのプレイ画面は、HTMLの案内・Canvasの操作部品・下部メニューを
+ * 同じ画面に重ねない。Canvasを中央の操作帯へ縮めることで、見えている部品と
+ * 実際に指で触れる部品の座標を一致させる。
+ */
+@media (max-width: 680px) {
+  .akerun-play-layer,
+  .akerun-training-layer {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  .akerun-action-detail.akerun-mobile-runtime-detail {
+    display: none;
+  }
+}
+
+@media (orientation: portrait) and (max-width: 680px) {
+  .akerun-shell.akerun-screen-play .akerun-game-canvas {
+    --akerun-play-canvas-top: max(
+      170px,
+      calc(env(safe-area-inset-top) + 145px)
+    );
+    --akerun-play-canvas-bottom: max(
+      112px,
+      calc(env(safe-area-inset-bottom) + 106px)
+    );
+    top: 170px;
+    right: 0;
+    bottom: 112px;
+    left: 0;
+    width: 100%;
+    height: calc(
+      100vh - var(--akerun-play-canvas-top) - var(--akerun-play-canvas-bottom)
+    );
+    top: var(--akerun-play-canvas-top);
+    bottom: var(--akerun-play-canvas-bottom);
+    height: calc(
+      100dvh - var(--akerun-play-canvas-top) - var(--akerun-play-canvas-bottom)
+    );
+    min-height: 1px;
+  }
+
+  .akerun-shell.akerun-screen-training .akerun-game-canvas {
+    --akerun-training-canvas-bottom: max(
+      150px,
+      calc(env(safe-area-inset-bottom) + 25dvh + 12px)
+    );
+    top: 0;
+    right: 0;
+    bottom: 150px;
+    left: 0;
+    width: 100%;
+    height: calc(100vh - var(--akerun-training-canvas-bottom));
+    bottom: var(--akerun-training-canvas-bottom);
+    height: calc(100dvh - var(--akerun-training-canvas-bottom));
+    min-height: 1px;
+  }
+
+  .akerun-hud {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 6px 8px;
+    padding-top: max(10px, env(safe-area-inset-top));
+  }
+
+  .akerun-hud > div:first-child {
+    min-width: 0;
+  }
+
+  .akerun-hud h2 {
+    overflow: hidden;
+    font-size: 0.92rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .akerun-hud .akerun-kicker {
+    margin-bottom: 3px;
+    overflow: hidden;
+    font-size: 0.58rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .akerun-hud-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .akerun-hud .akerun-button {
+    min-width: 64px;
+    min-height: 44px;
+    padding: 6px 8px;
+    font-size: 0.7rem;
+    line-height: 1.15;
+  }
+
+  .akerun-action-prompt {
+    z-index: 2;
+    top: max(64px, calc(env(safe-area-inset-top) + 50px));
+  }
+
+  .akerun-action-detail.akerun-mobile-runtime-detail {
+    display: inline-flex;
+  }
+
+  /* 状態の重複表示をやめ、同じ数値を上部の案内帯へまとめる。 */
+  .akerun-shell.akerun-screen-play .akerun-live-panel {
+    display: none;
+  }
+
+  .akerun-mobile-menu {
+    z-index: 3;
+  }
+}
+
+/* 画面が短い端末では、案内を一行に絞り、操作帯を確保する。 */
+@media (orientation: portrait) and (max-width: 680px) and (max-height: 650px) {
+  .akerun-shell.akerun-screen-play .akerun-game-canvas {
+    --akerun-play-canvas-top: max(
+      136px,
+      calc(env(safe-area-inset-top) + 124px)
+    );
+    top: 136px;
+    bottom: 112px;
+    height: calc(
+      100vh - var(--akerun-play-canvas-top) - var(--akerun-play-canvas-bottom)
+    );
+    top: var(--akerun-play-canvas-top);
+    bottom: var(--akerun-play-canvas-bottom);
+    height: calc(
+      100dvh - var(--akerun-play-canvas-top) - var(--akerun-play-canvas-bottom)
+    );
+  }
+
+  .akerun-action-prompt {
+    top: max(60px, calc(env(safe-area-inset-top) + 44px));
+    padding-block: 6px;
+  }
+
+  .akerun-action-prompt .akerun-action-instruction,
+  .akerun-action-prompt .akerun-action-feedback,
+  .akerun-action-detail.akerun-mobile-runtime-detail {
+    display: none;
+  }
+
+  .akerun-action-details {
+    flex-wrap: nowrap;
+    margin-top: 3px;
+    overflow: hidden;
+  }
+
+  .akerun-action-detail {
+    min-height: 26px;
+    font-size: 0.88rem;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .akerun-action-detail:nth-child(n + 4) {
+    display: none;
+  }
+}

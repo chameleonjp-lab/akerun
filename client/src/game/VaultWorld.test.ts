@@ -81,6 +81,41 @@ describe("calculateScreenLayout", () => {
     }
   );
 
+  it.each([
+    [320, 245, true],
+    [320, 257, false],
+    [320, 320, false],
+    [320, 328, false],
+    [390, 562, false],
+    [402, 592, false],
+    [390, 621, true],
+  ])(
+    "keeps every compact control inside a constrained mobile canvas at %ix%i (%s)",
+    (width, height, training) => {
+      const layout = calculateScreenLayout(width, height, training);
+      const unit = compactUnit(width, height);
+      const controlsBottom =
+        layout.dial.y + layout.dial.radius * 1.42 + unit * 2.35;
+      const workbenchHeight = training
+        ? Math.min(unit * 10, height * 0.115)
+        : Math.min(unit * 9, height * 0.11);
+      const workbenchBottom =
+        layout.footerY +
+        (training || height <= COMPACT_WORKBENCH_ONLY_MAX_HEIGHT
+          ? workbenchHeight
+          : unit * 4.85 + workbenchHeight);
+
+      expect(layout.compact).toBe(true);
+      expect(layout.dial.y - layout.dial.radius * 1.12).toBeGreaterThanOrEqual(
+        0
+      );
+      expect(layout.footerY).toBeGreaterThanOrEqual(
+        controlsBottom + unit * 0.7 - 0.001
+      );
+      expect(workbenchBottom).toBeLessThanOrEqual(height + 0.001);
+    }
+  );
+
   it("keeps the compact training workbench below the dial controls", () => {
     const layout = calculateScreenLayout(390, 844, true);
     const unit = compactUnit(390, 844);
@@ -104,6 +139,14 @@ describe("calculateScreenLayout", () => {
     expect(layout.internal.x).toBeCloseTo(1363 * 0.61, 5);
     expect(layout.compactMechanism).toBeNull();
     expect(layout.footerY).toBeCloseTo(936 * 0.855, 5);
+  });
+
+  it("keeps a narrow landscape surface on the wide layout", () => {
+    const layout = calculateScreenLayout(568, 320, false);
+
+    expect(layout.compact).toBe(false);
+    expect(layout.dial.x).toBeCloseTo(568 * 0.295, 5);
+    expect(layout.compactMechanism).toBeNull();
   });
 
   it("fits the dial, mechanism and workbench inside an actual short landscape surface", () => {

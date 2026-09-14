@@ -1282,6 +1282,7 @@ export default function App() {
       : null;
   const shellClass = [
     "akerun-shell",
+    `akerun-screen-${screen}`,
     settings.contrast ? "akerun-high-contrast" : "",
     settings.motion ? "akerun-low-motion" : "",
   ].join(" ");
@@ -1605,6 +1606,12 @@ export default function App() {
                     {detail}
                   </span>
                 ))}
+                {snapshot ? (
+                  <span className="akerun-action-detail akerun-mobile-runtime-detail">
+                    時間 {formatTime(snapshot.elapsedTime)} · 失敗{" "}
+                    {snapshot.faultCount} · 得点 {snapshot.score}
+                  </span>
+                ) : null}
               </div>
               <p className="akerun-action-instruction">
                 {actionPrompt.instruction}
