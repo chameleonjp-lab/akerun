@@ -118,7 +118,7 @@ React側にはタイトル、名前入力、訓練、HUD、一時停止、結果
 
 mainへのマージで `.github/workflows/deploy-pages.yml` が静的サイトをビルドし、公開前に未設定の解析値、旧環境の外部パス、参照切れ素材を検査してからGitHub Pagesへ配置します。公開URLはリポジトリの `/akerun/` 配下を前提にし、Viteの `VITE_BASE_PATH` で同じ成果物をローカルとPagesへ出力します。
 
-タイトル画面には `BUILD / <12文字>` を表示します。公開画面の `data-build-commit` とGitHub Actionsのコミット番号を照合して、表示中の画面がmainのどのコミットから生成されたか確認できます。公開後のHTML、JavaScript、CSS、faviconは同じワークフロー内でHTTP 200を確認します。
+利用者向け画面には開発者用のビルド番号を表示しません。タイトル画面の `data-build-commit` 属性へ検証用のコミット番号だけを保持し、GitHub Actionsのコミット番号と照合できます。公開後のHTML、JavaScript、CSS、faviconは同じワークフロー内でHTTP 200を確認します。
 
 ## ファイル構成
 

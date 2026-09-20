@@ -39,6 +39,9 @@ const combined = textFiles
 const requireMatch = (source, pattern, message) => {
   if (!pattern.test(source)) fail(message);
 };
+const requireNoMatch = (source, pattern, message) => {
+  if (pattern.test(source)) fail(message);
+};
 
 requireMatch(
   index,
@@ -95,7 +98,12 @@ requireMatch(
 requireMatch(
   combined,
   /data-build-commit/,
-  "ビルド識別子の表示属性がありません"
+  "検証用のビルドメタデータがありません"
+);
+requireNoMatch(
+  combined,
+  /BUILD\s*\//,
+  "利用者向け画面に開発者用のBUILD表示が残っています"
 );
 requireMatch(
   combined,

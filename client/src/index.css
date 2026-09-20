@@ -726,15 +726,6 @@
   letter-spacing: 0.12em;
 }
 
-.akerun-build-id {
-  margin: 12px 0 0;
-  color: #7e9b98;
-  font:
-    500 0.72rem "DM Mono",
-    monospace;
-  letter-spacing: 0.08em;
-}
-
 .akerun-progress-strip {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
