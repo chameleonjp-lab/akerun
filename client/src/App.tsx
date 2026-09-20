@@ -62,8 +62,6 @@ type RunMode =
 
 const BUILD_COMMIT =
   (import.meta.env.VITE_BUILD_COMMIT ?? "local").trim() || "local";
-const BUILD_LABEL =
-  BUILD_COMMIT === "local" ? "LOCAL" : BUILD_COMMIT.slice(0, 12);
 const EXPERIMENT_LAB_URL = "https://chameleonjp-lab.github.io/chameleonjp_lab/";
 
 const formatTime = (seconds: number) => {
@@ -1289,14 +1287,11 @@ export default function App() {
 
   const renderTitle = () => (
     <div className="akerun-screen akerun-title-screen">
-      <div className="akerun-title-card">
+      <div className="akerun-title-card" data-build-commit={BUILD_COMMIT}>
         <div className="akerun-title-brand">
           <p className="akerun-kicker">アケルン / AKERUN</p>
           <p className="akerun-brand-subtitle">VAULT TUMBLER LAB</p>
         </div>
-        <p className="akerun-build-id" data-build-commit={BUILD_COMMIT}>
-          BUILD / {BUILD_LABEL}
-        </p>
         <h1>金庫を、観察で開ける。</h1>
         <p className="akerun-lead">
           音と反応を観察しながら、ダイヤル式金庫を開けるゲームです。まずは初級から、1問ずつ進みます。
