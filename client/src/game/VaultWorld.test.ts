@@ -3,8 +3,11 @@ import {
   COMPACT_WORKBENCH_ONLY_MAX_HEIGHT,
   calculateScreenLayout,
   getContainedImageRect,
+  formatObservationMetadata,
   getBlindPhysicalInputForPhase,
   getCutawayUnderlayAlpha,
+  getPlayerDifficultyLabel,
+  getPlayerPhaseLabel,
   getGuideTextForPhase,
   getDemoTurnCount,
   getWorkbenchMode,
@@ -154,13 +157,40 @@ describe("calculateScreenLayout", () => {
     const unit = Math.max(10, Math.min(874, 402) / 85);
     const controlsBottom =
       layout.dial.y + layout.dial.radius * 1.42 + unit * 2.35;
-    const benchBottom =
-      layout.footerY + unit * 0.4 + unit * 6.0;
+    const benchBottom = layout.footerY + unit * 0.4 + unit * 6.0;
 
     expect(layout.shortViewport).toBe(true);
     expect(layout.compact).toBe(false);
     expect(controlsBottom).toBeLessThanOrEqual(layout.footerY);
     expect(benchBottom).toBeLessThanOrEqual(layout.height);
+  });
+});
+
+describe("player-facing labels", () => {
+  it("formats observation metadata without internal field codes", () => {
+    expect(
+      formatObservationMetadata({
+        id: "note-1",
+        vaultId: "reliquary-nocturne",
+        category: "false-gate",
+        text: "浅い接触",
+        createdAt: "2026-09-21T00:00:00.000Z",
+        problemId: "AKERUN-02-V1",
+        problemVersion: "V1",
+        wheel: 2,
+        dial: 7,
+        direction: "ccw",
+        pass: 3,
+        signal: "edge",
+      })
+    ).toBe("問題 02 · 第2輪 07 · 左 · 3回 · ゲート縁");
+  });
+
+  it("uses Japanese labels for mode and mechanism phase", () => {
+    expect(getPlayerDifficultyLabel("standard")).toBe("標準");
+    expect(getPlayerDifficultyLabel("blind")).toBe("音だけ");
+    expect(getPlayerPhaseLabel("tension-test")).toBe("テンション確認");
+    expect(getPlayerPhaseLabel("unexpected-phase")).toBe("操作中");
   });
 });
 
