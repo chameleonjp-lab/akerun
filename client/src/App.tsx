@@ -1092,7 +1092,7 @@ export default function App() {
     try {
       if (navigator.share) {
         await navigator.share({
-          title: "アケルン / Vault Tumbler Lab",
+          title: "アケルン",
           text,
           url: shareUrl,
         });
@@ -1289,8 +1289,8 @@ export default function App() {
     <div className="akerun-screen akerun-title-screen">
       <div className="akerun-title-card" data-build-commit={BUILD_COMMIT}>
         <div className="akerun-title-brand">
-          <p className="akerun-kicker">アケルン / AKERUN</p>
-          <p className="akerun-brand-subtitle">VAULT TUMBLER LAB</p>
+          <p className="akerun-kicker">アケルン</p>
+          <p className="akerun-brand-subtitle">観察型金庫ゲーム</p>
         </div>
         <h1>金庫を、観察で開ける。</h1>
         <p className="akerun-lead">
@@ -1423,7 +1423,7 @@ export default function App() {
   const renderPractice = () => (
     <div className="akerun-screen akerun-modal-screen">
       <div className="akerun-modal-card akerun-practice-card">
-        <p className="akerun-kicker">FREE PRACTICE / 自由練習</p>
+        <p className="akerun-kicker">自由練習</p>
         <h2>問題を選んで練習する。</h2>
         <p>
           20問から好きな問題を選べます。自由練習の結果は、進行・収蔵品・ランキングへ保存しません。
@@ -1453,7 +1453,7 @@ export default function App() {
       aria-live="polite"
     >
       <div className="akerun-countdown-card">
-        <p className="akerun-kicker">READY / アケルン</p>
+        <p className="akerun-kicker">プレイ開始</p>
         <p className="akerun-countdown-label">プレイ開始まで</p>
         <div
           className="akerun-countdown-number"
@@ -1477,7 +1477,7 @@ export default function App() {
     return (
       <div className="akerun-training-layer">
         <div className="akerun-training-card">
-          <p className="akerun-kicker">FIRST ACCESS / TRAINING</p>
+          <p className="akerun-kicker">はじめての訓練</p>
           {finished ? (
             <>
               <h2>訓練が終わりました。</h2>
@@ -1499,7 +1499,7 @@ export default function App() {
             </>
           ) : (
             <>
-              <p className="akerun-step">STEP {tutorialStep} / 4</p>
+              <p className="akerun-step">訓練 {tutorialStep} / 4</p>
               <h2>{card.title}</h2>
               <p>{card.text}</p>
               <Button tone="primary" onClick={startTraining} disabled={!handle}>
@@ -1521,11 +1521,11 @@ export default function App() {
         <div
           className={`akerun-training-card akerun-training-active akerun-training-step-${tutorialStep}`}
         >
-          <p className="akerun-kicker">TRAINING / STEP {tutorialStep}</p>
+          <p className="akerun-kicker">訓練 {tutorialStep}</p>
           <h2>{card.title}</h2>
           <p>{card.text}</p>
           <p className="akerun-small">
-            Canvas上のダイヤルと操作部品を指で操作してください。訓練中の記録はランキングへ送信しません。
+            画面のダイヤルと操作部品を指で操作してください。訓練中の記録はランキングへ送信しません。
           </p>
           <Button
             tone="danger"
@@ -1560,11 +1560,11 @@ export default function App() {
               <div>
                 <p className="akerun-kicker">
                   {mode === "demo"
-                    ? "EXAMPLE / お手本"
+                    ? "お手本"
                     : mode === "practice"
-                      ? "FREE PRACTICE / 自由練習"
+                      ? "自由練習"
                       : mode === "competition"
-                        ? "DAILY COMPETITION / 本日の競技"
+                        ? "本日の競技"
                         : (problem?.problemId ?? "問題準備中")}
                   {mode === "official" &&
                   problem?.difficulty.showInternalGatePositions
@@ -1669,7 +1669,7 @@ export default function App() {
   const renderPause = () => (
     <div className="akerun-screen akerun-modal-screen">
       <div className="akerun-modal-card">
-        <p className="akerun-kicker">PAUSED / 一時停止</p>
+        <p className="akerun-kicker">一時停止</p>
         <h2>
           {mode === "competition"
             ? "競技は終了しました。"
@@ -1714,14 +1714,14 @@ export default function App() {
         <div className="akerun-result-card">
           <p className="akerun-kicker">
             {isRetired
-              ? "RETIRED / リタイア"
+              ? "リタイア"
               : mode === "demo"
-                ? "EXAMPLE RESULT / お手本"
+                ? "お手本"
                 : isPractice
-                  ? "FREE PRACTICE / 自由練習"
+                  ? "自由練習"
                   : isCompetition
-                    ? "DAILY COMPETITION / 本日の競技"
-                    : "UNLOCK COMPLETE / 開錠完了"}
+                    ? "本日の競技"
+                    : "開錠完了"}
           </p>
           <h2>
             {isRetired
@@ -1733,8 +1733,7 @@ export default function App() {
                   : (snapshot?.rewardTitle ?? "開錠しました。")}
           </h2>
           <p className="akerun-result-subtitle">
-            {snapshot?.problemId} / {snapshot?.problemVersion} /{" "}
-            {snapshot?.vaultTitle}
+            問題 {snapshot?.problemId} · {snapshot?.vaultTitle}
           </p>
           {isRankedMode ? (
             <p className="akerun-small">プレイ開始回数：{playCount}</p>
@@ -1896,8 +1895,8 @@ export default function App() {
   const renderRanking = () => (
     <div className="akerun-screen akerun-modal-screen">
       <div className="akerun-modal-card akerun-ranking-card">
-        <p className="akerun-kicker">OFFICIAL RANKING / 共通ランキング</p>
-        <h2>Vault Tumbler Lab</h2>
+        <p className="akerun-kicker">公式ランキング</p>
+        <h2>アケルン</h2>
         <p>{rankingStatus}</p>
         <div className="akerun-ranking-list">
           {rankingRows.map((row, index) => (
@@ -1928,7 +1927,7 @@ export default function App() {
   const renderCompetitionRanking = () => (
     <div className="akerun-screen akerun-modal-screen">
       <div className="akerun-modal-card akerun-ranking-card">
-        <p className="akerun-kicker">DAILY COMPETITION / 本日の競技</p>
+        <p className="akerun-kicker">本日の競技</p>
         <h2>同じ問題のランキング</h2>
         <p>{dailyRankingStatus}</p>
         <p className="akerun-small">
@@ -1963,7 +1962,7 @@ export default function App() {
   const renderArchive = () => (
     <div className="akerun-screen akerun-modal-screen">
       <div className="akerun-modal-card akerun-archive-card">
-        <p className="akerun-kicker">ARCHIVE / 収蔵品</p>
+        <p className="akerun-kicker">収蔵品</p>
         <h2>鑑定帳</h2>
         <p>
           開錠条件を満たした収蔵品だけが端末内に保存されます。能力強化はありません。
@@ -1980,7 +1979,7 @@ export default function App() {
               >
                 <strong>
                   {rarityLabel[reward.rarity] ?? "収蔵品"} /{" "}
-                  {unlocked ? reward.catalogNumber : "RESTRICTED COLLECTION"}
+                  {unlocked ? reward.catalogNumber : "未解放"}
                 </strong>
                 <span>{unlocked ? reward.title : "未解放の収蔵品"}</span>
                 <small>
@@ -2005,31 +2004,31 @@ export default function App() {
   const renderSettings = () => (
     <div className="akerun-screen akerun-modal-screen">
       <div className="akerun-modal-card">
-        <p className="akerun-kicker">SETTINGS / 設定</p>
+        <p className="akerun-kicker">設定</p>
         <h2>使いやすさの設定</h2>
         <p>
           これらの設定はスコアを下げません。音や振動が使えなくても、画面の反応だけで開錠できます。
         </p>
         <div className="akerun-settings-list">
           <Button onClick={() => toggleSetting("contrast", "contrast")}>
-            高コントラスト：{settings.contrast ? "ON" : "OFF"}
+            高コントラスト：{settings.contrast ? "オン" : "オフ"}
           </Button>
           <Button onClick={() => toggleSetting("motion", "motion")}>
-            低モーション：{settings.motion ? "ON" : "OFF"}
+            低モーション：{settings.motion ? "オン" : "オフ"}
           </Button>
           <Button onClick={() => toggleSetting("precision", "precision")}>
-            精密入力：{settings.precision ? "ON" : "OFF"}
+            精密入力：{settings.precision ? "オン" : "オフ"}
           </Button>
           <Button onClick={() => handle?.performAction("sound")}>
-            音：{snapshot?.soundMuted ? "OFF" : "ON"}
+            音：{snapshot?.soundMuted ? "オフ" : "オン"}
           </Button>
           <Button onClick={() => handle?.performAction("haptics")}>
             振動：
             {snapshot?.hapticsSupported === false
-              ? "N/A"
+              ? "非対応"
               : snapshot?.hapticsEnabled
-                ? "ON"
-                : "OFF"}
+                ? "オン"
+                : "オフ"}
           </Button>
           <Button onClick={() => openOverlay("sound-lab")}>
             音の試験室を開く
@@ -2045,7 +2044,7 @@ export default function App() {
   const renderSoundLab = () => (
     <div className="akerun-screen akerun-modal-screen">
       <div className="akerun-modal-card akerun-sound-lab-card">
-        <p className="akerun-kicker">SOUND LAB / 音の試験室</p>
+        <p className="akerun-kicker">音の試験室</p>
         <h2>音を聞き比べる。</h2>
         <p>
           音だけで正解を決めないための確認室です。音を聞いたあと、画面の反応と抵抗も同じ意味を返すか確認してください。
@@ -2068,12 +2067,12 @@ export default function App() {
           ))}
         </div>
         <p className="akerun-small">
-          音：{snapshot?.soundMuted ? "OFF" : "ON"}
+          音：{snapshot?.soundMuted ? "オフ" : "オン"}
           。音を使えない場合も、画面の反応と短い文章だけで遊べます。
         </p>
         <div className="akerun-title-actions">
           <Button onClick={() => handle?.performAction("sound")}>
-            音を{snapshot?.soundMuted ? "ON" : "OFF"}
+            音を{snapshot?.soundMuted ? "オン" : "オフ"}
           </Button>
           <Button tone="primary" onClick={closeOverlay}>
             戻る
@@ -2086,7 +2085,7 @@ export default function App() {
   const renderHelp = () => (
     <div className="akerun-screen akerun-modal-screen">
       <div className="akerun-modal-card akerun-help-card">
-        <p className="akerun-kicker">HELP / 遊び方</p>
+        <p className="akerun-kicker">遊び方</p>
         <h2>観察してから操作する。</h2>
         <p>
           ダイヤルを回すと、空転、ゲート縁、偽ゲート、フライ接続などの反応が返ります。特定の音だけで正解を決めず、音・見た目・抵抗を比べてください。
@@ -2101,23 +2100,23 @@ export default function App() {
           </li>
           <li>
             全ホイールの後は、テンション → フェンス → ロックボルト →
-            扉ハンドルの順です。帯域の中で保持し、強く押し込み続けると噛み込み（jam）になります。
+            扉ハンドルの順です。帯域の中で保持し、強く押し込み続けると噛み込みになります。
           </li>
         </ol>
         <h3>反応の読み方</h3>
         <p>
           正規ゲートはフライ接続と段階の進行を伴います。ゲート縁は近づいた合図、偽ゲートとその縁は浅い接触だけで段階が進みません。後半の作業台では針が現在位置、針の下の細い表示が保持進行です。「帯域内
           /
-          保持」は判定へ進める位置、「要調整」は位置が外れて保持が戻っている状態を示します。OBSERVEではテンションとフェンスの安定帯、ボルトとハンドルの成功閾値も表示します。Pelagicでは止めた後の反応が変わるので、回転を止めてから確認します。
+          保持」は判定へ進める位置、「要調整」は位置が外れて保持が戻っている状態を示します。観察モードではテンションとフェンスの安定帯、ボルトとハンドルの成功閾値も表示します。深海時計タイプでは止めた後の反応が変わるので、回転を止めてから確認します。
         </p>
         <h3>失敗とスコア</h3>
         <p>
-          後半の過負荷は失敗数になります。噛み込みが起きたら、作業台の「力を抜いて解除」をタップして離してください。フェンスの過負荷では直前の整列が少し巻き戻ります。失敗数が上限に達すると安全停止し、リセットが必要です。スコアは時間・余分な回転・余分な偽ゲート・失敗数から計算し、高コントラスト、低モーション、精密入力、音や振動のOFFで減点しません。
+          後半の過負荷は失敗数になります。噛み込みが起きたら、作業台の「力を抜いて解除」をタップして離してください。フェンスの過負荷では直前の整列が少し巻き戻ります。失敗数が上限に達すると安全停止し、リセットが必要です。スコアは時間・余分な回転・余分な偽ゲート・失敗数から計算し、高コントラスト、低モーション、精密入力、音や振動をオフにしても減点しません。
         </p>
         <p className="akerun-small">
           通常の進行ゲームと自由練習では一時停止できます。本日の競技では停止・設定・ヘルプ・画面離脱をするとランキング対象外になります。
         </p>
-        <h3>BLINDでのタッチ操作</h3>
+        <h3>音だけモードでのタッチ操作</h3>
         <p>
           ダイヤル中は画面のどこかを横にドラッグします。全ホイールを揃えた後は、現在の部品へ同じ指の動きを渡します。フェンスだけ上へ、それ以外の後半部品は右へ動かし、指を離して保持を止めます。音と振動の合図を確認しながら操作してください。
         </p>

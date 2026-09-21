@@ -13,7 +13,7 @@ import {
   type RewardDefinition,
   type TurnDirection,
 } from "./GameDefinitions";
-import { LockMechanism } from "./LockMechanism";
+import { LockMechanism, type ProtocolPhase } from "./LockMechanism";
 import {
   AUDIO_SAMPLE_DEFINITIONS,
   AudioFeedback,
@@ -60,20 +60,107 @@ const ASSETS = {
 const DEMO_DIAL_INTERVAL_SECONDS = 0.045;
 const DEMO_ACTION_INTERVAL_SECONDS = 0.08;
 
-const formatObservationMetadata = (note: ObservationNote) => {
-  const problem =
-    note.problemId && note.problemVersion
-      ? `${note.problemId}@${note.problemVersion}`
-      : "旧形式";
+const PLAYER_DIFFICULTY_LABELS: Readonly<Record<DifficultyId, string>> = {
+  observe: "観察",
+  standard: "標準",
+  expert: "専門",
+  blind: "音だけ",
+};
+
+const PLAYER_PHASE_LABELS: Readonly<Record<ProtocolPhase, string>> = {
+  dial: "ダイヤル操作",
+  settling: "停止確認",
+  "tension-ready": "テンション準備",
+  "tension-test": "テンション確認",
+  "fence-ready": "フェンス準備",
+  "fence-seated": "フェンス着座",
+  "bolt-test": "ロックボルト確認",
+  "boltwork-ready": "扉ボルト準備",
+  "handle-test": "扉ハンドル確認",
+  jammed: "噛み込み",
+  open: "開錠完了",
+  lockout: "安全停止",
+};
+
+const PLAYER_OBSERVATION_CATEGORY_LABELS: Readonly<
+  Record<ObservationCategory, string>
+> = {
+  "false-gate": "偽ゲート",
+  contact: "接触",
+  boltwork: "ボルト操作",
+  preload: "予圧",
+};
+
+const PLAYER_OBSERVATION_SIGNAL_LABELS: Readonly<
+  Record<NonNullable<ObservationNote["signal"]>, string>
+> = {
+  rebound: "反発",
+  edge: "ゲート縁",
+  depth: "深い接触",
+  load: "負荷",
+  release: "解除",
+  idle: "空転",
+};
+
+const PLAYER_VAULT_LABELS: Readonly<Record<string, string>> = {
+  "museum-aurora": "黎明の金庫",
+  "reliquary-nocturne": "夜想の金庫",
+  "chronometer-pelagic": "深海時計の金庫",
+};
+
+const PLAYER_RARITY_LABELS: Readonly<
+  Record<RewardDefinition["rarity"], string>
+> = {
+  standard: "通常",
+  rare: "希少",
+  special: "特別",
+};
+
+const PLAYER_BLIND_SIGNAL_LABELS: Readonly<Record<string, string>> = {
+  IDLE: "待機",
+  EDGE: "縁の接触",
+  PICKUP: "拾い上げ",
+  LATCH: "接続",
+  TENSION: "テンション",
+  SEAT: "着座",
+  JAM: "噛み込み",
+  LISTEN: "音を聞く",
+};
+
+export const getPlayerDifficultyLabel = (difficulty: DifficultyId) =>
+  PLAYER_DIFFICULTY_LABELS[difficulty];
+
+export const getPlayerPhaseLabel = (phase: string) =>
+  PLAYER_PHASE_LABELS[phase as ProtocolPhase] ?? "操作中";
+
+export const formatObservationMetadata = (note: ObservationNote) => {
+  const problem = note.problemId
+    ? `問題 ${note.problemId.replace(/^AKERUN-/, "").replace(/-V\d+$/, "")}`
+    : "旧形式のメモ";
   const location =
     note.wheel !== null && note.dial !== null
-      ? `W${note.wheel}/${String(note.dial).padStart(2, "0")}`
-      : "W-/--";
-  const direction = note.direction ? note.direction.toUpperCase() : "方向なし";
-  const pass = note.pass === null ? "P-" : `P${note.pass}`;
-  const signal = note.signal ? note.signal.toUpperCase() : "SIGNAL-";
+      ? `第${note.wheel}輪 ${String(note.dial).padStart(2, "0")}`
+      : "位置未記録";
+  const direction = note.direction
+    ? note.direction === "cw"
+      ? "右"
+      : "左"
+    : "方向未記録";
+  const pass = note.pass === null ? "回数未記録" : `${note.pass}回`;
+  const signal = note.signal
+    ? PLAYER_OBSERVATION_SIGNAL_LABELS[note.signal]
+    : "反応未記録";
   return `${problem} · ${location} · ${direction} · ${pass} · ${signal}`;
 };
+
+const getPlayerVaultLabel = (vaultId: string) =>
+  PLAYER_VAULT_LABELS[vaultId] ?? "金庫";
+
+const getPlayerObservationCategoryLabel = (category: ObservationCategory) =>
+  PLAYER_OBSERVATION_CATEGORY_LABELS[category];
+
+const getPlayerRarityLabel = (rarity: RewardDefinition["rarity"]) =>
+  PLAYER_RARITY_LABELS[rarity];
 
 export type Rect = { x: number; y: number; width: number; height: number };
 
@@ -288,42 +375,42 @@ export const COMPACT_WORKBENCH_ONLY_MAX_HEIGHT = 550;
 
 const INSPECTION_STEPS = [
   {
-    label: "錠ケースカバー / CASE COVER",
+    label: "錠ケースカバー",
     detail:
       "取り外し可能なケースカバーが、ホイールパックとレバー機構を保護します。観察では保安部材として扱い、解除操作の対象にはしません。",
   },
   {
-    label: "駆動軸 / SPINDLE & TUBE",
+    label: "駆動軸",
     detail:
       "ダイヤルの回転はスピンドルと位置決め管を通り、最初のドライブカムへ渡されます。",
   },
   {
-    label: "支持枠 / BRIDGE & WHEEL POST",
+    label: "支持枠",
     detail:
       "ブリッジアセンブリとホイールポストが、問題ごとのホイールパックを同軸上に保ちます。",
   },
   {
-    label: "変更式ホイール / KEY-CHANGE WHEEL",
+    label: "変更式ホイール",
     detail:
       "変更式ホイールの内輪とハブは、整備時の再設定に関わる部分です。通常の開錠手順には持ち込みません。",
   },
   {
-    label: "接触部 / FENCE & LEVER NOSE",
+    label: "接触部",
     detail:
       "フェンスとレバーノーズがカムの接触点を読み、全ゲートが整った時だけ落ち込みます。",
   },
   {
-    label: "錠ボルト / LOCK BOLT",
+    label: "錠ボルト",
     detail:
       "錠ボルトが後退して初めて、扉内のキャリーバーと複数の扉側ボルトをハンドルで動かせます。",
   },
   {
-    label: "二次拘束 / RELOCKER",
+    label: "二次拘束",
     detail:
       "リロッカーは異常時にボルトワークを二次的に拘束する保安機構です。このゲームでは安全な観察対象として表示します。",
   },
   {
-    label: "保安カラー / ANTI-PUNCH COLLAR",
+    label: "保安カラー",
     detail:
       "アンチパンチカラーはスピンドル周辺を補強する保安部材です。解除対象ではなく、金庫の保護設計として記録します。",
   },
@@ -393,8 +480,7 @@ export const calculateScreenLayout = (
   // 切り替わり、右側の機構列が小さな操作帯へ押し込まれるため、端末幅の
   // 目安も使ってcompactを維持する（短い横画面の幅480px超は従来判定）。
   const compact =
-    safeWidth / safeHeight < 1.12 ||
-    (safeWidth <= 430 && safeHeight <= 620);
+    safeWidth / safeHeight < 1.12 || (safeWidth <= 430 && safeHeight <= 620);
   const shortViewport = safeHeight < 560;
   if (compact) {
     const unit = canvasUnit(safeWidth, safeHeight, compact);
@@ -859,7 +945,8 @@ export class VaultWorld {
           ? null
           : this.mechanism.activeStage.direction,
       activeTarget:
-        this.isBlindMode || !this.mechanism.puzzle.difficulty.showExactInstruction
+        this.isBlindMode ||
+        !this.mechanism.puzzle.difficulty.showExactInstruction
           ? null
           : (this.mechanism.activeStage?.target ?? null),
       currentPass:
@@ -1338,7 +1425,7 @@ export class VaultWorld {
     this.trainingContract = false;
     this.blindAssist = false;
     this.blindSignal = null;
-    this.mechanism.lastMessage = `${DIFFICULTY_PROFILES[difficulty].label}に切替。新しい保管契約を解析してください。`;
+    this.mechanism.lastMessage = `${getPlayerDifficultyLabel(difficulty)}に切り替えました。新しい金庫を観察してください。`;
   }
 
   private startFalseGateTraining() {
@@ -2065,7 +2152,7 @@ export class VaultWorld {
       ctx.fillStyle = "#c9a963";
       ctx.font = `600 ${unit * 0.82}px "DM Mono", monospace`;
       ctx.fillText(
-        "正面ダイヤル / FRONT DIAL",
+        "正面ダイヤル",
         dial.x - dial.radius * 1.08,
         dial.y - dial.radius * 1.35
       );
@@ -2423,7 +2510,7 @@ export class VaultWorld {
     ctx.fillStyle = "#d9c28a";
     ctx.font = `600 ${unit * 0.86}px "DM Mono", monospace`;
     ctx.fillText(
-      layout.compact ? "内部機構 / LOCK MECHANISM" : "錠前断面 / LOCK CUTAWAY",
+      layout.compact ? "内部機構" : "錠前断面",
       internal.x + unit * 1.5,
       internal.y + unit * 2.2
     );
@@ -2657,7 +2744,10 @@ export class VaultWorld {
     ctx.fillText(headerDetail, panel.x + unit * 0.75, panel.y + unit * 2.0);
 
     const cellTop = panel.y + Math.max(unit * 2.35, 32);
-    const cellHeight = Math.max(16, panel.height - (cellTop - panel.y) - unit * 0.25);
+    const cellHeight = Math.max(
+      16,
+      panel.height - (cellTop - panel.y) - unit * 0.25
+    );
     const gap = unit * 0.25;
     const cellWidth =
       (panel.width - unit * 1.5 - gap * Math.max(0, wheelCount - 1)) /
@@ -3050,7 +3140,7 @@ export class VaultWorld {
       ctx.fillStyle = "#d9c28a";
       ctx.font = `600 ${Math.max(14, unit * 0.5)}px ${JAPANESE_FONT_STACK}`;
       ctx.fillText(
-        `状態 / ${this.mechanism.phase}  ·  失敗 ${this.mechanism.faultCount}`,
+        `状態 / ${getPlayerPhaseLabel(this.mechanism.phase)}  ·  失敗 ${this.mechanism.faultCount}`,
         pad + unit * 1.1,
         y + unit * 2.32
       );
@@ -3106,14 +3196,14 @@ export class VaultWorld {
     ctx.fillStyle = "#d9c28a";
     ctx.font = `600 ${unit * 0.52}px "DM Mono", monospace`;
     ctx.fillText(
-      `モード / ${DIFFICULTY_PROFILES[this.difficulty].label}   ${this.tutorialVisible ? `案内 / ${guide}` : "案内 / OFF"}   ${this.preciseInput ? "精密入力" : "自由入力"}   ${this.haptics.label}`,
+      `モード / ${getPlayerDifficultyLabel(this.difficulty)}   ${this.tutorialVisible ? `案内 / ${guide}` : "案内 / なし"}   ${this.preciseInput ? "精密入力" : "自由入力"}   ${this.haptics.label}`,
       pad + unit * 1.25,
       y + unit * 2.18
     );
     ctx.fillStyle = this.mechanism.faultCount > 0 ? "#d39566" : "#7e9b98";
     ctx.font = `600 ${unit * 0.56}px "DM Mono", monospace`;
     ctx.fillText(
-      `段階 / ${this.mechanism.phase}   失敗 / ${this.mechanism.faultCount}/${this.mechanism.puzzle.difficulty.maxFaults}`,
+      `段階 / ${getPlayerPhaseLabel(this.mechanism.phase)}   失敗 / ${this.mechanism.faultCount}/${this.mechanism.puzzle.difficulty.maxFaults}`,
       pad + unit * 1.25,
       y + unit * 2.9
     );
@@ -3169,7 +3259,7 @@ export class VaultWorld {
           width: railWidth - unit * 0.35,
           height: railHeight,
         },
-        "お手本 / DEMO"
+        "お手本"
       );
     }
     this.drawControlButton(
@@ -3180,15 +3270,15 @@ export class VaultWorld {
         width: railWidth - unit * 0.35,
         height: railHeight,
       },
-      this.audio.isMuted ? "音 / OFF" : "音 / ON"
+      this.audio.isMuted ? "音 / オフ" : "音 / オン"
     );
     const hapticButtonLabel = !this.haptics.isSupported
       ? "振動 / 非対応"
       : this.reducedMotion
         ? "振動 / 一時停止"
         : this.haptics.isEnabled
-          ? "振動 / ON"
-          : "振動 / OFF";
+          ? "振動 / オン"
+          : "振動 / オフ";
     this.drawControlButton(
       "haptics",
       {
@@ -3208,7 +3298,7 @@ export class VaultWorld {
         width: railWidth - unit * 0.35,
         height: railHeight,
       },
-      this.tutorialVisible ? "案内 / ON" : "案内 / OFF"
+      this.tutorialVisible ? "案内 / あり" : "案内 / なし"
     );
     if (!layout.compact)
       this.drawControlButton(
@@ -4037,7 +4127,7 @@ export class VaultWorld {
             : "#e8dfc4";
       ctx.font = `700 ${unit * 0.58}px "DM Mono", monospace`;
       ctx.fillText(
-        `${note.category.toUpperCase()} / ${note.vaultId.toUpperCase()}`,
+        `${getPlayerObservationCategoryLabel(note.category)} / ${getPlayerVaultLabel(note.vaultId)}`,
         panel.x + unit * 1.7,
         y + unit * 0.95
       );
@@ -4075,7 +4165,7 @@ export class VaultWorld {
     ctx.fillStyle = "#e8dfc4";
     ctx.font = `700 ${unit * (layout.compact ? 1.15 : 1.45)}px "DM Mono", monospace`;
     this.drawWrappedText(
-      "鑑定帳 / ARCHIVE LEDGER",
+      "鑑定帳",
       panel.x + unit * 1.45,
       panel.y + unit * 1.8,
       panel.width - unit * 2.8,
@@ -4158,7 +4248,7 @@ export class VaultWorld {
           ctx.fillStyle = unlocked ? "#f1e4bd" : "#8a9492";
           ctx.font = `700 ${unit * 0.4}px "DM Mono", monospace`;
           ctx.fillText(
-            `${String(index + 1).padStart(2, "0")} / ${unlocked ? `OPEN ×${record?.unlockCount ?? 1}` : reward.rarity.toUpperCase()}`,
+            `${String(index + 1).padStart(2, "0")} / ${unlocked ? `解放 ×${record?.unlockCount ?? 1}` : getPlayerRarityLabel(reward.rarity)}`,
             x + unit * 0.55,
             y + unit * 0.8
           );
@@ -4176,7 +4266,7 @@ export class VaultWorld {
           ctx.fillStyle = unlocked ? "#f1e4bd" : "#8a9492";
           ctx.font = `700 ${unit * 0.62}px "DM Mono", monospace`;
           ctx.fillText(
-            `${String(index + 1).padStart(2, "0")} / ${reward.rarity.toUpperCase()}`,
+            `${String(index + 1).padStart(2, "0")} / ${getPlayerRarityLabel(reward.rarity)}`,
             x + unit * 0.55,
             y + unit * 0.95
           );
@@ -4238,7 +4328,7 @@ export class VaultWorld {
           ? `${reward.catalogNumber}  /  ${reward.title}`
           : isTarget
             ? `現在の収蔵候補 / ${reward.title}`
-            : "RESTRICTED COLLECTION / 未解放",
+            : "未解放",
         textX,
         y + unit * 1.58
       );
@@ -4366,7 +4456,9 @@ export class VaultWorld {
     this.blindSignal = signal;
     this.blindSignalUntil = performance.now() + (this.reducedMotion ? 0 : 420);
     if (this.blindAssist || this.audio.isMuted)
-      this.onStatusChange?.(`ブラインド補助: ${signal}`);
+      this.onStatusChange?.(
+        `ブラインド補助：${PLAYER_BLIND_SIGNAL_LABELS[signal] ?? "音を聞く"}`
+      );
   }
 
   private drawBlindOverlay(layout: ScreenLayout) {
@@ -4412,7 +4504,7 @@ export class VaultWorld {
       ctx.fillStyle = "#7e9b98";
       ctx.font = `600 ${unit * 0.56}px "DM Mono", monospace`;
       ctx.fillText(
-        `ブラインド補助 / ${current}   V / 表示   S / 音`,
+        `補助：${PLAYER_BLIND_SIGNAL_LABELS[current] ?? "音を聞く"}   V：表示   S：音`,
         width / 2,
         height * 0.59
       );

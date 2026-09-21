@@ -2,7 +2,17 @@
  * Vault Tumbler Lab — モバイル端末向けの控えめな触覚フィードバック。
  * Vibration API がない環境では必ず無操作で終了し、ゲーム進行を妨げない。
  */
-export type HapticCue = "idle" | "edge" | "false-gate" | "pickup" | "latch" | "tension" | "seat" | "boltwork" | "fault" | "unlock";
+export type HapticCue =
+  | "idle"
+  | "edge"
+  | "false-gate"
+  | "pickup"
+  | "latch"
+  | "tension"
+  | "seat"
+  | "boltwork"
+  | "fault"
+  | "unlock";
 
 const PATTERNS: Readonly<Record<HapticCue, VibratePattern>> = {
   idle: 8,
@@ -37,7 +47,10 @@ export class HapticFeedback {
   private lastCueAt = new Map<HapticCue, number>();
 
   get isSupported() {
-    return typeof navigator !== "undefined" && typeof navigator.vibrate === "function";
+    return (
+      typeof navigator !== "undefined" &&
+      typeof navigator.vibrate === "function"
+    );
   }
 
   get isEnabled() {
@@ -45,13 +58,15 @@ export class HapticFeedback {
   }
 
   get isActive() {
-    return this.isSupported && this.enabled && this.primed && !this.reducedMotion;
+    return (
+      this.isSupported && this.enabled && this.primed && !this.reducedMotion
+    );
   }
 
   get label() {
-    if (!this.isSupported) return "HAPTIC / N/A";
-    if (this.reducedMotion) return "HAPTIC / MOTION OFF";
-    return this.enabled ? "HAPTIC / ON" : "HAPTIC / OFF";
+    if (!this.isSupported) return "振動 / 非対応";
+    if (this.reducedMotion) return "振動 / 一時停止";
+    return this.enabled ? "振動 / オン" : "振動 / オフ";
   }
 
   enableFromGesture() {
