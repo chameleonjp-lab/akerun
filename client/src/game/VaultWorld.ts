@@ -2738,10 +2738,20 @@ export class VaultWorld {
     this.drawFrame(panel, "rgba(5, 15, 19, 0.9)", "rgba(77, 224, 192, 0.48)");
     ctx.fillStyle = "#d9c28a";
     ctx.font = `600 ${Math.max(14, unit * 0.78)}px ${JAPANESE_FONT_STACK}`;
-    ctx.fillText(header, panel.x + unit * 0.75, panel.y + unit * 1.1);
+    this.drawFittedText(
+      header,
+      panel.x + unit * 0.75,
+      panel.y + unit * 1.1,
+      panel.width - unit * 1.5
+    );
     ctx.fillStyle = "#9db3ae";
     ctx.font = `500 ${Math.max(12, unit * 0.62)}px ${JAPANESE_FONT_STACK}`;
-    ctx.fillText(headerDetail, panel.x + unit * 0.75, panel.y + unit * 2.0);
+    this.drawFittedText(
+      headerDetail,
+      panel.x + unit * 0.75,
+      panel.y + unit * 2.0,
+      panel.width - unit * 1.5
+    );
 
     const cellTop = panel.y + Math.max(unit * 2.35, 32);
     const cellHeight = Math.max(
@@ -3349,7 +3359,9 @@ export class VaultWorld {
     );
     ctx.fillStyle = "#e8dfc4";
     ctx.font = `700 ${unit * 0.67}px "DM Mono", monospace`;
-    ctx.fillText(title, rect.x + unit * 1.1, rect.y + unit * 1.25);
+    const labelX = rect.x + unit * 1.1;
+    const labelWidth = Math.max(unit * 5, rect.width * 0.58);
+    this.drawFittedText(title, labelX, rect.y + unit * 1.25, labelWidth);
     const holdProgress = isTension
       ? this.mechanism.tensionHoldProgress
       : isFence
@@ -3382,10 +3394,11 @@ export class VaultWorld {
       phase === "jammed" || phase === "lockout" ? "#d39566" : "#4de0c0";
     ctx.font = `600 ${unit * 0.5}px "DM Mono", monospace`;
     ctx.textAlign = "right";
-    ctx.fillText(
+    this.drawFittedText(
       holdLabel,
       rect.x + rect.width - unit * 1.1,
-      rect.y + unit * 1.25
+      rect.y + unit * 1.25,
+      Math.max(unit * 3, rect.width * 0.34)
     );
     ctx.restore();
     if (workbenchMode === "recovery") {
@@ -3399,12 +3412,15 @@ export class VaultWorld {
     if (workbenchMode === "notes") {
       ctx.fillStyle = this.audio.isMuted ? "#d39566" : "#4de0c0";
       ctx.font = `600 ${unit * 0.48}px "DM Mono", monospace`;
-      ctx.fillText(
+      this.drawWrappedText(
         this.audio.isMuted
           ? "音 OFF — 画面の手掛かりを使用"
           : "聴く / 待機は低音・縁は高音・拾いは二重音",
         rect.x + unit * 1.1,
-        rect.y + unit * 1.94
+        rect.y + unit * 1.94,
+        rect.width - unit * 2.2,
+        unit * 0.7,
+        1
       );
       ctx.fillStyle = "#7e9b98";
       ctx.font = `500 ${unit * 0.72}px ${JAPANESE_FONT_STACK}`;
@@ -3433,10 +3449,11 @@ export class VaultWorld {
               ? "#4de0c0"
               : "#8da4a5";
         ctx.font = `600 ${unit * 0.5}px "DM Mono", monospace`;
-        ctx.fillText(
+        this.drawFittedText(
           `接触 / ${profile}  深さ / ${Math.round(this.mechanism.contactDepth * 100)}%  抵抗 / ${Math.round(this.mechanism.packResistance * 100)}%`,
           rect.x + unit * 1.1,
-          rect.y + rect.height * 0.52
+          rect.y + rect.height * 0.52,
+          rect.width - unit * 2.2
         );
       }
       ctx.strokeStyle = "rgba(202, 169, 99, 0.58)";
@@ -4662,6 +4679,28 @@ export class VaultWorld {
       }
     }
     ctx.fillText(output, x, y + line * lineHeight);
+  }
+
+  private drawFittedText(
+    text: string,
+    x: number,
+    y: number,
+    maxWidth: number,
+    ellipsis = "…"
+  ) {
+    const ctx = this.context;
+    if (maxWidth <= 0) return;
+    if (ctx.measureText(text).width <= maxWidth) {
+      ctx.fillText(text, x, y);
+      return;
+    }
+    let output = "";
+    for (const character of Array.from(text)) {
+      const candidate = `${output}${character}${ellipsis}`;
+      if (ctx.measureText(candidate).width > maxWidth) break;
+      output += character;
+    }
+    ctx.fillText(`${output}${ellipsis}`, x, y);
   }
 
   private roundRect(
