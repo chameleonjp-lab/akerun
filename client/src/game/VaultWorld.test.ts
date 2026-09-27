@@ -109,6 +109,16 @@ describe("calculateScreenLayout", () => {
           : unit * 4.85 + workbenchHeight);
 
       expect(layout.compact).toBe(true);
+      if (layout.compactMechanism) {
+        expect(layout.compactMechanism.x).toBeGreaterThanOrEqual(0);
+        expect(
+          layout.compactMechanism.x + layout.compactMechanism.width
+        ).toBeLessThanOrEqual(layout.width + 0.001);
+        expect(layout.compactMechanism.y).toBeGreaterThanOrEqual(0);
+        expect(
+          layout.compactMechanism.y + layout.compactMechanism.height
+        ).toBeLessThanOrEqual(layout.height + 0.001);
+      }
       expect(layout.dial.y - layout.dial.radius * 1.12).toBeGreaterThanOrEqual(
         0
       );
